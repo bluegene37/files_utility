@@ -23,21 +23,84 @@ class CopyFilesScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildPathRow(
-                      context,
-                      label: 'Source',
-                      path: provider.sourcePath,
-                      onPick: provider.isProcessing ? null : provider.pickSource,
-                    ),
-                    const SizedBox(height: 10),
-                    _buildPathRow(
-                      context,
-                      label: 'Destination',
-                      path: provider.destPath,
-                      onPick: provider.isProcessing ? null : provider.pickDest,
+                    // Multiple Directories toggle
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 24, height: 24,
+                          child: Checkbox(
+                            value: provider.useMultipleDirectories,
+                            onChanged: provider.isProcessing ? null : (val) => provider.setUseMultipleDirectories(val ?? false),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text('Multiple Directories', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
                     ),
                     const SizedBox(height: 8),
-                    // Date range: checkbox + both pickers in one row
+                    if (!provider.useMultipleDirectories) ...[
+                      // Single pair mode
+                      _buildPathRow(
+                        context,
+                        label: 'Source',
+                        path: provider.sourcePath,
+                        onPick: provider.isProcessing ? null : provider.pickSource,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildPathRow(
+                        context,
+                        label: 'Destination',
+                        path: provider.destPath,
+                        onPick: provider.isProcessing ? null : provider.pickDest,
+                      ),
+                    ] else ...[
+                      // Multi-pair mode
+                      for (int i = 0; i < provider.directoryPairs.length; i++) ...[
+                        Row(
+                          children: [
+                            Text('Pair ${i + 1}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
+                            const Spacer(),
+                            if (provider.directoryPairs.length > 1 && !provider.isProcessing)
+                              SizedBox(
+                                width: 28, height: 28,
+                                child: IconButton(
+                                  icon: const Icon(Icons.close, size: 16, color: Colors.red),
+                                  padding: EdgeInsets.zero,
+                                  onPressed: () => provider.removeDirectoryPair(i),
+                                ),
+                              ),
+                          ],
+                        ),
+                        _buildPathRow(
+                          context,
+                          label: 'Source',
+                          path: provider.directoryPairs[i].sourcePath,
+                          onPick: provider.isProcessing ? null : () => provider.pickPairSource(i),
+                        ),
+                        const SizedBox(height: 4),
+                        _buildPathRow(
+                          context,
+                          label: 'Dest',
+                          path: provider.directoryPairs[i].destPath,
+                          onPick: provider.isProcessing ? null : () => provider.pickPairDest(i),
+                        ),
+                        if (i < provider.directoryPairs.length - 1)
+                          const Divider(height: 12),
+                      ],
+                      if (!provider.isProcessing)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Add Pair', style: TextStyle(fontSize: 13)),
+                            onPressed: provider.addDirectoryPair,
+                          ),
+                        ),
+                    ],
+                    const SizedBox(height: 8),
+                    // Date range: checkbox + pickers + Today/Yesterday shortcuts
                     Row(
                       children: [
                         SizedBox(
@@ -73,6 +136,30 @@ class CopyFilesScreen extends StatelessWidget {
                             onPicked: provider.isProcessing ? (date) {} : (date) => provider.setToDate(date),
                           ),
                         ),
+                        const SizedBox(width: 16),
+                        SizedBox(
+                          width: 24, height: 24,
+                          child: Checkbox(
+                            value: provider.todayOnly,
+                            onChanged: provider.isProcessing ? null : (val) => provider.setTodayOnly(val ?? false),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text('Today', style: TextStyle(fontSize: 13)),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 24, height: 24,
+                          child: Checkbox(
+                            value: provider.yesterdayOnly,
+                            onChanged: provider.isProcessing ? null : (val) => provider.setYesterdayOnly(val ?? false),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text('Yesterday', style: TextStyle(fontSize: 13)),
                       ],
                     ),
                     const SizedBox(height: 8),

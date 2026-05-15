@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'package:flutter/material.dart';
@@ -69,6 +70,19 @@ class _CopyTask {
   _CopyTask(this.source, this.destFilePath);
 }
 
+/// A source→destination directory pair for multi-directory mode.
+class DirectoryPair {
+  String? sourcePath;
+  String? destPath;
+
+  DirectoryPair({this.sourcePath, this.destPath});
+
+  Map<String, String?> toJson() => {'source': sourcePath, 'dest': destPath};
+
+  factory DirectoryPair.fromJson(Map<String, dynamic> json) =>
+      DirectoryPair(sourcePath: json['source'] as String?, destPath: json['dest'] as String?);
+}
+
 
 class CopyFilesProvider with ChangeNotifier {
   final Logger _log = Logger('CopyFilesProvider');
@@ -78,10 +92,18 @@ class CopyFilesProvider with ChangeNotifier {
   String? sourcePath;
   String? destPath;
 
+  // Multiple directory pairs
+  bool useMultipleDirectories = false;
+  List<DirectoryPair> directoryPairs = [DirectoryPair()];
+
   // Date range filter (from/to inclusive)
   bool enableDateRange = false;
   DateTime fromDate = DateTime(2025, 1, 1);
   DateTime toDate = DateTime(2025, 1, 31);
+
+  // Quick date filter: "Today Only" and "Yesterday Only"
+  bool todayOnly = false;
+  bool yesterdayOnly = false;
 
   // Time Schedule Feature
   bool enableTimeWindow = false;
@@ -119,6 +141,13 @@ class CopyFilesProvider with ChangeNotifier {
   bool isPaused = false;
   Timer? _scheduleTimer;
 
+  // Multi-pair processing state
+  List<MapEntry<String, String>> _pairsToProcess = [];
+  int _currentPairIndex = 0;
+  int _accFilesCopied = 0;
+  int _accFilesSkipped = 0;
+  int _accErrors = 0;
+
   CopyFilesProvider() {
     _loadSettings();
   }
@@ -144,6 +173,24 @@ class CopyFilesProvider with ChangeNotifier {
     }
     
     enableDateRange = prefs.getBool('copy_enableDateRange') ?? false;
+    todayOnly = prefs.getBool('copy_todayOnly') ?? false;
+    yesterdayOnly = prefs.getBool('copy_yesterdayOnly') ?? false;
+
+    // Apply quick date filter on load if active
+    _applyQuickDateFilter();
+
+    // Load multiple directories
+    useMultipleDirectories = prefs.getBool('copy_useMultiDirs') ?? false;
+    final pairsJson = prefs.getString('copy_directoryPairs');
+    if (pairsJson != null) {
+      try {
+        final list = jsonDecode(pairsJson) as List;
+        directoryPairs = list.map((m) => DirectoryPair.fromJson(Map<String, dynamic>.from(m))).toList();
+      } catch (_) {
+        directoryPairs = [DirectoryPair()];
+      }
+    }
+    if (directoryPairs.isEmpty) directoryPairs = [DirectoryPair()];
 
     enableTimeWindow = prefs.getBool('copy_enableTimeWindow') ?? false;
     
@@ -178,6 +225,8 @@ class CopyFilesProvider with ChangeNotifier {
     await prefs.setInt('copy_fromDateMs', fromDate.millisecondsSinceEpoch);
     await prefs.setInt('copy_toDateMs', toDate.millisecondsSinceEpoch);
     await prefs.setBool('copy_enableDateRange', enableDateRange);
+    await prefs.setBool('copy_todayOnly', todayOnly);
+    await prefs.setBool('copy_yesterdayOnly', yesterdayOnly);
 
     await prefs.setBool('copy_enableTimeWindow', enableTimeWindow);
     await prefs.setInt('copy_runFromHour', runFromTime.hour);
@@ -189,6 +238,11 @@ class CopyFilesProvider with ChangeNotifier {
     for (int day = 1; day <= 7; day++) {
       await prefs.setBool('copy_runDay_$day', runDays[day] ?? false);
     }
+
+    // Save multiple directories
+    await prefs.setBool('copy_useMultiDirs', useMultipleDirectories);
+    final pairsJson = jsonEncode(directoryPairs.map((p) => p.toJson()).toList());
+    await prefs.setString('copy_directoryPairs', pairsJson);
   }
 
   void setSourcePath(String? path) {
@@ -205,6 +259,11 @@ class CopyFilesProvider with ChangeNotifier {
 
   void setEnableDateRange(bool val) {
     enableDateRange = val;
+    // Uncheck quick filters when manually toggling date range off
+    if (!val) {
+      todayOnly = false;
+      yesterdayOnly = false;
+    }
     _saveSettings();
     notifyListeners();
   }
@@ -212,6 +271,9 @@ class CopyFilesProvider with ChangeNotifier {
   void setFromDate(DateTime date) {
     fromDate = date;
     if (fromDate.isAfter(toDate)) toDate = fromDate;
+    // Manual date pick clears quick filters
+    todayOnly = false;
+    yesterdayOnly = false;
     _saveSettings();
     notifyListeners();
   }
@@ -219,8 +281,49 @@ class CopyFilesProvider with ChangeNotifier {
   void setToDate(DateTime date) {
     toDate = date;
     if (toDate.isBefore(fromDate)) fromDate = toDate;
+    // Manual date pick clears quick filters
+    todayOnly = false;
+    yesterdayOnly = false;
     _saveSettings();
     notifyListeners();
+  }
+
+  void setTodayOnly(bool val) {
+    todayOnly = val;
+    _applyQuickDateFilter();
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setYesterdayOnly(bool val) {
+    yesterdayOnly = val;
+    _applyQuickDateFilter();
+    _saveSettings();
+    notifyListeners();
+  }
+
+  /// Computes from/to dates based on the Today/Yesterday checkboxes.
+  /// Called on load, on toggle, and at each run start to keep dates current.
+  void _applyQuickDateFilter() {
+    if (!todayOnly && !yesterdayOnly) return;
+
+    enableDateRange = true;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    if (todayOnly && yesterdayOnly) {
+      // Both checked → yesterday to today
+      fromDate = yesterday;
+      toDate = today;
+    } else if (todayOnly) {
+      fromDate = today;
+      toDate = today;
+    } else {
+      // yesterdayOnly
+      fromDate = yesterday;
+      toDate = yesterday;
+    }
   }
 
   void setEnableTimeWindow(bool val) {
@@ -259,6 +362,49 @@ class CopyFilesProvider with ChangeNotifier {
   Future<void> pickDest() async {
     final path = await getDirectoryPath(initialDirectory: destPath);
     if (path != null) setDestPath(path);
+  }
+
+  // --- Multiple directory pair management ---
+
+  void setUseMultipleDirectories(bool val) {
+    useMultipleDirectories = val;
+    if (val && directoryPairs.isEmpty) {
+      directoryPairs.add(DirectoryPair());
+    }
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void addDirectoryPair() {
+    directoryPairs.add(DirectoryPair());
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void removeDirectoryPair(int index) {
+    if (directoryPairs.length > 1) {
+      directoryPairs.removeAt(index);
+      _saveSettings();
+      notifyListeners();
+    }
+  }
+
+  Future<void> pickPairSource(int index) async {
+    final path = await getDirectoryPath(initialDirectory: directoryPairs[index].sourcePath);
+    if (path != null) {
+      directoryPairs[index].sourcePath = path;
+      _saveSettings();
+      notifyListeners();
+    }
+  }
+
+  Future<void> pickPairDest(int index) async {
+    final path = await getDirectoryPath(initialDirectory: directoryPairs[index].destPath);
+    if (path != null) {
+      directoryPairs[index].destPath = path;
+      _saveSettings();
+      notifyListeners();
+    }
   }
 
   void stop() {
@@ -319,6 +465,18 @@ class CopyFilesProvider with ChangeNotifier {
     bool inWindow = _isCurrentlyInTimeWindow();
     
     if (inWindow && isPaused) {
+      // If quick date filters are active, the dates may be stale after an
+      // overnight pause.  Kill the old isolate and restart with fresh dates.
+      if (todayOnly || yesterdayOnly) {
+        _addLog('Time window reached. Restarting with updated dates...');
+        _killWorker();
+        isPaused = false;
+        _pauseCapability = null;
+        // startProcessing will call _applyQuickDateFilter() and spawn a new isolate.
+        startProcessing();
+        return;
+      }
+
       if (_pauseCapability != null) {
         _workerIsolate?.resume(_pauseCapability!);
         isPaused = false;
@@ -333,6 +491,17 @@ class CopyFilesProvider with ChangeNotifier {
       _addLog('Outside allowed time window. Paused until next run window.');
       notifyListeners();
     }
+  }
+
+  /// Kills the worker isolate and cleans up its resources without touching
+  /// the outer processing state (isProcessing, scheduleTimer, etc.).
+  void _killWorker() {
+    _workerIsolate?.kill(priority: Isolate.immediate);
+    _workerIsolate = null;
+    _progressSubscription?.cancel();
+    _progressSubscription = null;
+    _receivePort?.close();
+    _receivePort = null;
   }
 
   static Future<void> _processBatch(
@@ -539,11 +708,35 @@ class CopyFilesProvider with ChangeNotifier {
   }
 
   Future<void> startProcessing() async {
-    if (sourcePath == null || destPath == null) {
-      _addLog('Error: Source or Destination not selected.');
-      await _fileLogger.error('Copy', 'Source or Destination not selected.');
+    // Auto-update quick date filters to the current day before starting
+    _applyQuickDateFilter();
+
+    // Build list of pairs to process
+    _pairsToProcess = [];
+    if (useMultipleDirectories) {
+      for (final pair in directoryPairs) {
+        if (pair.sourcePath != null && pair.destPath != null) {
+          _pairsToProcess.add(MapEntry(pair.sourcePath!, pair.destPath!));
+        }
+      }
+    } else {
+      if (sourcePath == null || destPath == null) {
+        _addLog('Error: Source or Destination not selected.');
+        await _fileLogger.error('Copy', 'Source or Destination not selected.');
+        return;
+      }
+      _pairsToProcess.add(MapEntry(sourcePath!, destPath!));
+    }
+
+    if (_pairsToProcess.isEmpty) {
+      _addLog('Error: No valid directory pairs configured.');
       return;
     }
+
+    _currentPairIndex = 0;
+    _accFilesCopied = 0;
+    _accFilesSkipped = 0;
+    _accErrors = 0;
 
     isProcessing = true;
     currentStatus = 'Scanning...';
@@ -555,11 +748,10 @@ class CopyFilesProvider with ChangeNotifier {
     notifyListeners();
 
     final dateFormat = DateFormat('dd/MM/yyyy');
-    _addLog('Starting copy process...');
-    _addLog('Source: $sourcePath');
-    _addLog('Destination: $destPath');
-    _addLog('Date range: ${dateFormat.format(fromDate)} — ${dateFormat.format(toDate)}');
-    
+    _addLog('Starting copy process... (${_pairsToProcess.length} pair(s))');
+    if (enableDateRange) {
+      _addLog('Date range: ${dateFormat.format(fromDate)} — ${dateFormat.format(toDate)}');
+    }
     if (enableTimeWindow) {
       final String formattedFrom = '${runFromTime.hour.toString().padLeft(2, '0')}:${runFromTime.minute.toString().padLeft(2, '0')}';
       final String formattedTo = '${runToTime.hour.toString().padLeft(2, '0')}:${runToTime.minute.toString().padLeft(2, '0')}';
@@ -568,43 +760,50 @@ class CopyFilesProvider with ChangeNotifier {
 
     await _fileLogger.logRunStart(
       operation: 'Copy',
-      sourcePath: sourcePath,
-      destPath: destPath,
+      sourcePath: _pairsToProcess.first.key,
+      destPath: _pairsToProcess.first.value,
     );
 
-    // Create a ReceivePort and store it so we can close it on stop
+    // Setup periodic schedule evaluation
+    _scheduleTimer?.cancel();
+    _scheduleTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _evaluateSchedule();
+    });
+
+    await _startCurrentPair();
+  }
+
+  /// Spawns an isolate for the current pair and listens for progress.
+  /// When done, advances to the next pair or finishes.
+  Future<void> _startCurrentPair() async {
+    final pair = _pairsToProcess[_currentPairIndex];
+    _addLog('--- Pair ${_currentPairIndex + 1}/${_pairsToProcess.length}: ${pair.key} → ${pair.value} ---');
+    currentStatus = 'Pair ${_currentPairIndex + 1}: Scanning...';
+    notifyListeners();
+
     _receivePort = ReceivePort();
 
     final params = _IsolateParams(
-      sourcePath: sourcePath!,
-      destPath: destPath!,
+      sourcePath: pair.key,
+      destPath: pair.value,
       enableDateRange: enableDateRange,
       fromEpochMs: fromDate.millisecondsSinceEpoch,
       toEpochMs: toDate.millisecondsSinceEpoch,
       sendPort: _receivePort!.sendPort,
     );
 
-    // Spawn the isolate
     _workerIsolate = await Isolate.spawn(_copyWorker, params);
-    
-    // Evaluate initial schedule state (this will pause it immediately if outside window)
     _evaluateSchedule();
 
-    // Setup periodic schedule evaluation
-    _scheduleTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      _evaluateSchedule();
-    });
-
-    // Listen for progress from the isolate
     _progressSubscription = _receivePort!.listen((message) async {
       if (message is _IsolateProgress) {
-        // Update stats
-        filesCopied = message.filesCopied;
-        filesSkipped = message.filesSkipped;
-        errors = message.errors;
+        // Update stats (accumulated + current pair)
+        filesCopied = _accFilesCopied + message.filesCopied;
+        filesSkipped = _accFilesSkipped + message.filesSkipped;
+        errors = _accErrors + message.errors;
 
         if (message.status != null && !isPaused) {
-          currentStatus = message.status!;
+          currentStatus = 'Pair ${_currentPairIndex + 1}: ${message.status!}';
         }
 
         if (message.logMessage != null) {
@@ -623,28 +822,38 @@ class CopyFilesProvider with ChangeNotifier {
         }
 
         if (message.done) {
-          // Log final stats
-          _addLog('Files newly copied: ${message.filesCopied}');
-          _addLog('Files skipped (already exist): ${message.filesAlreadyExist}');
-          _addLog('Files skipped (outside date filter): ${message.filesSkipped}');
-          _addLog('Errors: ${message.errors}');
+          // Accumulate this pair's stats
+          _accFilesCopied += message.filesCopied;
+          _accFilesSkipped += message.filesSkipped;
+          _accErrors += message.errors;
+          filesCopied = _accFilesCopied;
+          filesSkipped = _accFilesSkipped;
+          errors = _accErrors;
 
-          await _fileLogger.logRunEnd(
-            operation: 'Copy',
-            filesProcessed: filesCopied,
-            errors: errors,
-            wasStopped: false,
-          );
+          _addLog('Pair ${_currentPairIndex + 1} done: ${message.filesCopied} copied, ${message.filesAlreadyExist} exist, ${message.filesSkipped} skipped, ${message.errors} errors');
 
-          isProcessing = false;
-          currentStatus = 'Idle';
-          _workerIsolate = null;
-          _progressSubscription?.cancel();
-          _progressSubscription = null;
-          _receivePort?.close();
-          _receivePort = null;
-          _scheduleTimer?.cancel();
-          _scheduleTimer = null;
+          _killWorker();
+          _currentPairIndex++;
+
+          if (_currentPairIndex < _pairsToProcess.length) {
+            // Start next pair
+            await _startCurrentPair();
+          } else {
+            // All pairs finished
+            _addLog('All ${_pairsToProcess.length} pair(s) completed. Total: $filesCopied copied, $errors errors.');
+
+            await _fileLogger.logRunEnd(
+              operation: 'Copy',
+              filesProcessed: filesCopied,
+              errors: errors,
+              wasStopped: false,
+            );
+
+            isProcessing = false;
+            currentStatus = 'Idle';
+            _scheduleTimer?.cancel();
+            _scheduleTimer = null;
+          }
         }
 
         notifyListeners();
