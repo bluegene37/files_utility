@@ -146,6 +146,10 @@ class CopyFilesProvider with ChangeNotifier {
     7: false, // Sunday
   };
 
+  // Completion behavior: 'pause' = wait and re-run at next start time,
+  // 'stop' = fully stop when done.
+  String onCompletionAction = 'pause'; // 'pause' or 'stop'
+
   bool isProcessing = false;
   List<String> logs = [];
   String currentStatus = 'Idle';
@@ -161,6 +165,7 @@ class CopyFilesProvider with ChangeNotifier {
   // Pause/Schedule State
   bool isPaused = false;
   Timer? _scheduleTimer;
+  Timer? _completionRescheduleTimer;
 
   // Multi-pair processing state
   // Each entry: { 'source': ..., 'dest': ..., 'runOrder': ..., 'origIndex': ... }
@@ -238,6 +243,8 @@ class CopyFilesProvider with ChangeNotifier {
       runDays[day] = prefs.getBool('copy_runDay_$day') ?? false;
     }
 
+    onCompletionAction = prefs.getString('copy_onCompletionAction') ?? 'pause';
+
     notifyListeners();
   }
 
@@ -271,7 +278,7 @@ class CopyFilesProvider with ChangeNotifier {
     final pairsJson = jsonEncode(directoryPairs.map((p) => p.toJson()).toList());
     await prefs.setString('copy_directoryPairs', pairsJson);
 
-
+    await prefs.setString('copy_onCompletionAction', onCompletionAction);
   }
 
   void setSourcePath(String? path) {
@@ -444,10 +451,18 @@ class CopyFilesProvider with ChangeNotifier {
     }
   }
 
+  void setOnCompletionAction(String action) {
+    onCompletionAction = action;
+    _saveSettings();
+    notifyListeners();
+  }
+
   void stop() {
     _killAllWorkers();
     _scheduleTimer?.cancel();
     _scheduleTimer = null;
+    _completionRescheduleTimer?.cancel();
+    _completionRescheduleTimer = null;
     
     isPaused = false;
     currentStatus = 'Stopped by user.';
@@ -542,6 +557,39 @@ class CopyFilesProvider with ChangeNotifier {
       w.receivePort.close();
     }
     _activeWorkers.clear();
+  }
+
+  /// Schedules the next automatic run at the configured `runFromTime`.
+  /// Used when `onCompletionAction == 'pause'` to keep re-running daily.
+  void _scheduleNextRun() {
+    _completionRescheduleTimer?.cancel();
+
+    final now = DateTime.now();
+    // Determine the next run time based on runFromTime
+    DateTime nextRun = DateTime(
+      now.year, now.month, now.day,
+      runFromTime.hour, runFromTime.minute,
+    );
+
+    // If the next run time is in the past (or now), schedule for tomorrow
+    if (!nextRun.isAfter(now)) {
+      nextRun = nextRun.add(const Duration(days: 1));
+    }
+
+    final waitDuration = nextRun.difference(now);
+    final formattedNext = DateFormat('dd/MM/yyyy HH:mm').format(nextRun);
+
+    isPaused = true;
+    currentStatus = 'Completed. Next run at $formattedNext';
+    _addLog('Copy complete. Scheduled next run at $formattedNext (in ${waitDuration.inHours}h ${waitDuration.inMinutes % 60}m).');
+    notifyListeners();
+
+    _completionRescheduleTimer = Timer(waitDuration, () {
+      _completionRescheduleTimer = null;
+      _addLog('Scheduled time reached. Starting new run...');
+      isPaused = false;
+      startProcessing();
+    });
   }
 
   static Future<void> _processBatch(
@@ -960,10 +1008,18 @@ class CopyFilesProvider with ChangeNotifier {
               wasStopped: false,
             );
 
-            isProcessing = false;
-            currentStatus = 'Idle';
-            _scheduleTimer?.cancel();
-            _scheduleTimer = null;
+            if (onCompletionAction == 'pause') {
+              // Stay in processing state and wait for next run time
+              _scheduleTimer?.cancel();
+              _scheduleTimer = null;
+              _scheduleNextRun();
+            } else {
+              // 'stop' – fully stop
+              isProcessing = false;
+              currentStatus = 'Idle';
+              _scheduleTimer?.cancel();
+              _scheduleTimer = null;
+            }
           }
         }
 

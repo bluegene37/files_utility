@@ -206,6 +206,58 @@ class CopyFilesScreen extends StatelessWidget {
                         ],
                       ],
                     ),
+                    const SizedBox(height: 8),
+                    // Completion action: Pause or Stop when done
+                    Row(
+                      children: [
+                        const SizedBox(width: 30),
+                        const Text('When Complete', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(width: 12),
+                        ToggleButtons(
+                          isSelected: [
+                            provider.onCompletionAction == 'pause',
+                            provider.onCompletionAction == 'stop',
+                          ],
+                          onPressed: provider.isProcessing ? null : (index) {
+                            provider.setOnCompletionAction(index == 0 ? 'pause' : 'stop');
+                          },
+                          borderRadius: BorderRadius.circular(6),
+                          constraints: const BoxConstraints(minHeight: 30, minWidth: 80),
+                          textStyle: const TextStyle(fontSize: 12),
+                          children: const [
+                            Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.pause_circle_outline, size: 16),
+                                  SizedBox(width: 4),
+                                  Text('Pause'),
+                                ],
+                              ),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.stop_circle_outlined, size: 16),
+                                  SizedBox(width: 4),
+                                  Text('Stop'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          provider.onCompletionAction == 'pause'
+                              ? 'Will re-run at the next start time'
+                              : 'Will stop after completion',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
