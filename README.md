@@ -1,6 +1,4 @@
-# email_attachment_cleaner
-
-An Email Attachment Cleaner
+# file utilities
 
 ## Getting Started
 
