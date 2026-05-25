@@ -1,6 +1,6 @@
 {
-    "name": "email_attachment_cleaner",
-    "short_name": "email_attachment_cleaner",
+    "name": "files_utility",
+    "short_name": "files_utility",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

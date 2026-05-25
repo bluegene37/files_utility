@@ -1,4 +1,4 @@
-name: "email_attachment_cleaner"
+name: "files_utility"
 description: "A Files Utility"
 publish_to: "none"
 version: "1.0.0+1"
