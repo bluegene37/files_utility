@@ -9,8 +9,14 @@ import 'copy_files_screen.dart';
 import 'count_files_screen.dart';
 import 'history_screen.dart';
 
-class MainScreen extends StatelessWidget {
+class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
@@ -209,8 +215,8 @@ class MainScreen extends StatelessWidget {
     );
   }
 
-  void _navigateTo(BuildContext context, Widget screen) {
-    Navigator.push(
+  Future<void> _navigateTo(BuildContext context, Widget screen) async {
+    await Navigator.push(
       context,
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => screen,
@@ -229,6 +235,10 @@ class MainScreen extends StatelessWidget {
         transitionDuration: const Duration(milliseconds: 300),
       ),
     );
+    // Refresh history dashboard when returning from any sub-screen
+    if (context.mounted) {
+      context.read<HistoryProvider>().refreshHistory();
+    }
   }
 }
 
