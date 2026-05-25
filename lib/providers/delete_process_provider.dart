@@ -7,10 +7,13 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/file_logger.dart';
+import '../services/history_service.dart';
+import '../models/run_record.dart';
 
 class DeleteProcessProvider with ChangeNotifier {
   final Logger _log = Logger('DeleteProcessProvider');
   final FileLogger _fileLogger = FileLogger();
+  final NumberFormat _numFmt = NumberFormat('#,##0');
 
   String? targetPath;
   bool isProcessing = false;
@@ -113,14 +116,14 @@ class DeleteProcessProvider with ChangeNotifier {
     if (path != null) {
       targetPath = path;
       _saveSettings();
-      _addLog('Target selected: $targetPath');
+      _addLog('✓ Target selected: $targetPath');
       notifyListeners();
     }
   }
 
   void stop() {
     _stopRequested = true;
-    currentStatus = 'Stopping...';
+    currentStatus = '⛔ Stopping...';
     notifyListeners();
   }
 
@@ -132,15 +135,29 @@ class DeleteProcessProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Formats elapsed time from the file logger's tracked start time.
+  String _getElapsedStr() {
+    final start = _fileLogger.getStartTime('Delete');
+    if (start == null) return '';
+    final elapsed = DateTime.now().difference(start);
+    if (elapsed.inHours > 0) {
+      return '${elapsed.inHours}h ${elapsed.inMinutes.remainder(60)}m ${elapsed.inSeconds.remainder(60)}s';
+    } else if (elapsed.inMinutes > 0) {
+      return '${elapsed.inMinutes}m ${elapsed.inSeconds.remainder(60)}s';
+    } else {
+      return '${elapsed.inSeconds}s';
+    }
+  }
+
   Future<void> deleteFiles() async {
     if (targetPath == null) {
-      _addLog('Error: No target directory selected.');
+      _addLog('✗ Error: No target directory selected.');
       await _fileLogger.error('Delete', 'No target directory selected.');
       return;
     }
 
     if (validMonths.isEmpty) {
-      _addLog('Error: No months selected. Please select at least one month.');
+      _addLog('✗ Error: No months selected. Please select at least one month.');
       await _fileLogger.error('Delete', 'No months selected.');
       return;
     }
@@ -149,11 +166,12 @@ class DeleteProcessProvider with ChangeNotifier {
     _stopRequested = false;
     deletedCount = 0;
     errorCount = 0;
-    currentStatus = 'Starting deletion...';
+    currentStatus = '⏳ Starting deletion...';
     notifyListeners();
 
-    _addLog('Starting deletion in: $targetPath');
-    _addLog('Filter: Year $selectedYear, Months $validMonths');
+    _addLog('⏳ Starting deletion...');
+    _addLog('  Target: $targetPath');
+    _addLog('  Filter: Year $selectedYear, Months ${validMonths.join(', ')}');
 
     await _fileLogger.logRunStart(
       operation: 'Delete',
@@ -167,20 +185,21 @@ class DeleteProcessProvider with ChangeNotifier {
     try {
       final targetDir = Directory(targetPath!);
       if (!await targetDir.exists()) {
-        _addLog('Error: Target directory does not exist.');
+        _addLog('✗ Error: Target directory does not exist.');
         await _fileLogger.error('Delete', 'Target directory does not exist: $targetPath');
         return;
       }
 
       await _processDirectory(targetDir);
 
+      final elapsed = _getElapsedStr();
       if (_stopRequested) {
-        _addLog('Stopped by user.');
+        _addLog('⛔ Stopped by user. Deleted ${_numFmt.format(deletedCount)} files in $elapsed');
       } else {
-        _addLog('Deletion completed.');
+        _addLog('🏁 Deletion completed: ${_numFmt.format(deletedCount)} deleted, ${_numFmt.format(errorCount)} errors in $elapsed');
       }
     } catch (e, stack) {
-      _addLog('Critical Error: $e');
+      _addLog('✗ Critical Error: $e');
       _log.severe(e, stack);
       await _fileLogger.error('Delete', 'Critical Error: $e\n$stack');
     } finally {
@@ -190,6 +209,21 @@ class DeleteProcessProvider with ChangeNotifier {
         errors: errorCount,
         wasStopped: _stopRequested,
       );
+
+      try {
+        final start = _fileLogger.getStartTime('Delete') ?? DateTime.now();
+        await HistoryService().saveRecord(RunRecord(
+          id: _fileLogger.getRunId('Delete') ?? 'UNKNOWN',
+          operation: 'Delete',
+          startTime: start,
+          endTime: DateTime.now(),
+          filesProcessed: deletedCount,
+          errors: errorCount,
+          status: _stopRequested ? 'Stopped' : 'Completed',
+          configSummary: 'Target: $targetPath, Year: $selectedYear, Months: $validMonths',
+        ));
+      } catch (_) {}
+
       isProcessing = false;
       currentStatus = 'Idle';
       _stopTimer();
@@ -219,14 +253,14 @@ class DeleteProcessProvider with ChangeNotifier {
         if (await _isEmpty(dir)) {
           try {
             await dir.delete();
-            _addLog('Deleted empty folder: ${p.basename(dir.path)}');
+            _addLog('✓ Deleted empty folder: ${p.basename(dir.path)}');
           } catch (e) {
-            _addLog('Failed to delete folder ${p.basename(dir.path)}: $e');
+            _addLog('✗ Failed to delete folder ${p.basename(dir.path)}: $e');
           }
         }
       }
     } catch (e) {
-      _addLog('Error scanning directory: $e');
+      _addLog('✗ Error scanning directory: $e');
       await _fileLogger.error('Delete', 'Error scanning directory: $e');
       errorCount++;
     }
@@ -254,22 +288,20 @@ class DeleteProcessProvider with ChangeNotifier {
         await _deleteFile(file);
       }
     } catch (e) {
-      _addLog('Error checking ${p.basename(file.path)}: $e');
+      _addLog('✗ Error checking ${p.basename(file.path)}: $e');
       await _fileLogger.error('Delete', 'Error checking ${file.path}: $e');
       errorCount++;
     }
   }
 
-  // Previous simple _deleteFile was calling notifyListeners too often?
-  // Maybe just keep it simple.
   Future<void> _deleteFile(File file) async {
     try {
       await file.delete();
       deletedCount++;
-      _addLog('Deleted: ${p.basename(file.path)}');
+      _addLog('✓ Deleted: ${p.basename(file.path)}');
       // notifyListeners();
     } catch (e) {
-      _addLog('Failed to delete ${p.basename(file.path)}: $e');
+      _addLog('✗ Failed to delete ${p.basename(file.path)}: $e');
       await _fileLogger.error('Delete', 'Failed to delete ${file.path}: $e');
       errorCount++;
     }

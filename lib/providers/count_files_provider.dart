@@ -5,9 +5,12 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/file_logger.dart';
+import '../services/history_service.dart';
+import '../models/run_record.dart';
 
 class CountFilesProvider with ChangeNotifier {
   final FileLogger _fileLogger = FileLogger();
+  final NumberFormat _numFmt = NumberFormat('#,##0');
 
   String? targetPath;
   bool isCounting = false;
@@ -47,14 +50,14 @@ class CountFilesProvider with ChangeNotifier {
     if (path != null) {
       targetPath = path;
       _saveSettings();
-      _addLog('Target selected: $targetPath');
+      _addLog('✓ Target selected: $targetPath');
       notifyListeners();
     }
   }
 
   void stop() {
     _stopRequested = true;
-    currentStatus = 'Stopping...';
+    currentStatus = '⛔ Stopping...';
     notifyListeners();
   }
 
@@ -80,9 +83,23 @@ class CountFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Formats elapsed time from the file logger's tracked start time.
+  String _getElapsedStr() {
+    final start = _fileLogger.getStartTime('Count');
+    if (start == null) return '';
+    final elapsed = DateTime.now().difference(start);
+    if (elapsed.inHours > 0) {
+      return '${elapsed.inHours}h ${elapsed.inMinutes.remainder(60)}m ${elapsed.inSeconds.remainder(60)}s';
+    } else if (elapsed.inMinutes > 0) {
+      return '${elapsed.inMinutes}m ${elapsed.inSeconds.remainder(60)}s';
+    } else {
+      return '${elapsed.inSeconds}s';
+    }
+  }
+
   Future<void> startCounting() async {
     if (targetPath == null) {
-      _addLog('Error: No target directory selected.');
+      _addLog('✗ Error: No target directory selected.');
       return;
     }
 
@@ -91,10 +108,11 @@ class CountFilesProvider with ChangeNotifier {
     totalFiles = 0;
     totalFolders = 0;
     errors = 0;
-    currentStatus = 'Counting...';
+    currentStatus = '⏳ Counting...';
     notifyListeners();
 
-    _addLog('Starting file count in: $targetPath');
+    _addLog('⏳ Starting file count...');
+    _addLog('  Target: $targetPath');
 
     await _fileLogger.logRunStart(
       operation: 'Count',
@@ -106,20 +124,21 @@ class CountFilesProvider with ChangeNotifier {
     try {
       final targetDir = Directory(targetPath!);
       if (!await targetDir.exists()) {
-        _addLog('Error: Target directory does not exist.');
+        _addLog('✗ Error: Target directory does not exist.');
         await _fileLogger.error('Count', 'Target directory does not exist: $targetPath');
         return;
       }
 
       await _countDirectory(targetDir);
 
+      final elapsed = _getElapsedStr();
       if (_stopRequested) {
-        _addLog('Stopped by user.');
-        _addLog('Count so far — Files: $totalFiles, Folders: $totalFolders');
+        _addLog('⛔ Stopped by user.');
+        _addLog('  Count so far — Files: ${_numFmt.format(totalFiles)}, Folders: ${_numFmt.format(totalFolders)} in $elapsed');
       } else {
-        _addLog('Count completed.');
-        _addLog('Total Files: $totalFiles');
-        _addLog('Total Folders: $totalFolders');
+        _addLog('🏁 Count completed in $elapsed');
+        _addLog('  Total Files: ${_numFmt.format(totalFiles)}');
+        _addLog('  Total Folders: ${_numFmt.format(totalFolders)}');
       }
 
       await _fileLogger.info('Count', 'Total Files: $totalFiles');
@@ -128,7 +147,7 @@ class CountFilesProvider with ChangeNotifier {
         await _fileLogger.error('Count', 'Errors encountered: $errors');
       }
     } catch (e) {
-      _addLog('Critical Error: $e');
+      _addLog('✗ Critical Error: $e');
       await _fileLogger.error('Count', 'Critical Error: $e');
     } finally {
       await _fileLogger.logRunEnd(
@@ -137,6 +156,22 @@ class CountFilesProvider with ChangeNotifier {
         errors: errors,
         wasStopped: _stopRequested,
       );
+
+      try {
+        final start = _fileLogger.getStartTime('Count') ?? DateTime.now();
+        await HistoryService().saveRecord(RunRecord(
+          id: _fileLogger.getRunId('Count') ?? 'UNKNOWN',
+          operation: 'Count',
+          startTime: start,
+          endTime: DateTime.now(),
+          filesProcessed: totalFiles,
+          foldersProcessed: totalFolders,
+          errors: errors,
+          status: _stopRequested ? 'Stopped' : 'Completed',
+          configSummary: 'Target: $targetPath',
+        ));
+      } catch (_) {}
+
       isCounting = false;
       currentStatus = 'Idle';
       _stopTimer();
@@ -152,12 +187,12 @@ class CountFilesProvider with ChangeNotifier {
           totalFiles++;
         } else if (entity is Directory) {
           totalFolders++;
-          currentStatus = 'Scanning: ${entity.path}';
+          currentStatus = '⏳ Scanning: ${entity.path}';
           await _countDirectory(entity);
         }
       }
     } catch (e) {
-      _addLog('Error accessing: ${dir.path} — $e');
+      _addLog('✗ Error accessing: ${dir.path} — $e');
       await _fileLogger.error('Count', 'Error accessing: ${dir.path} — $e');
       errors++;
     }

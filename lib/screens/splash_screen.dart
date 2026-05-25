@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 import 'main_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -66,17 +67,7 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF1A1A2E),
-              Color(0xFF16213E),
-              Color(0xFF0F3460),
-            ],
-          ),
-        ),
+        decoration: AppDecorations.gradientBackground,
         child: Center(
           child: AnimatedBuilder(
             animation: _controller,
@@ -100,7 +91,7 @@ class _SplashScreenState extends State<SplashScreen>
                     borderRadius: BorderRadius.circular(32),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF14CCCC).withValues(alpha: 0.3),
+                        color: AppColors.accent.withValues(alpha: 0.3),
                         blurRadius: 40,
                         spreadRadius: 5,
                       ),
@@ -121,7 +112,7 @@ class _SplashScreenState extends State<SplashScreen>
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: AppColors.textPrimary,
                     letterSpacing: 1.2,
                   ),
                 ),
@@ -130,7 +121,16 @@ class _SplashScreenState extends State<SplashScreen>
                   'Manage your files and transfers with ease',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.white.withValues(alpha: 0.6),
+                    color: AppColors.textSecondary.withValues(alpha: 0.7),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'v1.0.0',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted.withValues(alpha: 0.5),
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -142,7 +142,7 @@ class _SplashScreenState extends State<SplashScreen>
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      const Color(0xFF14CCCC).withValues(alpha: 0.8),
+                      AppColors.accent.withValues(alpha: 0.8),
                     ),
                   ),
                 ),

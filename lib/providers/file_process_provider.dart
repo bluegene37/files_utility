@@ -6,11 +6,14 @@ import 'package:intl/intl.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import '../services/file_logger.dart';
+import '../services/history_service.dart';
+import '../models/run_record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FileProcessProvider with ChangeNotifier {
   final Logger _log = Logger('FileProcessProvider');
   final FileLogger _fileLogger = FileLogger();
+  final NumberFormat _numFmt = NumberFormat('#,##0');
 
   // State
   String? sourcePath;
@@ -93,6 +96,16 @@ class FileProcessProvider with ChangeNotifier {
   Timer? _scheduleTimer;
   Timer? _completionRescheduleTimer;
   Completer<void>? _pauseCompleter;
+
+  // Performance: cache for _hasSubdirectories results
+  final Map<String, bool> _subdirCache = {};
+
+  // Performance: cache for created destination directories
+  final Set<String> _createdDirs = {};
+
+  // Performance: throttle _saveProgress calls
+  int _filesSinceLastSave = 0;
+  static const int _saveProgressInterval = 20;
 
   FileProcessProvider() {
     _loadSettings();
@@ -191,7 +204,7 @@ class FileProcessProvider with ChangeNotifier {
     await prefs.remove('lastProcessedChild');
     lastProcessedParent = null;
     lastProcessedChild = null;
-    _addLog('Progress cleared.');
+    _addLog('✓ Progress cleared.');
     notifyListeners();
   }
 
@@ -340,8 +353,8 @@ class FileProcessProvider with ChangeNotifier {
     if (inWindow && isPaused) {
       // Resume
       isPaused = false;
-      currentStatus = 'Processing...';
-      _addLog('Time window reached. Resuming transfer...');
+      currentStatus = '⏳ Processing...';
+      _addLog('⏳ Time window reached. Resuming transfer...');
       notifyListeners();
       // Complete the pause completer to unblock the processing loop
       if (_pauseCompleter != null && !_pauseCompleter!.isCompleted) {
@@ -351,8 +364,8 @@ class FileProcessProvider with ChangeNotifier {
       // Pause
       isPaused = true;
       _pauseCompleter = Completer<void>();
-      currentStatus = 'Waiting for time window...';
-      _addLog('Outside allowed time window. Paused until next run window.');
+      currentStatus = '⏸ Waiting for time window...';
+      _addLog('⏸ Outside allowed time window. Paused until next run window.');
       notifyListeners();
     }
   }
@@ -384,13 +397,13 @@ class FileProcessProvider with ChangeNotifier {
     final formattedNext = DateFormat('dd/MM/yyyy HH:mm').format(nextRun);
 
     isPaused = true;
-    currentStatus = 'Completed. Next run at $formattedNext';
-    _addLog('Transfer complete. Scheduled next run at $formattedNext (in ${waitDuration.inHours}h ${waitDuration.inMinutes % 60}m).');
+    currentStatus = '🏁 Completed. Next run at $formattedNext';
+    _addLog('🏁 Transfer complete. Scheduled next run at $formattedNext (in ${waitDuration.inHours}h ${waitDuration.inMinutes % 60}m).');
     notifyListeners();
 
     _completionRescheduleTimer = Timer(waitDuration, () {
       _completionRescheduleTimer = null;
-      _addLog('Scheduled time reached. Starting new run...');
+      _addLog('⏳ Scheduled time reached. Starting new run...');
       isPaused = false;
       startProcessing();
     });
@@ -409,13 +422,27 @@ class FileProcessProvider with ChangeNotifier {
     }
 
     isPaused = false;
-    currentStatus = 'Stopping...';
+    currentStatus = '⛔ Stopping...';
     notifyListeners();
+  }
+
+  /// Formats elapsed time from the file logger's tracked start time.
+  String _getElapsedStr() {
+    final start = _fileLogger.getStartTime('Transfer');
+    if (start == null) return '';
+    final elapsed = DateTime.now().difference(start);
+    if (elapsed.inHours > 0) {
+      return '${elapsed.inHours}h ${elapsed.inMinutes.remainder(60)}m ${elapsed.inSeconds.remainder(60)}s';
+    } else if (elapsed.inMinutes > 0) {
+      return '${elapsed.inMinutes}m ${elapsed.inSeconds.remainder(60)}s';
+    } else {
+      return '${elapsed.inSeconds}s';
+    }
   }
 
   Future<void> startProcessing() async {
     if (sourcePath == null || destPath == null) {
-      _addLog('Error: Source or Destination not selected.');
+      _addLog('✗ Error: Source or Destination not selected.');
       await _fileLogger.error('Transfer', 'Source or Destination not selected.');
       return;
     }
@@ -425,16 +452,19 @@ class FileProcessProvider with ChangeNotifier {
     isPaused = false;
     filesMoved = 0;
     errors = 0;
+    _subdirCache.clear();
+    _createdDirs.clear();
+    _filesSinceLastSave = 0;
     notifyListeners();
 
-    _addLog('Starting processing...');
-    _addLog('Source: $sourcePath');
-    _addLog('Destination: $destPath');
-    _addLog('Filter: Year $selectedYear, Months $validMonths');
+    _addLog('⏳ Starting transfer...');
+    _addLog('  Source: $sourcePath');
+    _addLog('  Destination: $destPath');
+    _addLog('  Filter: Year $selectedYear, Months ${validMonths.join(', ')}');
     if (enableTimeWindow) {
       final String formattedFrom = '${runFromTime.hour.toString().padLeft(2, '0')}:${runFromTime.minute.toString().padLeft(2, '0')}';
       final String formattedTo = '${runToTime.hour.toString().padLeft(2, '0')}:${runToTime.minute.toString().padLeft(2, '0')}';
-      _addLog('Run window bounds: $formattedFrom to $formattedTo');
+      _addLog('  Run window: $formattedFrom – $formattedTo');
     }
 
     await _fileLogger.logRunStart(
@@ -447,7 +477,7 @@ class FileProcessProvider with ChangeNotifier {
 
     if (lastProcessedParent != null) {
       _addLog(
-        'Resuming from Parent: [$lastProcessedParent], Child: [$lastProcessedChild]',
+        '⏳ Resuming from Parent: [$lastProcessedParent], Child: [$lastProcessedChild]',
       );
       await _fileLogger.info('Transfer', 'Resuming from Parent: [$lastProcessedParent], Child: [$lastProcessedChild]');
     }
@@ -462,8 +492,8 @@ class FileProcessProvider with ChangeNotifier {
     if (!_isCurrentlyInTimeWindow()) {
       isPaused = true;
       _pauseCompleter = Completer<void>();
-      currentStatus = 'Waiting for time window...';
-      _addLog('Outside allowed time window. Waiting to start...');
+      currentStatus = '⏸ Waiting for time window...';
+      _addLog('⏸ Outside allowed time window. Waiting to start...');
       notifyListeners();
       // Wait until schedule timer resumes us
       await _pauseCompleter!.future;
@@ -478,7 +508,7 @@ class FileProcessProvider with ChangeNotifier {
     try {
       final sourceDir = Directory(sourcePath!);
       if (!await sourceDir.exists()) {
-        _addLog('Error: Source directory does not exist.');
+        _addLog('✗ Error: Source directory does not exist.');
         await _fileLogger.error('Transfer', 'Source directory does not exist: $sourcePath');
         return;
       }
@@ -486,12 +516,13 @@ class FileProcessProvider with ChangeNotifier {
       await _processDirectory(sourceDir);
 
       if (_stopRequested) {
-        _addLog('Stopped by user.');
+        _addLog('⛔ Stopped by user.');
       } else {
-        _addLog('Completed successfully. $filesMoved moved, $errors errors.');
+        final elapsed = _getElapsedStr();
+        _addLog('🏁 Completed: ${_numFmt.format(filesMoved)} moved, ${_numFmt.format(errors)} errors in $elapsed');
       }
     } catch (e, stack) {
-      _addLog('Critical Error: $e');
+      _addLog('✗ Critical Error: $e');
       _log.severe(e, stack);
       await _fileLogger.error('Transfer', 'Critical Error: $e\n$stack');
     } finally {
@@ -501,9 +532,26 @@ class FileProcessProvider with ChangeNotifier {
         errors: errors,
         wasStopped: _stopRequested,
       );
+      
+      try {
+        final start = _fileLogger.getStartTime('Transfer') ?? DateTime.now();
+        await HistoryService().saveRecord(RunRecord(
+          id: _fileLogger.getRunId('Transfer') ?? 'UNKNOWN',
+          operation: 'Transfer',
+          startTime: start,
+          endTime: DateTime.now(),
+          filesProcessed: filesMoved,
+          errors: errors,
+          status: _stopRequested ? 'Stopped' : 'Completed',
+          configSummary: 'Source: $sourcePath, Dest: $destPath',
+        ));
+      } catch (_) {}
+
       _stopTimer();
       _scheduleTimer?.cancel();
       _scheduleTimer = null;
+      _subdirCache.clear();
+      _createdDirs.clear();
 
       if (!_stopRequested && onCompletionAction == 'pause') {
         // Stay in processing state and schedule next run
@@ -512,7 +560,7 @@ class FileProcessProvider with ChangeNotifier {
         // 'stop' or user-stopped → fully stop
         isProcessing = false;
         isPaused = false;
-        currentStatus = _stopRequested ? 'Stopped by user.' : 'Idle';
+        currentStatus = _stopRequested ? '⛔ Stopped by user.' : 'Idle';
         _completionRescheduleTimer?.cancel();
         _completionRescheduleTimer = null;
       }
@@ -530,9 +578,11 @@ class FileProcessProvider with ChangeNotifier {
     );
     isProcessing = false;
     isPaused = false;
-    currentStatus = 'Stopped by user.';
-    _addLog('Stopped by user.');
+    currentStatus = '⛔ Stopped by user.';
+    _addLog('⛔ Stopped by user.');
     _stopTimer();
+    _subdirCache.clear();
+    _createdDirs.clear();
     notifyListeners();
   }
 
@@ -564,7 +614,7 @@ class FileProcessProvider with ChangeNotifier {
         }
       }
 
-      currentStatus = 'Processing Parent: $parentName';
+      currentStatus = '⏳ Processing: $parentName';
       // notifyListeners(); // Throttled
 
       await _processSubDirectories(entity, parentName);
@@ -607,12 +657,19 @@ class FileProcessProvider with ChangeNotifier {
         }
       }
 
-      currentStatus = 'Scanning: $parentName / $childName';
+      currentStatus = '⏳ Scanning: $parentName / $childName';
       // Don't notify on every single folder scan to avoid UI stutter, maybe throttle?
 
-      // Save progress *before* processing? Or after?
-      // Script saved `startChildIndex = lNo2` at start of loop.
-      await _saveProgress(parentName, childName);
+      // Throttle progress saves to every N files
+      _filesSinceLastSave++;
+      if (_filesSinceLastSave >= _saveProgressInterval) {
+        await _saveProgress(parentName, childName);
+        _filesSinceLastSave = 0;
+      } else {
+        // Still update in-memory for resume tracking
+        lastProcessedParent = parentName;
+        lastProcessedChild = childName;
+      }
 
       await _processFiles(entity);
     }
@@ -639,7 +696,7 @@ class FileProcessProvider with ChangeNotifier {
         // This implies we only care about files in directories that have no subdirectories.
         // This is a specific constraint.
 
-        // To check this efficiently:
+        // To check this efficiently (now cached):
         Directory fileParent = entity.parent;
         if (await _hasSubdirectories(fileParent)) {
           continue; // Skip files in non-leaf directories
@@ -650,16 +707,26 @@ class FileProcessProvider with ChangeNotifier {
     }
   }
 
+  /// Cached check for whether a directory has subdirectories.
   Future<bool> _hasSubdirectories(Directory dir) async {
-    // Quick check if dir has any subdir
+    final key = dir.path;
+    if (_subdirCache.containsKey(key)) {
+      return _subdirCache[key]!;
+    }
+
+    bool hasSubdirs = false;
     try {
       await for (final entity in dir.list(recursive: false)) {
-        if (entity is Directory) return true;
+        if (entity is Directory) {
+          hasSubdirs = true;
+          break;
+        }
       }
     } catch (e) {
       // Access denied or gone
     }
-    return false;
+    _subdirCache[key] = hasSubdirs;
+    return hasSubdirs;
   }
 
   Future<void> _checkAndMoveFile(File file) async {
@@ -677,7 +744,7 @@ class FileProcessProvider with ChangeNotifier {
         await _moveFile(file, yearStr, monthStr);
       }
     } catch (e) {
-      _addLog('Error accessing ${file.path}: $e');
+      _addLog('✗ Error accessing ${file.path}: $e');
       await _fileLogger.error('Transfer', 'Error accessing ${file.path}: $e');
       errors++;
     }
@@ -726,20 +793,21 @@ class FileProcessProvider with ChangeNotifier {
       String destDir = p.join(destPath!, year, relativePath);
       String destFilePath = p.join(destDir, p.basename(file.path));
 
-      Directory(destDir).createSync(recursive: true);
+      // Cached directory creation
+      if (!_createdDirs.contains(destDir)) {
+        await Directory(destDir).create(recursive: true);
+        _createdDirs.add(destDir);
+      }
 
-      // Move
-      // file.renameSync fails across volumes (e.g. C: to Network Share).
-      // Safe move: copy then delete.
+      // Move: copy then delete (safe for cross-volume moves)
+      await file.copy(destFilePath);
+      await file.delete();
 
-      file.copySync(destFilePath);
-      file.deleteSync();
-
-      _addLog('Moved [$month-$year]: ${p.basename(file.path)}');
+      _addLog('✓ Moved [$month-$year]: ${p.basename(file.path)}');
       filesMoved++;
       // notifyListeners(); // Throttled
     } catch (e) {
-      _addLog('Failed to move ${file.path}: $e');
+      _addLog('✗ Failed to move ${file.path}: $e');
       await _fileLogger.error('Transfer', 'Failed to move ${file.path}: $e');
       errors++;
     }

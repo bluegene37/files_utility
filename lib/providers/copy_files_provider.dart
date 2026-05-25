@@ -9,6 +9,8 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/file_logger.dart';
+import '../services/history_service.dart';
+import '../models/run_record.dart';
 
 /// Message sent FROM the background isolate TO the main isolate.
 class _IsolateProgress {
@@ -105,9 +107,37 @@ class _ActiveWorker {
   });
 }
 
+/// Semaphore for controlling concurrent copy operations.
+class _Semaphore {
+  final int maxConcurrent;
+  int _current = 0;
+  final List<Completer<void>> _waiters = [];
+
+  _Semaphore(this.maxConcurrent);
+
+  Future<void> acquire() async {
+    if (_current < maxConcurrent) {
+      _current++;
+      return;
+    }
+    final completer = Completer<void>();
+    _waiters.add(completer);
+    await completer.future;
+    _current++;
+  }
+
+  void release() {
+    _current--;
+    if (_waiters.isNotEmpty) {
+      _waiters.removeAt(0).complete();
+    }
+  }
+}
+
 class CopyFilesProvider with ChangeNotifier {
   final Logger _log = Logger('CopyFilesProvider');
   final FileLogger _fileLogger = FileLogger();
+  final NumberFormat _numFmt = NumberFormat('#,##0');
 
   // State
   String? sourcePath;
@@ -186,6 +216,20 @@ class CopyFilesProvider with ChangeNotifier {
     final timestamp = DateFormat('HH:mm:ss').format(DateTime.now());
     logs.insert(0, '[$timestamp] $message');
     if (logs.length > 1000) logs.removeLast();
+  }
+
+  /// Formats elapsed time from the file logger's tracked start time.
+  String _getElapsedStr() {
+    final start = _fileLogger.getStartTime('Copy');
+    if (start == null) return '';
+    final elapsed = DateTime.now().difference(start);
+    if (elapsed.inHours > 0) {
+      return '${elapsed.inHours}h ${elapsed.inMinutes.remainder(60)}m ${elapsed.inSeconds.remainder(60)}s';
+    } else if (elapsed.inMinutes > 0) {
+      return '${elapsed.inMinutes}m ${elapsed.inSeconds.remainder(60)}s';
+    } else {
+      return '${elapsed.inSeconds}s';
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -465,8 +509,8 @@ class CopyFilesProvider with ChangeNotifier {
     _completionRescheduleTimer = null;
     
     isPaused = false;
-    currentStatus = 'Stopped by user.';
-    _addLog('Stopped by user.');
+    currentStatus = '⛔ Stopped by user.';
+    _addLog('⛔ Stopped by user.');
     isProcessing = false;
     notifyListeners();
 
@@ -476,6 +520,20 @@ class CopyFilesProvider with ChangeNotifier {
       errors: errors,
       wasStopped: true,
     );
+
+    try {
+      final start = _fileLogger.getStartTime('Copy') ?? DateTime.now();
+      HistoryService().saveRecord(RunRecord(
+        id: _fileLogger.getRunId('Copy') ?? 'UNKNOWN',
+        operation: 'Copy',
+        startTime: start,
+        endTime: DateTime.now(),
+        filesProcessed: filesCopied,
+        errors: errors,
+        status: 'Stopped',
+        configSummary: 'Pairs: ${_pairsToProcess.length}, Dest: ${destPath ?? "Multiple"}',
+      ));
+    } catch (_) {}
   }
 
   bool _isCurrentlyInTimeWindow() {
@@ -514,7 +572,7 @@ class CopyFilesProvider with ChangeNotifier {
       // If quick date filters are active, the dates may be stale after an
       // overnight pause.  Kill the old isolates and restart with fresh dates.
       if (todayOnly || yesterdayOnly) {
-        _addLog('Time window reached. Restarting with updated dates...');
+        _addLog('⏳ Time window reached. Restarting with updated dates...');
         _killAllWorkers();
         isPaused = false;
         // startProcessing will call _applyQuickDateFilter() and spawn new isolates.
@@ -526,8 +584,8 @@ class CopyFilesProvider with ChangeNotifier {
         // Workers haven't been spawned yet (started outside the time window).
         // Now that we're inside the window, spawn them.
         isPaused = false;
-        currentStatus = 'Copying...';
-        _addLog('Time window reached. Starting copy...');
+        currentStatus = '⏳ Copying...';
+        _addLog('⏳ Time window reached. Starting copy...');
         notifyListeners();
         _startCurrentGroup();
         return;
@@ -541,8 +599,8 @@ class CopyFilesProvider with ChangeNotifier {
         }
       }
       isPaused = false;
-      currentStatus = 'Copying...';
-      _addLog('Time window reached. Resuming copy...');
+      currentStatus = '⏳ Copying...';
+      _addLog('⏳ Time window reached. Resuming copy...');
       notifyListeners();
     } else if (!inWindow && !isPaused) {
       if (_activeWorkers.isEmpty) return; // Nothing to pause yet
@@ -554,8 +612,8 @@ class CopyFilesProvider with ChangeNotifier {
         }
       }
       isPaused = true;
-      currentStatus = 'Waiting for time window...';
-      _addLog('Outside allowed time window. Paused until next run window.');
+      currentStatus = '⏸ Waiting for time window...';
+      _addLog('⏸ Outside allowed time window. Paused until next run window.');
       notifyListeners();
     }
   }
@@ -592,31 +650,35 @@ class CopyFilesProvider with ChangeNotifier {
     final formattedNext = DateFormat('dd/MM/yyyy HH:mm').format(nextRun);
 
     isPaused = true;
-    currentStatus = 'Completed. Next run at $formattedNext';
-    _addLog('Copy complete. Scheduled next run at $formattedNext (in ${waitDuration.inHours}h ${waitDuration.inMinutes % 60}m).');
+    currentStatus = '🏁 Completed. Next run at $formattedNext';
+    _addLog('🏁 Copy complete. Scheduled next run at $formattedNext (in ${waitDuration.inHours}h ${waitDuration.inMinutes % 60}m).');
     notifyListeners();
 
     _completionRescheduleTimer = Timer(waitDuration, () {
       _completionRescheduleTimer = null;
-      _addLog('Scheduled time reached. Starting new run...');
+      _addLog('⏳ Scheduled time reached. Starting new run...');
       isPaused = false;
       startProcessing();
     });
   }
 
+  /// Process a batch of copy tasks with controlled concurrency (max 6 parallel).
   static Future<void> _processBatch(
     List<_CopyTask> batch,
     _IsolateParams params,
     _CountState counts,
   ) async {
+    final semaphore = _Semaphore(6); // Max 6 concurrent network copies
+
     final futures = batch.map((task) async {
+      await semaphore.acquire();
       try {
         await task.source.copy(task.destFilePath);
         counts.filesCopied++;
 
         if (counts.filesCopied % 10 == 0) {
           params.sendPort.send(_IsolateProgress(
-            logMessage: 'Copied: ${p.basename(task.source.path)}',
+            logMessage: '✓ Copied: ${p.basename(task.source.path)}',
             status: 'Copying: ${p.basename(task.source.path)}',
             filesCopied: counts.filesCopied,
             filesSkipped: counts.filesSkipped,
@@ -627,12 +689,14 @@ class CopyFilesProvider with ChangeNotifier {
       } catch (e) {
         counts.errors++;
         params.sendPort.send(_IsolateProgress(
-          errorMessage: 'Failed to copy ${p.basename(task.source.path)}: $e',
+          errorMessage: '✗ Failed to copy ${p.basename(task.source.path)}: $e',
           errors: counts.errors,
           filesCopied: counts.filesCopied,
           filesSkipped: counts.filesSkipped,
           filesAlreadyExist: counts.filesAlreadyExist,
         ));
+      } finally {
+        semaphore.release();
       }
     });
 
@@ -653,7 +717,7 @@ class CopyFilesProvider with ChangeNotifier {
     } catch (e) {
       counts.errors++;
       params.sendPort.send(_IsolateProgress(
-        errorMessage: 'Cannot access: ${dir.path} ($e)',
+        errorMessage: '✗ Cannot access: ${dir.path} ($e)',
         errors: counts.errors,
         filesCopied: counts.filesCopied,
         filesSkipped: counts.filesSkipped,
@@ -666,7 +730,7 @@ class CopyFilesProvider with ChangeNotifier {
 
     if (counts.directoriesScanned % 20 == 0) {
       params.sendPort.send(_IsolateProgress(
-        status: 'Scanning: ${p.basename(dir.path)}',
+        status: '⏳ Scanning: ${p.basename(dir.path)}',
         filesCopied: counts.filesCopied,
         filesSkipped: counts.filesSkipped,
         filesAlreadyExist: counts.filesAlreadyExist,
@@ -733,7 +797,7 @@ class CopyFilesProvider with ChangeNotifier {
         } catch (e) {
           counts.errors++;
           params.sendPort.send(_IsolateProgress(
-            errorMessage: 'Failed to inspect/copy ${p.basename(entity.path)}: $e',
+            errorMessage: '✗ Failed to inspect ${p.basename(entity.path)}: $e',
             errors: counts.errors,
             filesCopied: counts.filesCopied,
             filesSkipped: counts.filesSkipped,
@@ -744,7 +808,8 @@ class CopyFilesProvider with ChangeNotifier {
 
       await Future.wait(futures);
 
-      if (batch.length >= 20) {
+      // Flush the batch when it reaches 50 tasks
+      if (batch.length >= 50) {
          final tasksToRun = List<_CopyTask>.from(batch);
          batch.clear();
          await _processBatch(tasksToRun, params, counts);
@@ -770,7 +835,7 @@ class CopyFilesProvider with ChangeNotifier {
       final sourceDir = Directory(params.sourcePath);
       if (!sourceDir.existsSync()) {
         params.sendPort.send(_IsolateProgress(
-          errorMessage: 'Error: Source directory does not exist.',
+          errorMessage: '✗ Error: Source directory does not exist.',
           done: true,
           errors: 1,
         ));
@@ -786,7 +851,7 @@ class CopyFilesProvider with ChangeNotifier {
       }
 
       params.sendPort.send(_IsolateProgress(
-        logMessage: 'Copy completed successfully.',
+        logMessage: '🏁 Copy completed successfully.',
         status: 'Done',
         done: true,
         filesCopied: counts.filesCopied,
@@ -796,7 +861,7 @@ class CopyFilesProvider with ChangeNotifier {
       ));
     } catch (e) {
       params.sendPort.send(_IsolateProgress(
-        logMessage: 'Critical Error: $e',
+        logMessage: '✗ Critical Error: $e',
         criticalError: e.toString(),
         done: true,
         filesCopied: counts.filesCopied,
@@ -827,7 +892,7 @@ class CopyFilesProvider with ChangeNotifier {
       }
     } else {
       if (sourcePath == null || destPath == null) {
-        _addLog('Error: Source or Destination not selected.');
+        _addLog('✗ Error: Source or Destination not selected.');
         await _fileLogger.error('Copy', 'Source or Destination not selected.');
         return;
       }
@@ -840,7 +905,7 @@ class CopyFilesProvider with ChangeNotifier {
     }
 
     if (_pairsToProcess.isEmpty) {
-      _addLog('Error: No valid directory pairs configured.');
+      _addLog('✗ Error: No valid directory pairs configured.');
       return;
     }
 
@@ -853,7 +918,7 @@ class CopyFilesProvider with ChangeNotifier {
     _pairStats.clear();
 
     isProcessing = true;
-    currentStatus = 'Scanning...';
+    currentStatus = '⏳ Scanning...';
     filesCopied = 0;
     filesSkipped = 0;
     errors = 0;
@@ -861,14 +926,14 @@ class CopyFilesProvider with ChangeNotifier {
     notifyListeners();
 
     final dateFormat = DateFormat('dd/MM/yyyy');
-    _addLog('Starting copy process... (${_pairsToProcess.length} pair(s), ${_runOrderGroups.length} group(s))');
+    _addLog('⏳ Starting copy process... (${_pairsToProcess.length} pair(s), ${_runOrderGroups.length} group(s))');
     if (enableDateRange) {
-      _addLog('Date range: ${dateFormat.format(fromDate)} — ${dateFormat.format(toDate)}');
+      _addLog('  Date range: ${dateFormat.format(fromDate)} — ${dateFormat.format(toDate)}');
     }
     if (enableTimeWindow) {
       final String formattedFrom = '${runFromTime.hour.toString().padLeft(2, '0')}:${runFromTime.minute.toString().padLeft(2, '0')}';
       final String formattedTo = '${runToTime.hour.toString().padLeft(2, '0')}:${runToTime.minute.toString().padLeft(2, '0')}';
-      _addLog('Run window bounds: $formattedFrom to $formattedTo');
+      _addLog('  Run window: $formattedFrom – $formattedTo');
     }
 
     await _fileLogger.logRunStart(
@@ -888,8 +953,8 @@ class CopyFilesProvider with ChangeNotifier {
     // workers when the window opens.
     if (!_isCurrentlyInTimeWindow()) {
       isPaused = true;
-      currentStatus = 'Waiting for time window...';
-      _addLog('Outside allowed time window. Waiting to start...');
+      currentStatus = '⏸ Waiting for time window...';
+      _addLog('⏸ Outside allowed time window. Waiting to start...');
       notifyListeners();
       return;
     }
@@ -922,8 +987,8 @@ class CopyFilesProvider with ChangeNotifier {
       }
     }
     _pairsCompletedInGroup = 0;
-    _addLog('=== Starting Run Order $currentOrder (${groupPairs.length} pair(s)) ===');
-    currentStatus = 'Run Order $currentOrder: Starting...';
+    _addLog('═══ Starting Run Order $currentOrder (${groupPairs.length} pair(s)) ═══');
+    currentStatus = '⏳ Run Order $currentOrder: Starting...';
     notifyListeners();
 
     for (final idx in groupPairs) {
@@ -939,11 +1004,11 @@ class CopyFilesProvider with ChangeNotifier {
     final dest = pairData['dest'] as String;
     final origIdx = pairData['origIndex'] as int;
     final runOrder = pairData['runOrder'] as int;
-    _addLog('--- Pair ${origIdx + 1} (Order $runOrder): $source → $dest ---');
+    _addLog('── Pair ${origIdx + 1} (Order $runOrder): $source → $dest');
     if (_activeWorkers.isEmpty) {
-      currentStatus = 'Pair ${origIdx + 1}: Scanning...';
+      currentStatus = '⏳ Pair ${origIdx + 1}: Scanning...';
     } else {
-      currentStatus = 'Running ${_activeWorkers.length + 1} pair(s) (Order $runOrder)...';
+      currentStatus = '⏳ Running ${_activeWorkers.length + 1} pair(s) (Order $runOrder)...';
     }
     _pairStats[pairIndex] = [0, 0, 0]; // [copied, skipped, errors]
     notifyListeners();
@@ -996,7 +1061,7 @@ class CopyFilesProvider with ChangeNotifier {
         }
 
         if (message.done) {
-          _addLog('[P${origIdx + 1}] Done: ${message.filesCopied} copied, ${message.filesAlreadyExist} exist, ${message.filesSkipped} skipped, ${message.errors} errors');
+          _addLog('[P${origIdx + 1}] 🏁 Done: ${_numFmt.format(message.filesCopied)} copied, ${_numFmt.format(message.filesAlreadyExist)} exist, ${_numFmt.format(message.filesSkipped)} skipped, ${_numFmt.format(message.errors)} errors');
 
           // Clean up this worker
           worker.isolate.kill(priority: Isolate.immediate);
@@ -1012,7 +1077,7 @@ class CopyFilesProvider with ChangeNotifier {
           final currentOrder = _runOrderGroups[_currentGroupIndex];
           final groupSize = _pairsToProcess.where((p) => p['runOrder'] == currentOrder).length;
           if (_pairsCompletedInGroup >= groupSize) {
-            _addLog('=== Run Order $currentOrder complete ===');
+            _addLog('═══ Run Order $currentOrder complete ═══');
             _currentGroupIndex++;
             if (_currentGroupIndex < _runOrderGroups.length) {
               // Start next group
@@ -1022,7 +1087,8 @@ class CopyFilesProvider with ChangeNotifier {
 
           // Check if ALL pairs are finished
           if (_totalPairsCompleted >= _pairsToProcess.length) {
-            _addLog('All ${_pairsToProcess.length} pair(s) completed. Total: $filesCopied copied, $errors errors.');
+            final elapsed = _getElapsedStr();
+            _addLog('🏁 All ${_pairsToProcess.length} pair(s) completed. Total: ${_numFmt.format(filesCopied)} copied, ${_numFmt.format(errors)} errors in $elapsed');
 
             await _fileLogger.logRunEnd(
               operation: 'Copy',
@@ -1030,6 +1096,20 @@ class CopyFilesProvider with ChangeNotifier {
               errors: errors,
               wasStopped: false,
             );
+
+            try {
+              final start = _fileLogger.getStartTime('Copy') ?? DateTime.now();
+              await HistoryService().saveRecord(RunRecord(
+                id: _fileLogger.getRunId('Copy') ?? 'UNKNOWN',
+                operation: 'Copy',
+                startTime: start,
+                endTime: DateTime.now(),
+                filesProcessed: filesCopied,
+                errors: errors,
+                status: 'Completed',
+                configSummary: 'Pairs: ${_pairsToProcess.length}, Dest: ${destPath ?? "Multiple"}',
+              ));
+            } catch (_) {}
 
             if (onCompletionAction == 'pause') {
               // Stay in processing state and wait for next run time

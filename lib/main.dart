@@ -5,6 +5,8 @@ import 'providers/file_process_provider.dart';
 import 'providers/delete_process_provider.dart';
 import 'providers/copy_files_provider.dart';
 import 'providers/count_files_provider.dart';
+import 'providers/history_provider.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const MyApp());
@@ -17,6 +19,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => HistoryProvider()),
         ChangeNotifierProvider(create: (_) => FileProcessProvider()),
         ChangeNotifierProvider(create: (_) => DeleteProcessProvider()),
         ChangeNotifierProvider(create: (_) => CopyFilesProvider()),
@@ -25,10 +28,7 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Files Utility',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-          useMaterial3: true,
-        ),
+        theme: AppTheme.darkTheme,
         home: const SplashScreen(),
       ),
     );
