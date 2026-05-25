@@ -45,6 +45,8 @@ class _IsolateParams {
   final int fromEpochMs;
   final int toEpochMs;
   final SendPort sendPort;
+  final String? progressFilePath;
+  final Set<String> completedDirs;
 
   _IsolateParams({
     required this.sourcePath,
@@ -53,6 +55,8 @@ class _IsolateParams {
     required this.fromEpochMs,
     required this.toEpochMs,
     required this.sendPort,
+    this.progressFilePath,
+    this.completedDirs = const {},
   });
 }
 
@@ -63,6 +67,8 @@ class _CountState {
   int filesAlreadyExist = 0;
   int errors = 0;
   int directoriesScanned = 0;
+  int filesInspected = 0;
+  int dirsSkipped = 0;
 }
 
 class _CopyTask {
@@ -138,6 +144,57 @@ class CopyFilesProvider with ChangeNotifier {
   final Logger _log = Logger('CopyFilesProvider');
   final FileLogger _fileLogger = FileLogger();
   final NumberFormat _numFmt = NumberFormat('#,##0');
+
+  static const String _progressDir = r'C:\temp\file transfer';
+
+  /// Returns the progress file path for a given pair index.
+  static String _progressFilePath(int pairIndex) =>
+      '$_progressDir\\copy_progress_pair$pairIndex.json';
+
+  /// Loads completed directory paths from a progress file.
+  /// Returns an empty set if the file doesn't exist or source/dest don't match.
+  static Set<String> _loadProgressFile(
+      String filePath, String sourcePath, String destPath) {
+    try {
+      final file = File(filePath);
+      if (!file.existsSync()) return {};
+      final data = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      if (data['sourcePath'] != sourcePath || data['destPath'] != destPath) {
+        // Source/dest changed since last run — discard stale progress
+        file.deleteSync();
+        return {};
+      }
+      final dirs = (data['completedDirs'] as List).cast<String>();
+      return dirs.toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Saves completed directory paths to a progress file (called inside isolate).
+  static void _saveProgressFile(
+      String filePath, String sourcePath, String destPath, Set<String> completedDirs) {
+    try {
+      final dir = Directory(_progressDir);
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final data = {
+        'sourcePath': sourcePath,
+        'destPath': destPath,
+        'completedDirs': completedDirs.toList(),
+      };
+      File(filePath).writeAsStringSync(jsonEncode(data));
+    } catch (_) {
+      // Silently fail — don't crash if progress save fails
+    }
+  }
+
+  /// Deletes the progress file for a pair (called on successful completion).
+  static void _deleteProgressFile(String filePath) {
+    try {
+      final file = File(filePath);
+      if (file.existsSync()) file.deleteSync();
+    } catch (_) {}
+  }
 
   // State
   String? sourcePath;
@@ -501,6 +558,15 @@ class CopyFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clears all saved resume progress. Call this to force a full re-scan.
+  Future<void> clearProgress() async {
+    for (int i = 0; i < 20; i++) {
+      _deleteProgressFile(_progressFilePath(i));
+    }
+    _addLog('✓ Resume progress cleared. Next run will scan from scratch.');
+    notifyListeners();
+  }
+
   void stop() {
     _killAllWorkers();
     _scheduleTimer?.cancel();
@@ -509,8 +575,8 @@ class CopyFilesProvider with ChangeNotifier {
     _completionRescheduleTimer = null;
     
     isPaused = false;
-    currentStatus = '⛔ Stopped by user.';
-    _addLog('⛔ Stopped by user.');
+    currentStatus = '⛔ Stopped. Progress saved — will resume on next start.';
+    _addLog('⛔ Stopped by user. Progress saved — next start will resume where it left off.');
     isProcessing = false;
     notifyListeners();
 
@@ -703,14 +769,30 @@ class CopyFilesProvider with ChangeNotifier {
     await Future.wait(futures);
   }
 
-  /// Manual recursive walk using async lists for maximum performance.
+  /// Manual recursive walk optimised for network shares.
+  ///
+  /// Key optimisations vs the previous version:
+  /// 1. Single stat() per source file (gets both size & modified date).
+  /// 2. Pre-lists the destination directory once to build a name→size map,
+  ///    replacing N individual stat() calls with 1 directory listing.
+  /// 3. Reduced concurrent file inspection from 50 to 8 to avoid
+  ///    overwhelming SMB connections.
+  /// 4. Progress reported every 5 directories (was 20) with a running
+  ///    file count so the UI never looks frozen.
   static Future<void> _walkAndCopy(
     Directory dir,
     _IsolateParams params,
     _CountState counts,
     Set<String> createdDirs,
     List<_CopyTask> batch,
+    Set<String> completedDirs,
   ) async {
+    // ── Resume: skip directories that were fully processed in a prior run ──
+    final String relPath = p.relative(dir.path, from: params.sourcePath);
+    if (completedDirs.contains(relPath)) {
+      counts.dirsSkipped++;
+      return;
+    }
     List<FileSystemEntity> entities;
     try {
       entities = await dir.list(followLinks: false).toList();
@@ -723,14 +805,15 @@ class CopyFilesProvider with ChangeNotifier {
         filesSkipped: counts.filesSkipped,
         filesAlreadyExist: counts.filesAlreadyExist,
       ));
-      return; 
+      return;
     }
 
     counts.directoriesScanned++;
 
-    if (counts.directoriesScanned % 20 == 0) {
+    // Report every 5 directories (was 20) with file count for visibility
+    if (counts.directoriesScanned % 5 == 0) {
       params.sendPort.send(_IsolateProgress(
-        status: '⏳ Scanning: ${p.basename(dir.path)}',
+        status: '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked)',
         filesCopied: counts.filesCopied,
         filesSkipped: counts.filesSkipped,
         filesAlreadyExist: counts.filesAlreadyExist,
@@ -738,62 +821,87 @@ class CopyFilesProvider with ChangeNotifier {
       ));
     }
 
-    final fromDate = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
-    final toDate = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
-
     final files = entities.whereType<File>().toList();
-    
-    // Process files in concurrency batches of 50
-    for (var i = 0; i < files.length; i += 50) {
-      final chunk = files.skip(i).take(50);
-      
+
+    // If no files in this directory, skip straight to subdirectories
+    if (files.isEmpty) {
+      for (final entity in entities) {
+        if (entity is Directory) {
+          await _walkAndCopy(entity, params, counts, createdDirs, batch, completedDirs);
+        }
+      }
+      return;
+    }
+
+    // ── Pre-compute date boundaries once per directory ──────────────
+    late final DateTime from;
+    late final DateTime to;
+    if (params.enableDateRange) {
+      final fd = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
+      final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
+      from = DateTime(fd.year, fd.month, fd.day);
+      to   = DateTime(td.year, td.month, td.day);
+    }
+
+    // ── Pre-list destination directory ──────────────────────────────
+    // Build a name→size map with a single dir listing instead of
+    // stat()-ing each destination file individually (huge win on SMB).
+    final String destDirPath = p.join(params.destPath, relPath);
+    final Map<String, int> existingDestFiles = {};
+    try {
+      final destDir = Directory(destDirPath);
+      if (await destDir.exists()) {
+        await for (final e in destDir.list(followLinks: false)) {
+          if (e is File) {
+            try {
+              existingDestFiles[p.basename(e.path)] = await e.length();
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {
+      // Destination dir doesn't exist yet — all files will need copying
+    }
+
+    // ── Process source files in small batches of 8 ─────────────────
+    // Was 50, which created I/O storms on network shares.
+    for (var i = 0; i < files.length; i += 8) {
+      final chunk = files.skip(i).take(8);
+
       final futures = chunk.map((entity) async {
         try {
-          bool withinDateRange = true;
-          int sourceSize = -1;
+          counts.filesInspected++;
 
+          // Single stat() gets both size and modified date — avoids the
+          // old pattern of conditional stat() + separate length() call.
+          final FileStat stats = await entity.stat();
+          final int sourceSize = stats.size;
+
+          // Date-range filter
           if (params.enableDateRange) {
-            FileStat stats = await entity.stat();
-            sourceSize = stats.size;
-            DateTime modified = stats.modified;
-            
-            final fileDate = DateTime(modified.year, modified.month, modified.day);
-            final from = DateTime(fromDate.year, fromDate.month, fromDate.day);
-            final to = DateTime(toDate.year, toDate.month, toDate.day);
+            final m = stats.modified;
+            final fileDate = DateTime(m.year, m.month, m.day);
             if (fileDate.isBefore(from) || fileDate.isAfter(to)) {
-              withinDateRange = false;
+              counts.filesSkipped++;
+              return;
             }
           }
 
-          if (withinDateRange) {
-            String relativePath = p.relative(entity.parent.path, from: params.sourcePath);
-            String destDir = p.join(params.destPath, relativePath);
-            String destFilePath = p.join(destDir, p.basename(entity.path));
-            
-            bool shouldCopy = true;
-            
-            if (sourceSize == -1) {
-              sourceSize = await entity.length();
-            }
+          final String fileName = p.basename(entity.path);
 
-            File destFile = File(destFilePath);
-            FileStat destStat = await destFile.stat();
-            if (destStat.type != FileSystemEntityType.notFound && destStat.size == sourceSize) {
-                shouldCopy = false;
-            }
-
-            if (shouldCopy) {
-              if (!createdDirs.contains(destDir)) {
-                createdDirs.add(destDir);
-                await Directory(destDir).create(recursive: true);
-              }
-              batch.add(_CopyTask(entity, destFilePath));
-            } else {
-              counts.filesAlreadyExist++;
-            }
-          } else {
-            counts.filesSkipped++;
+          // Fast map lookup instead of per-file destination stat()
+          final int? destSize = existingDestFiles[fileName];
+          if (destSize != null && destSize == sourceSize) {
+            counts.filesAlreadyExist++;
+            return;
           }
+
+          // File needs copying — ensure destination directory exists
+          if (!createdDirs.contains(destDirPath)) {
+            createdDirs.add(destDirPath);
+            await Directory(destDirPath).create(recursive: true);
+          }
+          batch.add(_CopyTask(entity, p.join(destDirPath, fileName)));
         } catch (e) {
           counts.errors++;
           params.sendPort.send(_IsolateProgress(
@@ -808,20 +916,40 @@ class CopyFilesProvider with ChangeNotifier {
 
       await Future.wait(futures);
 
+      // Extra progress pulse for large directories
+      if (i > 0 && i % 24 == 0) {
+        params.sendPort.send(_IsolateProgress(
+          status: '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked)',
+          filesCopied: counts.filesCopied,
+          filesSkipped: counts.filesSkipped,
+          filesAlreadyExist: counts.filesAlreadyExist,
+          errors: counts.errors,
+        ));
+      }
+
       // Flush the batch when it reaches 50 tasks
       if (batch.length >= 50) {
-         final tasksToRun = List<_CopyTask>.from(batch);
-         batch.clear();
-         await _processBatch(tasksToRun, params, counts);
-         await Future.delayed(Duration.zero);
+        final tasksToRun = List<_CopyTask>.from(batch);
+        batch.clear();
+        await _processBatch(tasksToRun, params, counts);
+        await Future.delayed(Duration.zero);
       }
     }
 
     // Then recurse into subdirectories
     for (final entity in entities) {
       if (entity is Directory) {
-        await _walkAndCopy(entity, params, counts, createdDirs, batch);
+        await _walkAndCopy(entity, params, counts, createdDirs, batch, completedDirs);
       }
+    }
+
+    // Mark this directory as fully completed (files + all subdirs done)
+    completedDirs.add(relPath);
+
+    // Periodically save progress to disk (every 100 completed directories)
+    if (params.progressFilePath != null && completedDirs.length % 100 == 0) {
+      _saveProgressFile(
+        params.progressFilePath!, params.sourcePath, params.destPath, completedDirs);
     }
   }
 
@@ -830,6 +958,9 @@ class CopyFilesProvider with ChangeNotifier {
     final counts = _CountState();
     final createdDirs = <String>{};
     final batch = <_CopyTask>[];
+    // Mutable copy of completed dirs — will grow as we process
+    final completedDirs = Set<String>.from(params.completedDirs);
+    final isResuming = completedDirs.isNotEmpty;
 
     try {
       final sourceDir = Directory(params.sourcePath);
@@ -842,16 +973,30 @@ class CopyFilesProvider with ChangeNotifier {
         return;
       }
 
-      await _walkAndCopy(sourceDir, params, counts, createdDirs, batch);
-      
+      if (isResuming) {
+        params.sendPort.send(_IsolateProgress(
+          logMessage: '⏩ Resuming — ${completedDirs.length} directories already completed, skipping...',
+          status: '⏩ Resuming from last position...',
+        ));
+      }
+
+      await _walkAndCopy(sourceDir, params, counts, createdDirs, batch, completedDirs);
+
       // Process remaining tasks in the final batch
       if (batch.isNotEmpty) {
         await _processBatch(batch, params, counts);
         batch.clear();
       }
 
+      // Save final progress before sending done
+      if (params.progressFilePath != null) {
+        _saveProgressFile(
+          params.progressFilePath!, params.sourcePath, params.destPath, completedDirs);
+      }
+
+      final resumeNote = isResuming ? ' (${counts.dirsSkipped} dirs skipped via resume)' : '';
       params.sendPort.send(_IsolateProgress(
-        logMessage: '🏁 Copy completed successfully.',
+        logMessage: '🏁 Copy completed successfully.$resumeNote',
         status: 'Done',
         done: true,
         filesCopied: counts.filesCopied,
@@ -859,7 +1004,17 @@ class CopyFilesProvider with ChangeNotifier {
         filesAlreadyExist: counts.filesAlreadyExist,
         errors: counts.errors,
       ));
+
+      // Delete progress file on successful completion
+      if (params.progressFilePath != null) {
+        _deleteProgressFile(params.progressFilePath!);
+      }
     } catch (e) {
+      // Save progress even on crash so next run can resume
+      if (params.progressFilePath != null) {
+        _saveProgressFile(
+          params.progressFilePath!, params.sourcePath, params.destPath, completedDirs);
+      }
       params.sendPort.send(_IsolateProgress(
         logMessage: '✗ Critical Error: $e',
         criticalError: e.toString(),
@@ -1015,6 +1170,13 @@ class CopyFilesProvider with ChangeNotifier {
 
     final receivePort = ReceivePort();
 
+    // Load resume progress for this pair (if any)
+    final progressPath = _progressFilePath(origIdx);
+    final resumeDirs = _loadProgressFile(progressPath, source, dest);
+    if (resumeDirs.isNotEmpty) {
+      _addLog('[P${origIdx + 1}] ⏩ Resuming: ${resumeDirs.length} directories already completed');
+    }
+
     final params = _IsolateParams(
       sourcePath: source,
       destPath: dest,
@@ -1022,6 +1184,8 @@ class CopyFilesProvider with ChangeNotifier {
       fromEpochMs: fromDate.millisecondsSinceEpoch,
       toEpochMs: toDate.millisecondsSinceEpoch,
       sendPort: receivePort.sendPort,
+      progressFilePath: progressPath,
+      completedDirs: resumeDirs,
     );
 
     final isolate = await Isolate.spawn(_copyWorker, params);

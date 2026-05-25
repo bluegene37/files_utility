@@ -269,7 +269,7 @@ class CopyFilesScreen extends StatelessWidget {
                     // Actions, Status, and Stats
                     Row(
                       children: [
-                        if (!provider.isProcessing)
+                        if (!provider.isProcessing) ...[
                           ElevatedButton.icon(
                             onPressed: provider.useMultipleDirectories
                                 ? (provider.directoryPairs.any((p) => p.sourcePath != null && p.destPath != null)
@@ -281,8 +281,37 @@ class CopyFilesScreen extends StatelessWidget {
                                 : null,
                             icon: const Icon(Icons.copy),
                             label: const Text('Start Copying'),
-                          )
-                        else
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('Clear Progress?'),
+                                  content: const Text(
+                                    'This will clear saved resume progress. The next run will scan all directories from scratch.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () {
+                                        provider.clearProgress();
+                                        Navigator.pop(ctx);
+                                      },
+                                      child: const Text('Clear'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.refresh, size: 18),
+                            label: const Text('Clear Progress'),
+                          ),
+                        ] else
                           ElevatedButton.icon(
                             onPressed: provider.stop,
                             icon: const Icon(Icons.stop),
