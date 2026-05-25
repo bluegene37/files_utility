@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
-import '../services/history_service.dart';
+import '../services/file_logger.dart';
 import '../services/local_db_service.dart';
 import '../services/history_service.dart';
 import '../models/run_record.dart';
