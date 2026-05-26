@@ -208,15 +208,21 @@ class FileProcessProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  String? _sanitizePath(String? path) {
+    if (path == null) return null;
+    final clean = path.replaceAll('"', '').replaceAll("'", "").trim();
+    return clean.isEmpty ? null : clean;
+  }
+
   void setSourcePath(String? path) {
-    sourcePath = path;
+    sourcePath = _sanitizePath(path);
     _detectClientName();
     _saveSettings();
     notifyListeners();
   }
 
   void setDestPath(String? path) {
-    destPath = path;
+    destPath = _sanitizePath(path);
     _saveSettings();
     notifyListeners();
   }
@@ -523,9 +529,13 @@ class FileProcessProvider with ChangeNotifier {
       }
     } catch (e, stack) {
       _addLog('✗ Critical Error: $e');
-      _log.severe(e, stack);
+      _log.severe('Critical error during transfer', e, stack);
       await _fileLogger.error('Transfer', 'Critical Error: $e\n$stack');
     } finally {
+      // Capture before logRunEnd clears them
+      final runId = _fileLogger.getRunId('Transfer') ?? 'UNKNOWN';
+      final start = _fileLogger.getStartTime('Transfer') ?? DateTime.now();
+
       await _fileLogger.logRunEnd(
         operation: 'Transfer',
         filesProcessed: filesMoved,
@@ -534,9 +544,8 @@ class FileProcessProvider with ChangeNotifier {
       );
       
       try {
-        final start = _fileLogger.getStartTime('Transfer') ?? DateTime.now();
         await HistoryService().saveRecord(RunRecord(
-          id: _fileLogger.getRunId('Transfer') ?? 'UNKNOWN',
+          id: runId,
           operation: 'Transfer',
           startTime: start,
           endTime: DateTime.now(),

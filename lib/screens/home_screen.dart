@@ -122,62 +122,64 @@ class TransferScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 10),
                           // Run Time row
-                          Row(
-                            children: [
-                              SizedBox(
-                                width: 24, height: 24,
-                                child: Checkbox(
-                                  value: provider.enableTimeWindow,
-                                  onChanged: provider.isProcessing ? null : (val) => provider.setEnableTimeWindow(val ?? false),
-                                  visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          IntrinsicHeight(
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 24, height: 24,
+                                  child: Checkbox(
+                                    value: provider.enableTimeWindow,
+                                    onChanged: provider.isProcessing ? null : (val) => provider.setEnableTimeWindow(val ?? false),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 6),
-                              const Text('Run Time', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary)),
-                              const SizedBox(width: 12),
-                              SizedBox(
-                                width: 100,
-                                child: StyledTimePicker(
-                                  label: 'From',
-                                  time: provider.runFromTime,
-                                  enabled: !provider.isProcessing && provider.enableTimeWindow,
-                                  onPicked: provider.isProcessing ? (time) {} : (time) => provider.setRunFromTime(time),
+                                const SizedBox(width: 6),
+                                const Text('Run Time', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary)),
+                                const SizedBox(width: 12),
+                                SizedBox(
+                                  width: 100,
+                                  child: StyledTimePicker(
+                                    label: 'From',
+                                    time: provider.runFromTime,
+                                    enabled: !provider.isProcessing && provider.enableTimeWindow,
+                                    onPicked: provider.isProcessing ? (time) {} : (time) => provider.setRunFromTime(time),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 100,
-                                child: StyledTimePicker(
-                                  label: 'To',
-                                  time: provider.runToTime,
-                                  enabled: !provider.isProcessing && provider.enableTimeWindow,
-                                  onPicked: provider.isProcessing ? (time) {} : (time) => provider.setRunToTime(time),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 100,
+                                  child: StyledTimePicker(
+                                    label: 'To',
+                                    time: provider.runToTime,
+                                    enabled: !provider.isProcessing && provider.enableTimeWindow,
+                                    onPicked: provider.isProcessing ? (time) {} : (time) => provider.setRunToTime(time),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 16),
-                              const VerticalDivider(width: 1, thickness: 1),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Wrap(
-                                  spacing: 4,
-                                  runSpacing: 2,
-                                  children: [
-                                    for (final entry in {1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun'}.entries)
-                                      FilterChip(
-                                        label: Text(entry.value, style: const TextStyle(fontSize: 11)),
-                                        selected: provider.runDays[entry.key] ?? false,
-                                        onSelected: provider.isProcessing
-                                            ? null
-                                            : (val) => provider.setRunDay(entry.key, val),
-                                        visualDensity: VisualDensity.compact,
-                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                                      ),
-                                  ],
+                                const SizedBox(width: 16),
+                                const VerticalDivider(width: 1, thickness: 1),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Wrap(
+                                    spacing: 4,
+                                    runSpacing: 2,
+                                    children: [
+                                      for (final entry in {1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun'}.entries)
+                                        FilterChip(
+                                          label: Text(entry.value, style: const TextStyle(fontSize: 11)),
+                                          selected: provider.runDays[entry.key] ?? false,
+                                          onSelected: provider.isProcessing
+                                              ? null
+                                              : (val) => provider.setRunDay(entry.key, val),
+                                          visualDensity: VisualDensity.compact,
+                                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                                        ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 8),
                           // When Complete row

@@ -6,9 +6,12 @@ import 'providers/delete_process_provider.dart';
 import 'providers/copy_files_provider.dart';
 import 'providers/count_files_provider.dart';
 import 'providers/history_provider.dart';
+import 'services/local_db_service.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await LocalDbService().init();
   runApp(const MyApp());
 }
 
@@ -34,4 +37,3 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-// Test

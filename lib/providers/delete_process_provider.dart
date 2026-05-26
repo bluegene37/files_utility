@@ -119,8 +119,14 @@ class DeleteProcessProvider with ChangeNotifier {
     }
   }
 
-  void setTargetPath(String path) {
-    targetPath = path;
+  String? _sanitizePath(String? path) {
+    if (path == null) return null;
+    final clean = path.replaceAll('"', '').replaceAll("'", "").trim();
+    return clean.isEmpty ? null : clean;
+  }
+
+  void setTargetPath(String? path) {
+    targetPath = _sanitizePath(path);
     _saveSettings();
     notifyListeners();
   }
@@ -204,9 +210,13 @@ class DeleteProcessProvider with ChangeNotifier {
       }
     } catch (e, stack) {
       _addLog('✗ Critical Error: $e');
-      _log.severe(e, stack);
+      _log.severe('Critical error during deletion', e, stack);
       await _fileLogger.error('Delete', 'Critical Error: $e\n$stack');
     } finally {
+      // Capture before logRunEnd clears them
+      final runId = _fileLogger.getRunId('Delete') ?? 'UNKNOWN';
+      final start = _fileLogger.getStartTime('Delete') ?? DateTime.now();
+
       await _fileLogger.logRunEnd(
         operation: 'Delete',
         filesProcessed: deletedCount,
@@ -215,9 +225,8 @@ class DeleteProcessProvider with ChangeNotifier {
       );
 
       try {
-        final start = _fileLogger.getStartTime('Delete') ?? DateTime.now();
         await HistoryService().saveRecord(RunRecord(
-          id: _fileLogger.getRunId('Delete') ?? 'UNKNOWN',
+          id: runId,
           operation: 'Delete',
           startTime: start,
           endTime: DateTime.now(),

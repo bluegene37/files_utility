@@ -10,7 +10,6 @@ import 'package:path/path.dart' as p;
 import '../services/file_logger.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
-import '../services/history_service.dart';
 import '../models/run_record.dart';
 
 /// Message sent FROM the background isolate TO the main isolate.
@@ -391,14 +390,20 @@ class CopyFilesProvider with ChangeNotifier {
     await db.setString('copy_onCompletionAction', onCompletionAction);
   }
 
+  String? _sanitizePath(String? path) {
+    if (path == null) return null;
+    final clean = path.replaceAll('"', '').replaceAll("'", "").trim();
+    return clean.isEmpty ? null : clean;
+  }
+
   void setSourcePath(String? path) {
-    sourcePath = path;
+    sourcePath = _sanitizePath(path);
     _saveSettings();
     notifyListeners();
   }
 
   void setDestPath(String? path) {
-    destPath = path;
+    destPath = _sanitizePath(path);
     _saveSettings();
     notifyListeners();
   }
@@ -546,19 +551,17 @@ class CopyFilesProvider with ChangeNotifier {
   }
 
   void setPairSource(int index, String? path) {
-    if (index >= 0 && index < directoryPairs.length) {
-      directoryPairs[index].sourcePath = path;
-      _saveSettings();
-      notifyListeners();
-    }
+    if (index < 0 || index >= directoryPairs.length) return;
+    directoryPairs[index].sourcePath = _sanitizePath(path);
+    _saveSettings();
+    notifyListeners();
   }
 
   void setPairDest(int index, String? path) {
-    if (index >= 0 && index < directoryPairs.length) {
-      directoryPairs[index].destPath = path;
-      _saveSettings();
-      notifyListeners();
-    }
+    if (index < 0 || index >= directoryPairs.length) return;
+    directoryPairs[index].destPath = _sanitizePath(path);
+    _saveSettings();
+    notifyListeners();
   }
 
   void setPairRunOrder(int index, int order) {
@@ -597,6 +600,10 @@ class CopyFilesProvider with ChangeNotifier {
     isProcessing = false;
     notifyListeners();
 
+    // Capture before logRunEnd clears them
+    final runId = _fileLogger.getRunId('Copy') ?? 'UNKNOWN';
+    final start = _fileLogger.getStartTime('Copy') ?? DateTime.now();
+
     _fileLogger.logRunEnd(
       operation: 'Copy',
       filesProcessed: filesCopied,
@@ -605,9 +612,8 @@ class CopyFilesProvider with ChangeNotifier {
     );
 
     try {
-      final start = _fileLogger.getStartTime('Copy') ?? DateTime.now();
       HistoryService().saveRecord(RunRecord(
-        id: _fileLogger.getRunId('Copy') ?? 'UNKNOWN',
+        id: runId,
         operation: 'Copy',
         startTime: start,
         endTime: DateTime.now(),
@@ -1271,6 +1277,10 @@ class CopyFilesProvider with ChangeNotifier {
             final elapsed = _getElapsedStr();
             _addLog('🏁 All ${_pairsToProcess.length} pair(s) completed. Total: ${_numFmt.format(filesCopied)} copied, ${_numFmt.format(errors)} errors in $elapsed');
 
+            // Capture before logRunEnd clears them
+            final runId = _fileLogger.getRunId('Copy') ?? 'UNKNOWN';
+            final start = _fileLogger.getStartTime('Copy') ?? DateTime.now();
+
             await _fileLogger.logRunEnd(
               operation: 'Copy',
               filesProcessed: filesCopied,
@@ -1279,9 +1289,8 @@ class CopyFilesProvider with ChangeNotifier {
             );
 
             try {
-              final start = _fileLogger.getStartTime('Copy') ?? DateTime.now();
               await HistoryService().saveRecord(RunRecord(
-                id: _fileLogger.getRunId('Copy') ?? 'UNKNOWN',
+                id: runId,
                 operation: 'Copy',
                 startTime: start,
                 endTime: DateTime.now(),

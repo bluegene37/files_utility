@@ -53,8 +53,14 @@ class CountFilesProvider with ChangeNotifier {
     }
   }
 
-  void setTargetPath(String path) {
-    targetPath = path;
+  String? _sanitizePath(String? path) {
+    if (path == null) return null;
+    final clean = path.replaceAll('"', '').replaceAll("'", "").trim();
+    return clean.isEmpty ? null : clean;
+  }
+
+  void setTargetPath(String? path) {
+    targetPath = _sanitizePath(path);
     _saveSettings();
     notifyListeners();
   }
@@ -154,6 +160,10 @@ class CountFilesProvider with ChangeNotifier {
       _addLog('✗ Critical Error: $e');
       await _fileLogger.error('Count', 'Critical Error: $e');
     } finally {
+      // Capture before logRunEnd clears them
+      final runId = _fileLogger.getRunId('Count') ?? 'UNKNOWN';
+      final start = _fileLogger.getStartTime('Count') ?? DateTime.now();
+
       await _fileLogger.logRunEnd(
         operation: 'Count',
         filesProcessed: totalFiles,
@@ -162,9 +172,8 @@ class CountFilesProvider with ChangeNotifier {
       );
 
       try {
-        final start = _fileLogger.getStartTime('Count') ?? DateTime.now();
         await HistoryService().saveRecord(RunRecord(
-          id: _fileLogger.getRunId('Count') ?? 'UNKNOWN',
+          id: runId,
           operation: 'Count',
           startTime: start,
           endTime: DateTime.now(),
