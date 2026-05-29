@@ -54,6 +54,9 @@ class TransferScreen extends StatelessWidget {
                               tilePadding: EdgeInsets.zero,
                               childrenPadding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
                               children: [
+                                // ── File Date Filter ──
+                                _sectionLabel('📅 File Date Filter'),
+                                const SizedBox(height: 8),
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -159,7 +162,7 @@ class TransferScreen extends StatelessWidget {
                                       width: 100,
                                       child: DropdownButtonFormField<int>(
                                         isExpanded: true,
-                                        value: provider.ageFilterValue,
+                                        initialValue: provider.ageFilterValue,
                                         decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
                                         dropdownColor: AppColors.bgDark2,
                                         items: List.generate(31, (index) => index + 1).map((int value) {
@@ -178,7 +181,7 @@ class TransferScreen extends StatelessWidget {
                                       width: 130,
                                       child: DropdownButtonFormField<String>(
                                         isExpanded: true,
-                                        value: provider.ageFilterUnit,
+                                        initialValue: provider.ageFilterUnit,
                                         decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
                                         dropdownColor: AppColors.bgDark2,
                                         items: ['Days', 'Months', 'Years'].map((String value) {
@@ -194,7 +197,12 @@ class TransferScreen extends StatelessWidget {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 12),
+                                const Divider(color: AppColors.cardBorder, thickness: 1),
+                                const SizedBox(height: 8),
+                                // ── Schedule ──
+                                _sectionLabel('⏰ Schedule'),
+                                const SizedBox(height: 8),
                                 // Run Time row
                                 IntrinsicHeight(
                                   child: Row(
@@ -255,11 +263,15 @@ class TransferScreen extends StatelessWidget {
                                     ],
                                   ),
                                 ),
+                                const SizedBox(height: 12),
+                                const Divider(color: AppColors.cardBorder, thickness: 1),
+                                const SizedBox(height: 8),
+                                // ── Completion ──
+                                _sectionLabel('✅ Completion'),
                                 const SizedBox(height: 8),
                                 // When Complete row
                                 Row(
                                   children: [
-                                    const SizedBox(width: 30),
                                     const Text('When Complete', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary)),
                                     const SizedBox(width: 12),
                                     ToggleButtons(
@@ -418,6 +430,18 @@ class TransferScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textMuted,
+        letterSpacing: 0.5,
       ),
     );
   }

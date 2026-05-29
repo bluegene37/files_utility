@@ -209,7 +209,7 @@ class FileProcessProvider with ChangeNotifier {
   String get _progressFilePath {
     final s = sourcePath?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? 'src';
     final d = destPath?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? 'dst';
-    return r'C:\temp\file transfer\transfer_progress_' + s + '_' + d + '.json';
+    return 'C:\\temp\\file transfer\\transfer_progress_${s}_$d.json';
   }
 
   Future<void> _loadProgress() async {

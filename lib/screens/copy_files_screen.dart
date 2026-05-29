@@ -89,6 +89,41 @@ class CopyFilesScreen extends StatelessWidget {
                             ),
                           ],
                           const SizedBox(height: 8),
+                          // Log Interval selector
+                          Row(
+                            children: [
+                              const Text('Log Every', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary)),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 80,
+                                child: DropdownButtonFormField<int>(
+                                  isExpanded: true,
+                                  initialValue: provider.logInterval,
+                                  decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                                  dropdownColor: AppColors.bgDark2,
+                                  items: [1, 5, 10, 25, 50, 100].map((int value) {
+                                    return DropdownMenuItem<int>(
+                                      value: value,
+                                      child: Text(value.toString(), style: const TextStyle(color: AppColors.textPrimary, fontSize: 13)),
+                                    );
+                                  }).toList(),
+                                  onChanged: provider.isProcessing ? null : (val) {
+                                    if (val != null) provider.setLogInterval(val);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Text('files', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                              const SizedBox(width: 12),
+                              const Icon(Icons.info_outline, size: 14, color: AppColors.textMuted),
+                              const SizedBox(width: 4),
+                              const Text(
+                                'Controls how often progress is logged to the console',
+                                style: TextStyle(fontSize: 11, color: AppColors.textMuted, fontStyle: FontStyle.italic),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
                           Theme(
                             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                             child: ExpansionTile(
@@ -98,6 +133,9 @@ class CopyFilesScreen extends StatelessWidget {
                               tilePadding: EdgeInsets.zero,
                               childrenPadding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
                               children: [
+                                // ── File Date Filter ──
+                                _sectionLabel('📅 File Date Filter'),
+                                const SizedBox(height: 8),
                                 // Date range and Age filter
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -188,7 +226,7 @@ class CopyFilesScreen extends StatelessWidget {
                                           width: 100,
                                           child: DropdownButtonFormField<int>(
                                             isExpanded: true,
-                                            value: provider.ageFilterValue,
+                                            initialValue: provider.ageFilterValue,
                                             decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
                                             dropdownColor: AppColors.bgDark2,
                                             items: List.generate(31, (index) => index + 1).map((int value) {
@@ -207,7 +245,7 @@ class CopyFilesScreen extends StatelessWidget {
                                           width: 130,
                                           child: DropdownButtonFormField<String>(
                                             isExpanded: true,
-                                            value: provider.ageFilterUnit,
+                                            initialValue: provider.ageFilterUnit,
                                             decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
                                             dropdownColor: AppColors.bgDark2,
                                             items: ['Days', 'Months', 'Years'].map((String value) {
@@ -225,7 +263,12 @@ class CopyFilesScreen extends StatelessWidget {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 12),
+                                const Divider(color: AppColors.cardBorder, thickness: 1),
+                                const SizedBox(height: 8),
+                                // ── Schedule ──
+                                _sectionLabel('⏰ Schedule'),
+                                const SizedBox(height: 8),
                                 // Run time
                                 IntrinsicHeight(
                                   child: Row(
@@ -288,11 +331,15 @@ class CopyFilesScreen extends StatelessWidget {
                                     ],
                                   ),
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 12),
+                                const Divider(color: AppColors.cardBorder, thickness: 1),
+                                const SizedBox(height: 8),
+                                // ── Completion ──
+                                _sectionLabel('✅ Completion'),
+                                const SizedBox(height: 8),
                                 // Completion action
                                 Row(
                                   children: [
-                                    const SizedBox(width: 30),
                                     const Text('When Complete', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textSecondary)),
                                     const SizedBox(width: 12),
                                     ToggleButtons(
@@ -438,7 +485,21 @@ class CopyFilesScreen extends StatelessWidget {
                           color: AppColors.info,
                           icon: Icons.file_copy,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
+                        StatBadge(
+                          title: 'Exist',
+                          value: provider.filesAlreadyExist.toString(),
+                          color: AppColors.accent,
+                          icon: Icons.check_circle_outline,
+                        ),
+                        const SizedBox(width: 6),
+                        StatBadge(
+                          title: 'Skipped',
+                          value: provider.filesSkipped.toString(),
+                          color: AppColors.textMuted,
+                          icon: Icons.skip_next,
+                        ),
+                        const SizedBox(width: 6),
                         StatBadge(
                           title: 'Errors',
                           value: provider.errors.toString(),
@@ -521,6 +582,18 @@ class CopyFilesScreen extends StatelessWidget {
             style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textMuted,
+        letterSpacing: 0.5,
       ),
     );
   }

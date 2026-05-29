@@ -396,6 +396,7 @@ class _PathRowState extends State<PathRow> {
           },
           onSelected: (path) {
             if (path.isNotEmpty && widget.onChanged != null) {
+              _controller.text = path;
               widget.onChanged!(path);
             }
           },

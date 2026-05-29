@@ -37,8 +37,21 @@ class DeleteScreen extends StatelessWidget {
                             onPick: provider.pickTarget,
                             onChanged: provider.setTargetPath,
                           ),
-                          const SizedBox(height: 10),
-                          Row(
+                          const SizedBox(height: 8),
+                          Theme(
+                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                            child: ExpansionTile(
+                              initiallyExpanded: true,
+                              title: const Text('Advanced Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.error)),
+                              iconColor: AppColors.error,
+                              collapsedIconColor: AppColors.textSecondary,
+                              tilePadding: EdgeInsets.zero,
+                              childrenPadding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                              children: [
+                                // ── File Date Filter ──
+                                _sectionLabel('📅 File Date Filter'),
+                                const SizedBox(height: 8),
+                                Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               SizedBox(
@@ -100,6 +113,9 @@ class DeleteScreen extends StatelessWidget {
                         ],
                       ),
                     ),
+                  ],
+                ),
+              ),
                     const SizedBox(height: 10),
 
                     // Actions, Status, and Stats
@@ -190,6 +206,18 @@ class DeleteScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textMuted,
+        letterSpacing: 0.5,
       ),
     );
   }

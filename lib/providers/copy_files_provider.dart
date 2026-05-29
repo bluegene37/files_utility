@@ -50,6 +50,7 @@ class _IsolateParams {
   final SendPort sendPort;
   final String? progressFilePath;
   final Set<String> completedDirs;
+  final int logInterval;
 
   _IsolateParams({
     required this.sourcePath,
@@ -63,6 +64,7 @@ class _IsolateParams {
     required this.sendPort,
     this.progressFilePath,
     this.completedDirs = const {},
+    this.logInterval = 100,
   });
 }
 
@@ -210,7 +212,9 @@ class CopyFilesProvider with ChangeNotifier {
   bool useMultipleDirectories = false;
   List<DirectoryPair> directoryPairs = [DirectoryPair()];
 
-
+  // Log interval: how often to report progress (every N files)
+  // Available options: 1, 5, 10, 25, 50, 100
+  int logInterval = 100;
 
   // Age filter
   bool enableAgeFilter = false;
@@ -255,6 +259,7 @@ class CopyFilesProvider with ChangeNotifier {
   // Stats
   int filesCopied = 0;
   int filesSkipped = 0;
+  int filesAlreadyExist = 0;
   int errors = 0;
 
   // Active worker isolates
@@ -326,6 +331,8 @@ class CopyFilesProvider with ChangeNotifier {
     todayOnly = db.getBool('copy_todayOnly') ?? false;
     yesterdayOnly = db.getBool('copy_yesterdayOnly') ?? false;
 
+    logInterval = db.getInt('copy_logInterval') ?? 100;
+
     // Apply quick date filter on load if active
     _applyQuickDateFilter();
 
@@ -390,6 +397,8 @@ class CopyFilesProvider with ChangeNotifier {
     await db.setBool('copy_todayOnly', todayOnly);
     await db.setBool('copy_yesterdayOnly', yesterdayOnly);
 
+    await db.setInt('copy_logInterval', logInterval);
+
     await db.setBool('copy_enableTimeWindow', enableTimeWindow);
     await db.setInt('copy_runFromHour', runFromTime.hour);
     await db.setInt('copy_runFromMinute', runFromTime.minute);
@@ -429,6 +438,12 @@ class CopyFilesProvider with ChangeNotifier {
     if (destPath != null) {
       LocalDbService().addRecentDirectory(destPath!);
     }
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setLogInterval(int val) {
+    logInterval = val;
     _saveSettings();
     notifyListeners();
   }
@@ -825,10 +840,10 @@ class CopyFilesProvider with ChangeNotifier {
         await task.source.copy(task.destFilePath);
         counts.filesCopied++;
 
-        if (counts.filesCopied % 10 == 0) {
+        if (counts.filesCopied % params.logInterval == 0) {
           params.sendPort.send(_IsolateProgress(
-            logMessage: '✓ Copied: ${p.basename(task.source.path)}',
-            status: 'Copying: ${p.basename(task.source.path)}',
+            logMessage: '✓ Copied ${params.logInterval} files (total: ${counts.filesCopied}) – latest: ${p.basename(task.source.path)}',
+            status: 'Copying: ${p.basename(task.source.path)} (${counts.filesCopied} copied)',
             filesCopied: counts.filesCopied,
             filesSkipped: counts.filesSkipped,
             filesAlreadyExist: counts.filesAlreadyExist,
@@ -893,10 +908,12 @@ class CopyFilesProvider with ChangeNotifier {
 
     counts.directoriesScanned++;
 
-    // Report every 5 directories (was 20) with file count for visibility
-    if (counts.directoriesScanned % 5 == 0) {
+    // Report scanning progress based on logInterval
+    // For interval 1-10, report every directory; for larger intervals, every 5 dirs
+    final dirReportInterval = params.logInterval <= 10 ? 1 : 5;
+    if (counts.directoriesScanned % dirReportInterval == 0) {
       params.sendPort.send(_IsolateProgress(
-        status: '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked)',
+        status: '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked, ${counts.filesAlreadyExist} already exist)',
         filesCopied: counts.filesCopied,
         filesSkipped: counts.filesSkipped,
         filesAlreadyExist: counts.filesAlreadyExist,
@@ -996,6 +1013,18 @@ class CopyFilesProvider with ChangeNotifier {
           final int? destSize = existingDestFiles[fileName];
           if (destSize != null && destSize == sourceSize) {
             counts.filesAlreadyExist++;
+
+            // Log "already exist" progress at the configured interval
+            if (counts.filesAlreadyExist % params.logInterval == 0) {
+              params.sendPort.send(_IsolateProgress(
+                logMessage: '⏭ ${counts.filesAlreadyExist} files already exist at destination (skipping)',
+                status: '⏭ Checking: ${p.basename(dir.path)} – ${counts.filesAlreadyExist} already exist, ${counts.filesCopied} copied',
+                filesCopied: counts.filesCopied,
+                filesSkipped: counts.filesSkipped,
+                filesAlreadyExist: counts.filesAlreadyExist,
+                errors: counts.errors,
+              ));
+            }
             return;
           }
 
@@ -1020,9 +1049,10 @@ class CopyFilesProvider with ChangeNotifier {
       await Future.wait(futures);
 
       // Extra progress pulse for large directories
-      if (i > 0 && i % 24 == 0) {
+      final pulseInterval = params.logInterval <= 10 ? 8 : 24;
+      if (i > 0 && i % pulseInterval == 0) {
         params.sendPort.send(_IsolateProgress(
-          status: '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked)',
+          status: '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked, ${counts.filesAlreadyExist} already exist)',
           filesCopied: counts.filesCopied,
           filesSkipped: counts.filesSkipped,
           filesAlreadyExist: counts.filesAlreadyExist,
@@ -1179,6 +1209,7 @@ class CopyFilesProvider with ChangeNotifier {
     currentStatus = '⏳ Scanning...';
     filesCopied = 0;
     filesSkipped = 0;
+    filesAlreadyExist = 0;
     errors = 0;
     isPaused = false;
     notifyListeners();
@@ -1223,14 +1254,16 @@ class CopyFilesProvider with ChangeNotifier {
 
   /// Recomputes the aggregate stats from all per-pair stats.
   void _recalcStats() {
-    int totalCopied = 0, totalSkipped = 0, totalErrors = 0;
+    int totalCopied = 0, totalSkipped = 0, totalAlreadyExist = 0, totalErrors = 0;
     for (final stats in _pairStats.values) {
       totalCopied += stats[0];
       totalSkipped += stats[1];
       totalErrors += stats[2];
+      totalAlreadyExist += stats.length > 3 ? stats[3] : 0;
     }
     filesCopied = totalCopied;
     filesSkipped = totalSkipped;
+    filesAlreadyExist = totalAlreadyExist;
     errors = totalErrors;
   }
 
@@ -1268,7 +1301,7 @@ class CopyFilesProvider with ChangeNotifier {
     } else {
       currentStatus = '⏳ Running ${_activeWorkers.length + 1} pair(s) (Order $runOrder)...';
     }
-    _pairStats[pairIndex] = [0, 0, 0]; // [copied, skipped, errors]
+    _pairStats[pairIndex] = [0, 0, 0, 0]; // [copied, skipped, errors, alreadyExist]
     notifyListeners();
 
     final receivePort = ReceivePort();
@@ -1292,6 +1325,7 @@ class CopyFilesProvider with ChangeNotifier {
       sendPort: receivePort.sendPort,
       progressFilePath: progressPath,
       completedDirs: resumeDirs,
+      logInterval: logInterval,
     );
 
     final isolate = await Isolate.spawn(_copyWorker, params);
@@ -1304,6 +1338,7 @@ class CopyFilesProvider with ChangeNotifier {
           message.filesCopied,
           message.filesSkipped,
           message.errors,
+          message.filesAlreadyExist,
         ];
         _recalcStats();
 
