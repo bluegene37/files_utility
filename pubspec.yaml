@@ -51,6 +51,6 @@ inno_bundle:
     - "english"
 
 # flutter build windows --release
-# dart run inno_bundle 
+# dart run inno_bundle
 # or 
 # dart run inno_bundle:build --release --no-app

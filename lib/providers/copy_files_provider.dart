@@ -285,6 +285,18 @@ class CopyFilesProvider with ChangeNotifier {
     _loadSettings();
   }
 
+  @override
+  void dispose() {
+    _scheduleTimer?.cancel();
+    _completionRescheduleTimer?.cancel();
+    for (final worker in _activeWorkers) {
+      worker.isolate.kill(priority: Isolate.immediate);
+      worker.subscription.cancel();
+      worker.receivePort.close();
+    }
+    super.dispose();
+  }
+
   void _addLog(String message) {
     final timestamp = DateFormat('HH:mm:ss').format(DateTime.now());
     logs.insert(0, '[$timestamp] $message');

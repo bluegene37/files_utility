@@ -26,7 +26,14 @@ class CopyFilesScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     // Config Section
-                    Container(
+                    Flexible(
+                      flex: 0,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.45,
+                        ),
+                        child: SingleChildScrollView(
+                          child: Container(
                       decoration: AppDecorations.glassCard(glowColor: AppColors.info),
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
@@ -390,6 +397,9 @@ class CopyFilesScreen extends StatelessWidget {
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 10),

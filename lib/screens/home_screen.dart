@@ -25,7 +25,14 @@ class TransferScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     // Config Section
-                    Container(
+                    Flexible(
+                      flex: 0,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.45,
+                        ),
+                        child: SingleChildScrollView(
+                          child: Container(
                       decoration: AppDecorations.glassCard(glowColor: AppColors.accent),
                       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                       child: Column(
@@ -322,6 +329,9 @@ class TransferScreen extends StatelessWidget {
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),

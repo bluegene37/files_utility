@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +10,38 @@ import '../services/file_logger.dart';
 import '../services/local_db_service.dart';
 import '../services/history_service.dart';
 import '../models/run_record.dart';
+
+class _DeleteProgress {
+  final int deleted;
+  final int errors;
+  final List<String> logs;
+  final String? currentStatus;
+  final bool isDone;
+  final String? criticalError;
+
+  _DeleteProgress({
+    this.deleted = 0,
+    this.errors = 0,
+    this.logs = const [],
+    this.currentStatus,
+    this.isDone = false,
+    this.criticalError,
+  });
+}
+
+class _DeleteParams {
+  final String targetPath;
+  final int selectedYear;
+  final List<String> validMonths;
+  final SendPort sendPort;
+
+  _DeleteParams({
+    required this.targetPath,
+    required this.selectedYear,
+    required this.validMonths,
+    required this.sendPort,
+  });
+}
 
 class DeleteProcessProvider with ChangeNotifier {
   final Logger _log = Logger('DeleteProcessProvider');
@@ -23,6 +56,7 @@ class DeleteProcessProvider with ChangeNotifier {
   int errorCount = 0;
   bool _stopRequested = false;
   Timer? _refreshTimer;
+  Isolate? _workerIsolate;
 
   int selectedYear = 2025;
   List<String> validMonths = ['Jan'];
@@ -53,6 +87,13 @@ class DeleteProcessProvider with ChangeNotifier {
 
   DeleteProcessProvider() {
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _workerIsolate?.kill(priority: Isolate.immediate);
+    super.dispose();
   }
 
   Future<void> _loadSettings() async {
@@ -132,8 +173,12 @@ class DeleteProcessProvider with ChangeNotifier {
   }
 
   void stop() {
+    if (!isProcessing) return;
     _stopRequested = true;
     currentStatus = '⛔ Stopping...';
+    _workerIsolate?.kill(priority: Isolate.immediate);
+    _workerIsolate = null;
+    _finishRun(wasStopped: true);
     notifyListeners();
   }
 
@@ -197,126 +242,192 @@ class DeleteProcessProvider with ChangeNotifier {
       if (!await targetDir.exists()) {
         _addLog('✗ Error: Target directory does not exist.');
         await _fileLogger.error('Delete', 'Target directory does not exist: $targetPath');
+        _finishRun(wasStopped: false);
         return;
       }
 
-      await _processDirectory(targetDir);
+      final receivePort = ReceivePort();
+      
+      _workerIsolate = await Isolate.spawn(
+        _isolateWorker,
+        _DeleteParams(
+          targetPath: targetPath!,
+          selectedYear: selectedYear,
+          validMonths: validMonths,
+          sendPort: receivePort.sendPort,
+        ),
+      );
 
-      final elapsed = _getElapsedStr();
-      if (_stopRequested) {
-        _addLog('⛔ Stopped by user. Deleted ${_numFmt.format(deletedCount)} files in $elapsed');
-      } else {
-        _addLog('🏁 Deletion completed: ${_numFmt.format(deletedCount)} deleted, ${_numFmt.format(errorCount)} errors in $elapsed');
-      }
+      receivePort.listen((message) {
+        if (message is _DeleteProgress) {
+          deletedCount = message.deleted;
+          errorCount = message.errors;
+          
+          if (message.currentStatus != null) {
+            currentStatus = message.currentStatus!;
+          }
+          
+          for (final log in message.logs) {
+            _addLog(log);
+            // Optionally send errors to FileLogger if marked specifically, 
+            // but for simplicity we rely on the isolate's text logs for now.
+            if (log.startsWith('✗')) {
+              _fileLogger.error('Delete', log);
+            }
+          }
+
+          if (message.criticalError != null) {
+            _addLog('✗ Critical Error: ${message.criticalError}');
+            _fileLogger.error('Delete', 'Critical Error: ${message.criticalError}');
+          }
+
+          if (message.isDone) {
+            receivePort.close();
+            _workerIsolate = null;
+            if (!_stopRequested) {
+              _finishRun(wasStopped: false);
+            }
+          }
+        }
+      });
     } catch (e, stack) {
       _addLog('✗ Critical Error: $e');
       _log.severe('Critical error during deletion', e, stack);
       await _fileLogger.error('Delete', 'Critical Error: $e\n$stack');
-    } finally {
-      // Capture before logRunEnd clears them
-      final runId = _fileLogger.getRunId('Delete') ?? 'UNKNOWN';
-      final start = _fileLogger.getStartTime('Delete') ?? DateTime.now();
+      _finishRun(wasStopped: false);
+    }
+  }
 
-      await _fileLogger.logRunEnd(
+  Future<void> _finishRun({required bool wasStopped}) async {
+    final elapsed = _getElapsedStr();
+    if (wasStopped) {
+      _addLog('⛔ Stopped by user. Deleted ${_numFmt.format(deletedCount)} files in $elapsed');
+    } else {
+      _addLog('🏁 Deletion completed: ${_numFmt.format(deletedCount)} deleted, ${_numFmt.format(errorCount)} errors in $elapsed');
+    }
+
+    // Capture before logRunEnd clears them
+    final runId = _fileLogger.getRunId('Delete') ?? 'UNKNOWN';
+    final start = _fileLogger.getStartTime('Delete') ?? DateTime.now();
+
+    await _fileLogger.logRunEnd(
+      operation: 'Delete',
+      filesProcessed: deletedCount,
+      errors: errorCount,
+      wasStopped: wasStopped,
+    );
+
+    try {
+      await HistoryService().saveRecord(RunRecord(
+        id: runId,
         operation: 'Delete',
+        startTime: start,
+        endTime: DateTime.now(),
         filesProcessed: deletedCount,
         errors: errorCount,
-        wasStopped: _stopRequested,
-      );
+        status: wasStopped ? 'Stopped' : 'Completed',
+        configSummary: 'Target: $targetPath, Year: $selectedYear, Months: $validMonths',
+      ));
+    } catch (_) {}
 
-      try {
-        await HistoryService().saveRecord(RunRecord(
-          id: runId,
-          operation: 'Delete',
-          startTime: start,
-          endTime: DateTime.now(),
-          filesProcessed: deletedCount,
-          errors: errorCount,
-          status: _stopRequested ? 'Stopped' : 'Completed',
-          configSummary: 'Target: $targetPath, Year: $selectedYear, Months: $validMonths',
-        ));
-      } catch (_) {}
-
-      isProcessing = false;
-      currentStatus = 'Idle';
-      _stopTimer();
-    }
+    isProcessing = false;
+    currentStatus = 'Idle';
+    _stopTimer();
+    notifyListeners();
   }
 
-  Future<void> _processDirectory(Directory dir) async {
-    try {
-      // Process files first
-      await for (final entity in dir.list(
-        recursive:
-            false, // We will recurse manually to handle post-order directory deletion
-        followLinks: false,
-      )) {
-        if (_stopRequested) return;
+  static Future<void> _isolateWorker(_DeleteParams params) async {
+    int deletedCount = 0;
+    int errorCount = 0;
+    List<String> logBatch = [];
+    int scanCount = 0;
 
-        if (entity is File) {
-          await _checkAndDeleteFile(entity);
-        } else if (entity is Directory) {
-          await _processDirectory(entity);
-        }
+    void sendProgress(String? status, {bool force = false}) {
+      if (force || logBatch.isNotEmpty || scanCount % 10 == 0) {
+        params.sendPort.send(_DeleteProgress(
+          deleted: deletedCount,
+          errors: errorCount,
+          logs: List.from(logBatch),
+          currentStatus: status,
+        ));
+        logBatch.clear();
       }
+    }
 
-      // Check if directory is empty after processing children
-      if (dir.path != targetPath) {
-        // Don't delete the root target
-        if (await _isEmpty(dir)) {
-          try {
-            await dir.delete();
-            _addLog('✓ Deleted empty folder: ${p.basename(dir.path)}');
-          } catch (e) {
-            _addLog('✗ Failed to delete folder ${p.basename(dir.path)}: $e');
+    Future<bool> isEmpty(Directory dir) async {
+      try {
+        return await dir.list().isEmpty;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    Future<void> deleteFile(File file) async {
+      try {
+        await file.delete();
+        deletedCount++;
+        logBatch.add('✓ Deleted: ${p.basename(file.path)}');
+      } catch (e) {
+        logBatch.add('✗ Failed to delete ${p.basename(file.path)}: $e');
+        errorCount++;
+      }
+    }
+
+    Future<void> checkAndDeleteFile(File file) async {
+      try {
+        FileStat stats = await file.stat();
+        DateTime modified = stats.modified;
+
+        String yearStr = DateFormat('yyyy').format(modified);
+        String monthStr = DateFormat('MMM').format(modified);
+
+        if (int.parse(yearStr) <= params.selectedYear &&
+            params.validMonths.contains(monthStr)) {
+          await deleteFile(file);
+        }
+      } catch (e) {
+        logBatch.add('✗ Error checking ${p.basename(file.path)}: $e');
+        errorCount++;
+      }
+    }
+
+    Future<void> processDirectory(Directory dir) async {
+      try {
+        await for (final entity in dir.list(recursive: false, followLinks: true)) {
+          scanCount++;
+          if (FileSystemEntity.isFileSync(entity.path)) {
+            await checkAndDeleteFile(File(entity.path));
+          } else if (FileSystemEntity.isDirectorySync(entity.path)) {
+            sendProgress('⏳ Scanning: ${p.basename(entity.path)}');
+            await processDirectory(Directory(entity.path));
+          }
+          sendProgress(null);
+        }
+
+        if (dir.path != params.targetPath) {
+          if (await isEmpty(dir)) {
+            try {
+              await dir.delete();
+              logBatch.add('✓ Deleted empty folder: ${p.basename(dir.path)}');
+            } catch (e) {
+              logBatch.add('✗ Failed to delete folder ${p.basename(dir.path)}: $e');
+            }
           }
         }
+      } catch (e) {
+        logBatch.add('✗ Error scanning directory: $e');
+        errorCount++;
       }
-    } catch (e) {
-      _addLog('✗ Error scanning directory: $e');
-      await _fileLogger.error('Delete', 'Error scanning directory: $e');
-      errorCount++;
     }
-  }
-
-  Future<bool> _isEmpty(Directory dir) async {
     try {
-      return await dir.list().isEmpty;
+      await processDirectory(Directory(params.targetPath));
+      sendProgress('DONE', force: true);
+      params.sendPort.send(_DeleteProgress(isDone: true));
     } catch (e) {
-      return false;
-    }
-  }
-
-  Future<void> _checkAndDeleteFile(File file) async {
-    try {
-      FileStat stats = await file.stat();
-      DateTime modified = stats.modified;
-
-      String yearStr = DateFormat('yyyy').format(modified);
-      String monthStr = DateFormat('MMM').format(modified);
-
-      // Check filters
-      if (int.parse(yearStr) <= selectedYear &&
-          validMonths.contains(monthStr)) {
-        await _deleteFile(file);
-      }
-    } catch (e) {
-      _addLog('✗ Error checking ${p.basename(file.path)}: $e');
-      await _fileLogger.error('Delete', 'Error checking ${file.path}: $e');
-      errorCount++;
-    }
-  }
-
-  Future<void> _deleteFile(File file) async {
-    try {
-      await file.delete();
-      deletedCount++;
-      _addLog('✓ Deleted: ${p.basename(file.path)}');
-      // notifyListeners();
-    } catch (e) {
-      _addLog('✗ Failed to delete ${p.basename(file.path)}: $e');
-      await _fileLogger.error('Delete', 'Failed to delete ${file.path}: $e');
-      errorCount++;
+      params.sendPort.send(_DeleteProgress(
+        criticalError: e.toString(),
+        isDone: true,
+      ));
     }
   }
 }

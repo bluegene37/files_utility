@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -10,6 +11,65 @@ import '../services/file_logger.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
 import '../models/run_record.dart';
+
+class _TransferControl {
+  final bool pause;
+  final bool resume;
+  final bool stop;
+  _TransferControl({this.pause = false, this.resume = false, this.stop = false});
+}
+
+class _TransferParams {
+  final String sourcePath;
+  final String destPath;
+  final bool enableAgeFilter;
+  final String ageFilterUnit;
+  final int ageFilterValue;
+  final bool enableDateRange;
+  final int selectedYear;
+  final List<String> validMonths;
+  final String? lastParent;
+  final String? lastChild;
+  final SendPort mainSendPort;
+
+  _TransferParams({
+    required this.sourcePath,
+    required this.destPath,
+    required this.enableAgeFilter,
+    required this.ageFilterUnit,
+    required this.ageFilterValue,
+    required this.enableDateRange,
+    required this.selectedYear,
+    required this.validMonths,
+    this.lastParent,
+    this.lastChild,
+    required this.mainSendPort,
+  });
+}
+
+class _TransferProgress {
+  final int filesMoved;
+  final int errors;
+  final List<String> logs;
+  final String? currentStatus;
+  final bool isDone;
+  final String? criticalError;
+  final String? saveParent;
+  final String? saveChild;
+  final SendPort? workerSendPort;
+
+  _TransferProgress({
+    this.filesMoved = 0,
+    this.errors = 0,
+    this.logs = const [],
+    this.currentStatus,
+    this.isDone = false,
+    this.criticalError,
+    this.saveParent,
+    this.saveChild,
+    this.workerSendPort,
+  });
+}
 
 class FileProcessProvider with ChangeNotifier {
   final Logger _log = Logger('FileProcessProvider');
@@ -105,19 +165,23 @@ class FileProcessProvider with ChangeNotifier {
   Timer? _scheduleTimer;
   Timer? _completionRescheduleTimer;
   Completer<void>? _pauseCompleter;
+  
+  // Isolate state
+  Isolate? _workerIsolate;
+  SendPort? _workerControlPort;
 
-  // Performance: cache for _hasSubdirectories results
-  final Map<String, bool> _subdirCache = {};
-
-  // Performance: cache for created destination directories
-  final Set<String> _createdDirs = {};
-
-  // Performance: throttle _saveProgress calls
-  int _filesSinceLastSave = 0;
-  static const int _saveProgressInterval = 20;
 
   FileProcessProvider() {
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _scheduleTimer?.cancel();
+    _completionRescheduleTimer?.cancel();
+    _workerIsolate?.kill(priority: Isolate.immediate);
+    super.dispose();
   }
 
   void _startTimer() {
@@ -433,8 +497,8 @@ class FileProcessProvider with ChangeNotifier {
       isPaused = false;
       currentStatus = '⏳ Processing...';
       _addLog('⏳ Time window reached. Resuming transfer...');
+      _workerControlPort?.send(_TransferControl(resume: true));
       notifyListeners();
-      // Complete the pause completer to unblock the processing loop
       if (_pauseCompleter != null && !_pauseCompleter!.isCompleted) {
         _pauseCompleter!.complete();
       }
@@ -444,17 +508,9 @@ class FileProcessProvider with ChangeNotifier {
       _pauseCompleter = Completer<void>();
       currentStatus = '⏸ Waiting for time window...';
       _addLog('⏸ Outside allowed time window. Paused until next run window.');
+      _workerControlPort?.send(_TransferControl(pause: true));
       notifyListeners();
     }
-  }
-
-  /// If currently paused, awaits the completer until the schedule timer
-  /// resumes processing. Returns false if stop was requested during pause.
-  Future<bool> _awaitIfPaused() async {
-    if (isPaused && _pauseCompleter != null && !_pauseCompleter!.isCompleted) {
-      await _pauseCompleter!.future;
-    }
-    return !_stopRequested;
   }
 
   /// Schedules the next automatic run at the configured `runFromTime`.
@@ -488,13 +544,24 @@ class FileProcessProvider with ChangeNotifier {
   }
 
   void stop() {
+    if (!isProcessing) return;
     _stopRequested = true;
     _scheduleTimer?.cancel();
     _scheduleTimer = null;
     _completionRescheduleTimer?.cancel();
     _completionRescheduleTimer = null;
 
-    // Unblock the pause completer so the processing loop can exit
+    _workerControlPort?.send(_TransferControl(stop: true));
+    
+    // Fallback kill if isolate is completely stuck
+    Future.delayed(const Duration(seconds: 2), () {
+      if (_workerIsolate != null) {
+        _workerIsolate?.kill(priority: Isolate.immediate);
+        _workerIsolate = null;
+        _cleanupAfterStop();
+      }
+    });
+
     if (_pauseCompleter != null && !_pauseCompleter!.isCompleted) {
       _pauseCompleter!.complete();
     }
@@ -530,9 +597,6 @@ class FileProcessProvider with ChangeNotifier {
     isPaused = false;
     filesMoved = 0;
     errors = 0;
-    _subdirCache.clear();
-    _createdDirs.clear();
-    _filesSinceLastSave = 0;
     notifyListeners();
 
     _addLog('⏳ Starting transfer...');
@@ -588,65 +652,127 @@ class FileProcessProvider with ChangeNotifier {
       if (!await sourceDir.exists()) {
         _addLog('✗ Error: Source directory does not exist.');
         await _fileLogger.error('Transfer', 'Source directory does not exist: $sourcePath');
+        _finishRun(wasStopped: false);
         return;
       }
 
-      await _processDirectory(sourceDir);
+      final receivePort = ReceivePort();
+      
+      _workerIsolate = await Isolate.spawn(
+        _isolateWorker,
+        _TransferParams(
+          sourcePath: sourcePath!,
+          destPath: destPath!,
+          enableAgeFilter: enableAgeFilter,
+          ageFilterUnit: ageFilterUnit,
+          ageFilterValue: ageFilterValue,
+          enableDateRange: enableDateRange,
+          selectedYear: selectedYear,
+          validMonths: validMonths,
+          lastParent: lastProcessedParent,
+          lastChild: lastProcessedChild,
+          mainSendPort: receivePort.sendPort,
+        ),
+      );
 
-      if (_stopRequested) {
-        _addLog('⛔ Stopped by user.');
-      } else {
-        final elapsed = _getElapsedStr();
-        _addLog('🏁 Completed: ${_numFmt.format(filesMoved)} moved, ${_numFmt.format(errors)} errors in $elapsed');
-      }
+      receivePort.listen((message) {
+        if (message is _TransferProgress) {
+          if (message.workerSendPort != null) {
+            _workerControlPort = message.workerSendPort;
+            if (isPaused) {
+              _workerControlPort?.send(_TransferControl(pause: true));
+            }
+            return;
+          }
+
+          filesMoved = message.filesMoved;
+          errors = message.errors;
+          
+          if (message.currentStatus != null) {
+            currentStatus = message.currentStatus!;
+          }
+
+          if (message.saveParent != null && message.saveChild != null) {
+            _saveProgress(message.saveParent!, message.saveChild!);
+          }
+
+          for (final log in message.logs) {
+            _addLog(log);
+            if (log.startsWith('✗')) {
+              _fileLogger.error('Transfer', log);
+            }
+          }
+
+          if (message.criticalError != null) {
+            _addLog('✗ Critical Error: ${message.criticalError}');
+            _fileLogger.error('Transfer', 'Critical Error: ${message.criticalError}');
+          }
+
+          if (message.isDone) {
+            receivePort.close();
+            _workerIsolate = null;
+            _workerControlPort = null;
+            if (!_stopRequested) {
+              _finishRun(wasStopped: false);
+            } else {
+              _cleanupAfterStop();
+            }
+          }
+        }
+      });
     } catch (e, stack) {
       _addLog('✗ Critical Error: $e');
       _log.severe('Critical error during transfer', e, stack);
       await _fileLogger.error('Transfer', 'Critical Error: $e\n$stack');
-    } finally {
-      // Capture before logRunEnd clears them
-      final runId = _fileLogger.getRunId('Transfer') ?? 'UNKNOWN';
-      final start = _fileLogger.getStartTime('Transfer') ?? DateTime.now();
+      _finishRun(wasStopped: false);
+    }
+  }
 
-      await _fileLogger.logRunEnd(
+  Future<void> _finishRun({required bool wasStopped}) async {
+    final elapsed = _getElapsedStr();
+    if (wasStopped) {
+      _addLog('⛔ Stopped by user.');
+    } else {
+      _addLog('🏁 Completed: ${_numFmt.format(filesMoved)} moved, ${_numFmt.format(errors)} errors in $elapsed');
+    }
+
+    final runId = _fileLogger.getRunId('Transfer') ?? 'UNKNOWN';
+    final start = _fileLogger.getStartTime('Transfer') ?? DateTime.now();
+
+    await _fileLogger.logRunEnd(
+      operation: 'Transfer',
+      filesProcessed: filesMoved,
+      errors: errors,
+      wasStopped: wasStopped,
+    );
+    
+    try {
+      await HistoryService().saveRecord(RunRecord(
+        id: runId,
         operation: 'Transfer',
+        startTime: start,
+        endTime: DateTime.now(),
         filesProcessed: filesMoved,
         errors: errors,
-        wasStopped: _stopRequested,
-      );
-      
-      try {
-        await HistoryService().saveRecord(RunRecord(
-          id: runId,
-          operation: 'Transfer',
-          startTime: start,
-          endTime: DateTime.now(),
-          filesProcessed: filesMoved,
-          errors: errors,
-          status: _stopRequested ? 'Stopped' : 'Completed',
-          configSummary: 'Source: $sourcePath, Dest: $destPath',
-        ));
-      } catch (_) {}
+        status: wasStopped ? 'Stopped' : 'Completed',
+        configSummary: 'Source: $sourcePath, Dest: $destPath',
+      ));
+    } catch (_) {}
 
-      _stopTimer();
-      _scheduleTimer?.cancel();
-      _scheduleTimer = null;
-      _subdirCache.clear();
-      _createdDirs.clear();
+    _stopTimer();
+    _scheduleTimer?.cancel();
+    _scheduleTimer = null;
 
-      if (!_stopRequested && onCompletionAction == 'pause') {
-        // Stay in processing state and schedule next run
-        _scheduleNextRun();
-      } else {
-        // 'stop' or user-stopped → fully stop
-        isProcessing = false;
-        isPaused = false;
-        currentStatus = _stopRequested ? '⛔ Stopped by user.' : 'Idle';
-        _completionRescheduleTimer?.cancel();
-        _completionRescheduleTimer = null;
-      }
-      notifyListeners();
+    if (!wasStopped && onCompletionAction == 'pause') {
+      _scheduleNextRun();
+    } else {
+      isProcessing = false;
+      isPaused = false;
+      currentStatus = wasStopped ? '⛔ Stopped by user.' : 'Idle';
+      _completionRescheduleTimer?.cancel();
+      _completionRescheduleTimer = null;
     }
+    notifyListeners();
   }
 
   /// Cleanup helper after stop is requested during pause-wait.
@@ -662,251 +788,227 @@ class FileProcessProvider with ChangeNotifier {
     currentStatus = '⛔ Stopped by user.';
     _addLog('⛔ Stopped by user.');
     _stopTimer();
-    _subdirCache.clear();
-    _createdDirs.clear();
     notifyListeners();
   }
 
-  Future<void> _processDirectory(Directory rootDir) async {
-    bool skippingParents = lastProcessedParent != null;
+  static Future<void> _isolateWorker(_TransferParams params) async {
+    final workerReceivePort = ReceivePort();
+    params.mainSendPort.send(_TransferProgress(workerSendPort: workerReceivePort.sendPort));
 
-    // Sort directories to ensure consistent order for resuming
-    List<FileSystemEntity> parentEntities = rootDir
-        .listSync()
-        .whereType<Directory>()
-        .toList();
-    parentEntities.sort(
-      (a, b) => p.basename(a.path).compareTo(p.basename(b.path)),
-    );
+    bool isPaused = false;
+    bool stopRequested = false;
+    Completer<void>? pauseCompleter;
 
-    for (var entity in parentEntities) {
-      if (_stopRequested) return;
-      if (!(await _awaitIfPaused())) return;
-      if (entity is! Directory) continue;
+    workerReceivePort.listen((message) {
+      if (message is _TransferControl) {
+        if (message.stop) {
+          stopRequested = true;
+          if (pauseCompleter != null && !pauseCompleter!.isCompleted) {
+            pauseCompleter!.complete();
+          }
+        } else if (message.pause) {
+          isPaused = true;
+          pauseCompleter = Completer<void>();
+        } else if (message.resume) {
+          isPaused = false;
+          if (pauseCompleter != null && !pauseCompleter!.isCompleted) {
+            pauseCompleter!.complete();
+          }
+        }
+      }
+    });
 
-      String parentName = p.basename(entity.path);
+    Future<bool> awaitIfPaused() async {
+      if (isPaused && pauseCompleter != null && !pauseCompleter!.isCompleted) {
+        await pauseCompleter!.future;
+      }
+      return !stopRequested;
+    }
 
-      if (skippingParents) {
-        if (parentName == lastProcessedParent) {
-          skippingParents =
-              false; // Found the parent, stop skipping parents, but might skip children
+    int filesMoved = 0;
+    int errors = 0;
+    List<String> logBatch = [];
+    int scanCount = 0;
+    final Map<String, bool> subdirCache = {};
+    final Set<String> createdDirs = {};
+    
+    int filesSinceLastSave = 0;
+    const int saveProgressInterval = 20;
+
+    void flushProgress(String? status, {bool force = false, String? sParent, String? sChild}) {
+      if (force || logBatch.isNotEmpty || scanCount % 10 == 0 || sParent != null) {
+        params.mainSendPort.send(_TransferProgress(
+          filesMoved: filesMoved,
+          errors: errors,
+          logs: List.from(logBatch),
+          currentStatus: status,
+          saveParent: sParent,
+          saveChild: sChild,
+        ));
+        logBatch.clear();
+      }
+    }
+
+    Future<bool> hasSubdirectories(Directory dir) async {
+      final key = dir.path;
+      if (subdirCache.containsKey(key)) return subdirCache[key]!;
+
+      bool hasSubdirs = false;
+      try {
+        await for (final entity in dir.list(recursive: false)) {
+          if (FileSystemEntity.isDirectorySync(entity.path)) {
+            hasSubdirs = true;
+            break;
+          }
+        }
+      } catch (e) {
+        // Ignored
+      }
+      subdirCache[key] = hasSubdirs;
+      return hasSubdirs;
+    }
+
+    Future<void> moveFile(File file, String year, String month) async {
+      try {
+        String relativePath = p.relative(file.parent.path, from: params.sourcePath);
+        String destDir = p.join(params.destPath, year, relativePath);
+        String destFilePath = p.join(destDir, p.basename(file.path));
+
+        if (!createdDirs.contains(destDir)) {
+          await Directory(destDir).create(recursive: true);
+          createdDirs.add(destDir);
+        }
+
+        await file.copy(destFilePath);
+        await file.delete();
+
+        logBatch.add('✓ Moved [$month-$year]: ${p.basename(file.path)}');
+        filesMoved++;
+      } catch (e) {
+        logBatch.add('✗ Failed to move ${file.path}: $e');
+        errors++;
+      }
+    }
+
+    Future<void> checkAndMoveFile(File file) async {
+      try {
+        FileStat stats = await file.stat();
+        DateTime modified = stats.modified;
+
+        if (params.enableAgeFilter) {
+          DateTime threshold;
+          final now = DateTime.now();
+          if (params.ageFilterUnit == 'Days') {
+            threshold = now.subtract(Duration(days: params.ageFilterValue));
+          } else if (params.ageFilterUnit == 'Months') {
+            threshold = DateTime(now.year, now.month - params.ageFilterValue, now.day);
+          } else {
+            threshold = DateTime(now.year - params.ageFilterValue, now.month, now.day);
+          }
+          if (modified.isAfter(threshold)) return;
+        }
+
+        String yearStr = DateFormat('yyyy').format(modified);
+        String monthStr = DateFormat('MMM').format(modified);
+
+        if (!params.enableDateRange || 
+            (int.parse(yearStr) <= params.selectedYear && params.validMonths.contains(monthStr))) {
+          await moveFile(file, yearStr, monthStr);
+        }
+      } catch (e) {
+        logBatch.add('✗ Error accessing ${file.path}: $e');
+        errors++;
+      }
+    }
+
+    Future<void> processFiles(Directory dir) async {
+      await for (final entity in dir.list(recursive: true, followLinks: true)) {
+        if (stopRequested) return;
+        if (!(await awaitIfPaused())) return;
+
+        if (FileSystemEntity.isFileSync(entity.path)) {
+          Directory fileParent = entity.parent;
+          if (await hasSubdirectories(fileParent)) continue;
+          
+          await checkAndMoveFile(File(entity.path));
+        }
+      }
+    }
+
+    Future<void> processSubDirectories(Directory parentDir, String parentName) async {
+      bool skippingChildren = params.lastChild != null && params.lastParent == parentName;
+
+      List<FileSystemEntity> childEntities = [];
+      await for (final e in parentDir.list(recursive: false)) {
+        if (FileSystemEntity.isDirectorySync(e.path)) childEntities.add(e);
+      }
+      childEntities.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+
+      for (var entity in childEntities) {
+        if (stopRequested) return;
+        if (!(await awaitIfPaused())) return;
+
+        String childName = p.basename(entity.path);
+
+        if (skippingChildren) {
+          if (childName == params.lastChild) {
+            skippingChildren = false;
+          } else {
+            continue;
+          }
+        }
+
+        scanCount++;
+        
+        filesSinceLastSave++;
+        if (filesSinceLastSave >= saveProgressInterval) {
+          filesSinceLastSave = 0;
+          flushProgress('⏳ Scanning: $parentName / $childName', sParent: parentName, sChild: childName);
         } else {
-          continue; // Skip this parent
-        }
-      }
-
-      currentStatus = '⏳ Processing: $parentName';
-      // notifyListeners(); // Throttled
-
-      await _processSubDirectories(entity, parentName);
-
-      // If we finished a parent completely without stopping, we can checkpoint here or inside the child loop
-      // The original script updated start index after the loop.
-    }
-  }
-
-  Future<void> _processSubDirectories(
-    Directory parentDir,
-    String parentName,
-  ) async {
-    bool skippingChildren =
-        lastProcessedChild != null && lastProcessedParent == parentName;
-
-    List<FileSystemEntity> childEntities = parentDir
-        .listSync()
-        .whereType<Directory>()
-        .toList();
-    childEntities.sort(
-      (a, b) => p.basename(a.path).compareTo(p.basename(b.path)),
-    );
-
-    for (var entity in childEntities) {
-      if (_stopRequested) return;
-      if (!(await _awaitIfPaused())) return;
-      if (entity is! Directory) continue;
-
-      String childName = p.basename(entity.path);
-
-      if (skippingChildren) {
-        if (childName == lastProcessedChild) {
-          skippingChildren = false;
-          // We resume *from* this child (re-process it) or *after*?
-          // Script logic: "if lNo2 >= startChildIndex". It processes the saved index too.
-          // So we should process this one.
-        } else {
-          continue;
-        }
-      }
-
-      currentStatus = '⏳ Scanning: $parentName / $childName';
-      // Don't notify on every single folder scan to avoid UI stutter, maybe throttle?
-
-      // Throttle progress saves to every N files
-      _filesSinceLastSave++;
-      if (_filesSinceLastSave >= _saveProgressInterval) {
-        await _saveProgress(parentName, childName);
-        _filesSinceLastSave = 0;
-      } else {
-        // Still update in-memory for resume tracking
-        lastProcessedParent = parentName;
-        lastProcessedChild = childName;
-      }
-
-      await _processFiles(entity);
-    }
-
-    // After finishing all children of this parent, we reset child progress for next parent?
-    // Actually we just set the new parent checkpoint.
-  }
-
-  Future<void> _processFiles(Directory dir) async {
-    // Current logic: "if len(subdirs) == 0".
-    // The script traverses `for path, subdirs, files in os.walk(finalorigin2)`.
-    // And checks `if len(subdirs) == 0`. It seems it only processes leaf nodes?
-    // Let's emulate that: recurse or just listSync(recursive: true)
-
-    // Using listSync(recursive: true) might be memory intensive for huge trees.
-    // Better to just walk.
-
-    await for (final entity in dir.list(recursive: true, followLinks: false)) {
-      if (_stopRequested) return;
-      if (!(await _awaitIfPaused())) return;
-      if (entity is File) {
-        // Check if it's in a leaf dir? The script says `if len(subdirs) == 0`.
-        // In `os.walk`, `subdirs` is the list of directories in `path`.
-        // This implies we only care about files in directories that have no subdirectories.
-        // This is a specific constraint.
-
-        // To check this efficiently (now cached):
-        Directory fileParent = entity.parent;
-        if (await _hasSubdirectories(fileParent)) {
-          continue; // Skip files in non-leaf directories
+          flushProgress('⏳ Scanning: $parentName / $childName');
         }
 
-        await _checkAndMoveFile(entity);
+        await processFiles(Directory(entity.path));
       }
     }
-  }
 
-  /// Cached check for whether a directory has subdirectories.
-  Future<bool> _hasSubdirectories(Directory dir) async {
-    final key = dir.path;
-    if (_subdirCache.containsKey(key)) {
-      return _subdirCache[key]!;
+    Future<void> processDirectory(Directory rootDir) async {
+      bool skippingParents = params.lastParent != null;
+
+      List<FileSystemEntity> parentEntities = [];
+      await for (final e in rootDir.list(recursive: false)) {
+        if (FileSystemEntity.isDirectorySync(e.path)) parentEntities.add(e);
+      }
+      parentEntities.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+
+      for (var entity in parentEntities) {
+        if (stopRequested) return;
+        if (!(await awaitIfPaused())) return;
+
+        String parentName = p.basename(entity.path);
+
+        if (skippingParents) {
+          if (parentName == params.lastParent) {
+            skippingParents = false;
+          } else {
+            continue;
+          }
+        }
+
+        flushProgress('⏳ Processing: $parentName');
+        await processSubDirectories(Directory(entity.path), parentName);
+      }
     }
 
-    bool hasSubdirs = false;
     try {
-      await for (final entity in dir.list(recursive: false)) {
-        if (entity is Directory) {
-          hasSubdirs = true;
-          break;
-        }
-      }
+      await processDirectory(Directory(params.sourcePath));
+      flushProgress('DONE', force: true);
+      params.mainSendPort.send(_TransferProgress(isDone: true));
     } catch (e) {
-      // Access denied or gone
-    }
-    _subdirCache[key] = hasSubdirs;
-    return hasSubdirs;
-  }
-
-  Future<void> _checkAndMoveFile(File file) async {
-    try {
-      FileStat stats = await file.stat();
-      DateTime modified = stats.modified;
-
-      // Age filter check
-      if (enableAgeFilter) {
-        DateTime threshold;
-        final now = DateTime.now();
-        if (ageFilterUnit == 'Days') {
-          threshold = now.subtract(Duration(days: ageFilterValue));
-        } else if (ageFilterUnit == 'Months') {
-          threshold = DateTime(now.year, now.month - ageFilterValue, now.day);
-        } else {
-          threshold = DateTime(now.year - ageFilterValue, now.month, now.day);
-        }
-        if (modified.isAfter(threshold)) {
-          return;
-        }
-      }
-
-      String yearStr = DateFormat('yyyy').format(modified);
-      String monthStr = DateFormat('MMM').format(modified); // 'Jan', 'Feb'
-
-      // Check filters
-      if (!enableDateRange || (int.parse(yearStr) <= selectedYear &&
-          validMonths.contains(monthStr))) {
-        // Move it
-        await _moveFile(file, yearStr, monthStr);
-      }
-    } catch (e) {
-      _addLog('✗ Error accessing ${file.path}: $e');
-      await _fileLogger.error('Transfer', 'Error accessing ${file.path}: $e');
-      errors++;
-    }
-  }
-
-  Future<void> _moveFile(File file, String year, String month) async {
-    try {
-      // Logic from script:
-      // initialPath = path.split('\\', 6)  -> based on `origin` depth.
-      // filterText = initialPath[6].rsplit('\\', 1)
-      // finalFilterText = filterText[0]+'\\'
-      // finalMoveTo = os.path.join(moveto,getyear,finalFilterText,filterText[1])
-
-      /*
-         Script Origins:
-         origin = '\\\\Myflofs2\\apps\\myFloWaterBrothers\\EmailAttachments\\'
-         Subdirs1 (Parent) e.g. "SomeParent"
-         FinalOrigin = origin/SomeParent
-         Subdirs2 (Child) e.g. "SomeChild"
-         FinalOrigin2 = origin/SomeParent/SomeChild
-         
-         Then os.walk(FinalOrigin2).
-         Path = origin/SomeParent/SomeChild/.../LeafFolder
-         
-         split('\\', 6)?
-         0: 
-         1: 
-         2: Myflofs2
-         3: apps
-         4: myFloWaterBrothers
-         5: EmailAttachments
-         6: Rest of path starting with Parent/Child/...
-         
-         This relies heavily on the exact source path structure!
-         
-         In our generic app, we should probably replicate the *relative path* from Source to the file.
-       */
-
-      // Calculate relative path from source
-      String relativePath = p.relative(file.parent.path, from: sourcePath!);
-
-      // Construct destination
-      // Script: moveto / year / ...
-      // Let's use: dest / year / relativePath
-
-      String destDir = p.join(destPath!, year, relativePath);
-      String destFilePath = p.join(destDir, p.basename(file.path));
-
-      // Cached directory creation
-      if (!_createdDirs.contains(destDir)) {
-        await Directory(destDir).create(recursive: true);
-        _createdDirs.add(destDir);
-      }
-
-      // Move: copy then delete (safe for cross-volume moves)
-      await file.copy(destFilePath);
-      await file.delete();
-
-      _addLog('✓ Moved [$month-$year]: ${p.basename(file.path)}');
-      filesMoved++;
-      // notifyListeners(); // Throttled
-    } catch (e) {
-      _addLog('✗ Failed to move ${file.path}: $e');
-      await _fileLogger.error('Transfer', 'Failed to move ${file.path}: $e');
-      errors++;
+      params.mainSendPort.send(_TransferProgress(
+        criticalError: e.toString(),
+        isDone: true,
+      ));
     }
   }
 }
