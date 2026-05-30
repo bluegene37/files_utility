@@ -856,7 +856,7 @@ class FileProcessProvider with ChangeNotifier {
       bool hasSubdirs = false;
       try {
         await for (final entity in dir.list(recursive: false)) {
-          if (FileSystemEntity.isDirectorySync(entity.path)) {
+          if (entity is Directory) {
             hasSubdirs = true;
             break;
           }
@@ -922,15 +922,21 @@ class FileProcessProvider with ChangeNotifier {
     }
 
     Future<void> processFiles(Directory dir) async {
+      int filesInDir = 0;
       await for (final entity in dir.list(recursive: true, followLinks: true)) {
         if (stopRequested) return;
         if (!(await awaitIfPaused())) return;
 
-        if (FileSystemEntity.isFileSync(entity.path)) {
+        if (entity is File) {
+          filesInDir++;
+          if (filesInDir % 1000 == 0) {
+            flushProgress('⏳ Scanning files in ${p.basename(dir.path)}: $filesInDir files checked', force: true);
+          }
+
           Directory fileParent = entity.parent;
           if (await hasSubdirectories(fileParent)) continue;
           
-          await checkAndMoveFile(File(entity.path));
+          await checkAndMoveFile(entity);
         }
       }
     }
@@ -940,7 +946,7 @@ class FileProcessProvider with ChangeNotifier {
 
       List<FileSystemEntity> childEntities = [];
       await for (final e in parentDir.list(recursive: false)) {
-        if (FileSystemEntity.isDirectorySync(e.path)) childEntities.add(e);
+        if (e is Directory) childEntities.add(e);
       }
       childEntities.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
 
@@ -977,7 +983,7 @@ class FileProcessProvider with ChangeNotifier {
 
       List<FileSystemEntity> parentEntities = [];
       await for (final e in rootDir.list(recursive: false)) {
-        if (FileSystemEntity.isDirectorySync(e.path)) parentEntities.add(e);
+        if (e is Directory) parentEntities.add(e);
       }
       parentEntities.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
 

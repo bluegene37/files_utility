@@ -52,15 +52,195 @@ class TransferScreen extends StatelessWidget {
                             onChanged: provider.setDestPath,
                           ),
                           const SizedBox(height: 8),
-                          Theme(
-                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                            child: ExpansionTile(
-                              title: const Text('Advanced Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.accent)),
-                              iconColor: AppColors.accent,
-                              collapsedIconColor: AppColors.textSecondary,
-                              tilePadding: EdgeInsets.zero,
-                              childrenPadding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
-                              children: [
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showAdvancedSettingsDialog(context, provider),
+                              icon: const Icon(Icons.settings, size: 16, color: AppColors.accent),
+                              label: const Text('Advanced Settings', style: TextStyle(color: AppColors.accent)),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: AppColors.cardBorder),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                          )
+                        ],
+                      ),
+                    ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Actions, Status, and Stats
+                    Row(
+                      children: [
+                        if (!provider.isProcessing) ...[
+                          ElevatedButton.icon(
+                            onPressed:
+                                (provider.sourcePath != null &&
+                                    provider.destPath != null)
+                                ? provider.startProcessing
+                                : null,
+                            icon: const Icon(Icons.play_arrow, size: 18),
+                            label: const Text('Start'),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('Clear Progress?'),
+                                  content: const Text(
+                                    'This will reset the resume checkpoint. Are you sure?',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () {
+                                        provider.clearProgress();
+                                        Navigator.pop(ctx);
+                                      },
+                                      child: const Text('Clear'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.refresh, size: 18),
+                            label: const Text('Clear Progress'),
+                          ),
+                        ] else
+                          ElevatedButton.icon(
+                            onPressed: provider.stop,
+                            icon: const Icon(Icons.stop, size: 18),
+                            label: const Text('Stop'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.error,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        const SizedBox(width: 16),
+                        // Status
+                        if (provider.isProcessing && !provider.isPaused)
+                          Container(
+                            width: 14,
+                            height: 14,
+                            margin: const EdgeInsets.only(right: 8),
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
+                            ),
+                          ),
+                        Expanded(
+                          child: Text(
+                            provider.currentStatus,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                              fontSize: 13,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        StatBadge(
+                          title: 'Moved',
+                          value: provider.filesMoved.toString(),
+                          color: AppColors.success,
+                          icon: Icons.check_circle,
+                        ),
+                        const SizedBox(width: 8),
+                        StatBadge(
+                          title: 'Errors',
+                          value: provider.errors.toString(),
+                          color: AppColors.error,
+                          icon: Icons.error,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Logs
+                    Expanded(
+                      child: LogConsole(logs: provider.logs),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textMuted,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, color: AppColors.accent),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          const SizedBox(width: 4),
+          const Icon(Icons.move_to_inbox_rounded, color: AppColors.accent, size: 22),
+          const SizedBox(width: 10),
+          const Text(
+            'Transfer Files',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  void _showAdvancedSettingsDialog(BuildContext context, FileProcessProvider provider) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return Consumer<FileProcessProvider>(
+          builder: (context, provider, child) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.settings, size: 22, color: AppColors.accent),
+                  const SizedBox(width: 8),
+                  const Text('Advanced Settings', style: TextStyle(fontSize: 18)),
+                ],
+              ),
+              contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+              content: SizedBox(
+                width: MediaQuery.of(context).size.width * 0.7,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                                 // ── File Date Filter ──
                                 _sectionLabel('📅 File Date Filter'),
                                 const SizedBox(height: 8),
@@ -326,158 +506,19 @@ class TransferScreen extends StatelessWidget {
                                   ],
                                 ),
                               ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Actions, Status, and Stats
-                    Row(
-                      children: [
-                        if (!provider.isProcessing) ...[
-                          ElevatedButton.icon(
-                            onPressed:
-                                (provider.sourcePath != null &&
-                                    provider.destPath != null)
-                                ? provider.startProcessing
-                                : null,
-                            icon: const Icon(Icons.play_arrow, size: 18),
-                            label: const Text('Start'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              showDialog(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text('Clear Progress?'),
-                                  content: const Text(
-                                    'This will reset the resume checkpoint. Are you sure?',
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(ctx),
-                                      child: const Text('Cancel'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        provider.clearProgress();
-                                        Navigator.pop(ctx);
-                                      },
-                                      child: const Text('Clear'),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.refresh, size: 18),
-                            label: const Text('Clear Progress'),
-                          ),
-                        ] else
-                          ElevatedButton.icon(
-                            onPressed: provider.stop,
-                            icon: const Icon(Icons.stop, size: 18),
-                            label: const Text('Stop'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.error,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        const SizedBox(width: 16),
-                        // Status
-                        if (provider.isProcessing && !provider.isPaused)
-                          Container(
-                            width: 14,
-                            height: 14,
-                            margin: const EdgeInsets.only(right: 8),
-                            child: const CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
-                            ),
-                          ),
-                        Expanded(
-                          child: Text(
-                            provider.currentStatus,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
-                              fontSize: 13,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        StatBadge(
-                          title: 'Moved',
-                          value: provider.filesMoved.toString(),
-                          color: AppColors.success,
-                          icon: Icons.check_circle,
-                        ),
-                        const SizedBox(width: 8),
-                        StatBadge(
-                          title: 'Errors',
-                          value: provider.errors.toString(),
-                          color: AppColors.error,
-                          icon: Icons.error,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Logs
-                    Expanded(
-                      child: LogConsole(logs: provider.logs),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _sectionLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        color: AppColors.textMuted,
-        letterSpacing: 0.5,
-      ),
-    );
-  }
-
-  Widget _buildAppBar(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back_rounded, color: AppColors.accent),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          const SizedBox(width: 4),
-          const Icon(Icons.move_to_inbox_rounded, color: AppColors.accent, size: 22),
-          const SizedBox(width: 10),
-          const Text(
-            'Transfer Files',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-        ],
-      ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

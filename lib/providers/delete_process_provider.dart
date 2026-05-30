@@ -395,11 +395,11 @@ class DeleteProcessProvider with ChangeNotifier {
       try {
         await for (final entity in dir.list(recursive: false, followLinks: true)) {
           scanCount++;
-          if (FileSystemEntity.isFileSync(entity.path)) {
-            await checkAndDeleteFile(File(entity.path));
-          } else if (FileSystemEntity.isDirectorySync(entity.path)) {
+          if (entity is File) {
+            await checkAndDeleteFile(entity);
+          } else if (entity is Directory) {
             sendProgress('⏳ Scanning: ${p.basename(entity.path)}');
-            await processDirectory(Directory(entity.path));
+            await processDirectory(entity);
           }
           sendProgress(null);
         }

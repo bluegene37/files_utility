@@ -278,9 +278,18 @@ class CountFilesProvider with ChangeNotifier {
     Future<void> countDir(Directory dir) async {
       try {
         await for (final entity in dir.list(recursive: false, followLinks: true)) {
-          if (FileSystemEntity.isFileSync(entity.path)) {
+          if (entity is File) {
             files++;
-          } else if (FileSystemEntity.isDirectorySync(entity.path)) {
+            // Update progress occasionally for files, so UI doesn't stall
+            if (files % 1000 == 0) {
+              params.sendPort.send(_CountProgress(
+                files: files,
+                folders: folders,
+                errors: errors,
+                currentScanPath: entity.path,
+              ));
+            }
+          } else if (entity is Directory) {
             folders++;
             
             // Throttle progress updates to avoid overwhelming the main thread
@@ -293,7 +302,7 @@ class CountFilesProvider with ChangeNotifier {
               ));
             }
             
-            await countDir(Directory(entity.path));
+            await countDir(entity);
           }
         }
       } catch (e) {

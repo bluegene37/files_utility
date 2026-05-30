@@ -38,81 +38,19 @@ class DeleteScreen extends StatelessWidget {
                             onChanged: provider.setTargetPath,
                           ),
                           const SizedBox(height: 8),
-                          Theme(
-                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                            child: ExpansionTile(
-                              initiallyExpanded: true,
-                              title: const Text('Advanced Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.error)),
-                              iconColor: AppColors.error,
-                              collapsedIconColor: AppColors.textSecondary,
-                              tilePadding: EdgeInsets.zero,
-                              childrenPadding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
-                              children: [
-                                // ── File Date Filter ──
-                                _sectionLabel('📅 File Date Filter'),
-                                const SizedBox(height: 8),
-                                Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SizedBox(
-                                width: 100,
-                                child: DropdownButtonFormField<int>(
-                                  initialValue: provider.selectedYear,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Year',
-                                  ),
-                                  dropdownColor: AppColors.bgDark2,
-                                  items: provider.availableYears.map((int value) {
-                                    return DropdownMenuItem<int>(
-                                      value: value,
-                                      child: Text(
-                                        value.toString(),
-                                        style: const TextStyle(color: AppColors.textPrimary),
-                                      ),
-                                    );
-                                  }).toList(),
-                                  onChanged: (val) {
-                                    if (val != null) provider.setYear(val);
-                                  },
-                                ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showAdvancedSettingsDialog(context, provider),
+                              icon: const Icon(Icons.settings, size: 16, color: AppColors.accent),
+                              label: const Text('Advanced Settings', style: TextStyle(color: AppColors.accent)),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: AppColors.cardBorder),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                visualDensity: VisualDensity.compact,
                               ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Months:',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.textSecondary,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Wrap(
-                                      spacing: 6.0,
-                                      runSpacing: 4.0,
-                                      children: provider.allMonths.map((m) {
-                                        final isSelected = provider.validMonths.contains(m);
-                                        return FilterChip(
-                                          label: Text(m),
-                                          selected: isSelected,
-                                          onSelected: (bool selected) {
-                                            provider.toggleMonth(m);
-                                          },
-                                          visualDensity: VisualDensity.compact,
-                                        );
-                                      }).toList(),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
+                            ),
+                          )
                   ],
                 ),
               ),
@@ -331,6 +269,108 @@ class DeleteScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+
+  void _showAdvancedSettingsDialog(BuildContext context, DeleteProcessProvider provider) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return Consumer<DeleteProcessProvider>(
+          builder: (context, provider, child) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.settings, size: 22, color: AppColors.error),
+                  const SizedBox(width: 8),
+                  const Text('Advanced Settings', style: TextStyle(fontSize: 18)),
+                ],
+              ),
+              contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+              content: SizedBox(
+                width: MediaQuery.of(context).size.width * 0.7,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                                // ── File Date Filter ──
+                                _sectionLabel('📅 File Date Filter'),
+                                const SizedBox(height: 8),
+                                Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                width: 100,
+                                child: DropdownButtonFormField<int>(
+                                  initialValue: provider.selectedYear,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Year',
+                                  ),
+                                  dropdownColor: AppColors.bgDark2,
+                                  items: provider.availableYears.map((int value) {
+                                    return DropdownMenuItem<int>(
+                                      value: value,
+                                      child: Text(
+                                        value.toString(),
+                                        style: const TextStyle(color: AppColors.textPrimary),
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (val) {
+                                    if (val != null) provider.setYear(val);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Months:',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textSecondary,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 6.0,
+                                      runSpacing: 4.0,
+                                      children: provider.allMonths.map((m) {
+                                        final isSelected = provider.validMonths.contains(m);
+                                        return FilterChip(
+                                          label: Text(m),
+                                          selected: isSelected,
+                                          onSelected: (bool selected) {
+                                            provider.toggleMonth(m);
+                                          },
+                                          visualDensity: VisualDensity.compact,
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }
