@@ -25,7 +25,7 @@ class _MainScreenState extends State<MainScreen> {
         decoration: AppDecorations.gradientBackground,
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -87,7 +87,7 @@ class _MainScreenState extends State<MainScreen> {
                   ],
                 ),
 
-                const SizedBox(height: 40),
+                const SizedBox(height: 20),
 
                 // Card Grid
                 Expanded(
@@ -97,8 +97,8 @@ class _MainScreenState extends State<MainScreen> {
                       child: GridView.count(
                         crossAxisCount: 2,
                         crossAxisSpacing: 20,
-                        mainAxisSpacing: 20,
-                        childAspectRatio: 1.8,
+                        mainAxisSpacing: 14,
+                        childAspectRatio: 2.4,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         children: [
@@ -298,15 +298,14 @@ class _DashboardCardState extends State<_DashboardCard> {
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // Icon with glow
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     color: widget.accentColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
@@ -323,10 +322,14 @@ class _DashboardCardState extends State<_DashboardCard> {
                   child: Icon(
                     widget.icon,
                     color: widget.accentColor,
-                    size: 24,
+                    size: 22,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(width: 16),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
                 Text(
                   widget.title,
                   style: TextStyle(
@@ -336,7 +339,7 @@ class _DashboardCardState extends State<_DashboardCard> {
                     letterSpacing: 0.3,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   widget.subtitle,
                   style: const TextStyle(
@@ -347,6 +350,8 @@ class _DashboardCardState extends State<_DashboardCard> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
+              ],
+            )),
               ],
             ),
           ),

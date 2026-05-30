@@ -893,7 +893,7 @@ class CopyFilesProvider with ChangeNotifier {
     }
     List<FileSystemEntity> entities;
     try {
-      entities = await dir.list(followLinks: false).toList();
+      entities = await dir.list(followLinks: true).toList();
     } catch (e) {
       counts.errors++;
       params.sendPort.send(_IsolateProgress(
@@ -921,13 +921,13 @@ class CopyFilesProvider with ChangeNotifier {
       ));
     }
 
-    final files = entities.whereType<File>().toList();
+    final files = entities.where((e) => FileSystemEntity.isFileSync(e.path)).toList();
 
     // If no files in this directory, skip straight to subdirectories
     if (files.isEmpty) {
       for (final entity in entities) {
-        if (entity is Directory) {
-          await _walkAndCopy(entity, params, counts, createdDirs, batch, completedDirs);
+        if (FileSystemEntity.isDirectorySync(entity.path)) {
+          await _walkAndCopy(Directory(entity.path), params, counts, createdDirs, batch, completedDirs);
         }
       }
       return;
@@ -963,10 +963,10 @@ class CopyFilesProvider with ChangeNotifier {
     try {
       final destDir = Directory(destDirPath);
       if (await destDir.exists()) {
-        await for (final e in destDir.list(followLinks: false)) {
-          if (e is File) {
+        await for (final e in destDir.list(followLinks: true)) {
+          if (FileSystemEntity.isFileSync(e.path)) {
             try {
-              existingDestFiles[p.basename(e.path)] = await e.length();
+              existingDestFiles[p.basename(e.path)] = await File(e.path).length();
             } catch (_) {}
           }
         }
@@ -980,7 +980,8 @@ class CopyFilesProvider with ChangeNotifier {
     for (var i = 0; i < files.length; i += 8) {
       final chunk = files.skip(i).take(8);
 
-      final futures = chunk.map((entity) async {
+      final futures = chunk.map((fsEntity) async {
+        final entity = File(fsEntity.path);
         try {
           counts.filesInspected++;
 
@@ -1071,8 +1072,8 @@ class CopyFilesProvider with ChangeNotifier {
 
     // Then recurse into subdirectories
     for (final entity in entities) {
-      if (entity is Directory) {
-        await _walkAndCopy(entity, params, counts, createdDirs, batch, completedDirs);
+      if (FileSystemEntity.isDirectorySync(entity.path)) {
+        await _walkAndCopy(Directory(entity.path), params, counts, createdDirs, batch, completedDirs);
       }
     }
 
