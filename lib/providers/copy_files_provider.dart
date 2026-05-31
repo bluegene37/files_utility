@@ -50,6 +50,7 @@ class _IsolateParams {
   final SendPort sendPort;
   final String? progressFilePath;
   final Set<String> completedDirs;
+  final Map<String, String> lastProcessedFiles;
   final int logInterval;
   final int initialCopied;
   final int initialSkipped;
@@ -69,6 +70,7 @@ class _IsolateParams {
     required this.sendPort,
     this.progressFilePath,
     this.completedDirs = const {},
+    this.lastProcessedFiles = const {},
     this.logInterval = 100,
     this.initialCopied = 0,
     this.initialSkipped = 0,
@@ -200,6 +202,7 @@ class CopyFilesProvider with ChangeNotifier {
     String sourcePath,
     String destPath,
     Set<String> completedDirs,
+    Map<String, String> lastProcessedFiles,
     _CountState counts,
   ) {
     try {
@@ -209,6 +212,7 @@ class CopyFilesProvider with ChangeNotifier {
         'sourcePath': sourcePath,
         'destPath': destPath,
         'completedDirs': completedDirs.toList(),
+        'lastProcessedFiles': lastProcessedFiles,
         'filesCopied': counts.filesCopied,
         'filesSkipped': counts.filesSkipped,
         'filesAlreadyExist': counts.filesAlreadyExist,
@@ -955,6 +959,7 @@ class CopyFilesProvider with ChangeNotifier {
     Set<String> createdDirs,
     List<_CopyTask> batch,
     Set<String> completedDirs,
+    Map<String, String> lastProcessedFiles,
   ) async {
     // ── Resume: skip directories that were fully processed in a prior run ──
     final String relPath = p.relative(dir.path, from: params.sourcePath);
@@ -998,9 +1003,19 @@ class CopyFilesProvider with ChangeNotifier {
     }
 
     final files = entities.whereType<File>().toList();
+    files.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+
+    int startIndex = 0;
+    if (lastProcessedFiles.containsKey(relPath)) {
+      final lastName = lastProcessedFiles[relPath]!;
+      int idx = files.indexWhere((f) => p.basename(f.path) == lastName);
+      if (idx != -1) {
+        startIndex = idx + 1;
+      }
+    }
 
     // If no files in this directory, skip straight to subdirectories
-    if (files.isEmpty) {
+    if (files.isEmpty || startIndex >= files.length) {
       for (final entity in entities) {
         if (entity is Directory) {
           await _walkAndCopy(
@@ -1010,6 +1025,7 @@ class CopyFilesProvider with ChangeNotifier {
             createdDirs,
             batch,
             completedDirs,
+            lastProcessedFiles,
           );
         }
       }
@@ -1050,7 +1066,7 @@ class CopyFilesProvider with ChangeNotifier {
 
     // ── Process source files in small batches of 8 ─────────────────
     // Was 50, which created I/O storms on network shares.
-    for (var i = 0; i < files.length; i += 8) {
+    for (var i = startIndex; i < files.length; i += 8) {
       final chunk = files.skip(i).take(8);
 
       final futures = chunk.map((fsEntity) async {
@@ -1154,6 +1170,14 @@ class CopyFilesProvider with ChangeNotifier {
         await _processBatch(tasksToRun, params, counts);
         await Future.delayed(Duration.zero);
       }
+
+      if (batch.isEmpty) {
+        lastProcessedFiles[relPath] = p.basename(chunk.last.path);
+      }
+    }
+
+    if (batch.isEmpty && files.isNotEmpty) {
+      lastProcessedFiles[relPath] = p.basename(files.last.path);
     }
 
     // Then recurse into subdirectories
@@ -1166,12 +1190,14 @@ class CopyFilesProvider with ChangeNotifier {
           createdDirs,
           batch,
           completedDirs,
+          lastProcessedFiles,
         );
       }
     }
 
     // Mark this directory as fully completed (files + all subdirs done)
     completedDirs.add(relPath);
+    lastProcessedFiles.remove(relPath);
 
     // Periodically save progress to disk (every 100 completed directories)
     if (params.progressFilePath != null && completedDirs.length % 100 == 0) {
@@ -1180,6 +1206,7 @@ class CopyFilesProvider with ChangeNotifier {
         params.sourcePath,
         params.destPath,
         completedDirs,
+        lastProcessedFiles,
         counts,
       );
     }
@@ -1197,7 +1224,22 @@ class CopyFilesProvider with ChangeNotifier {
     final batch = <_CopyTask>[];
     // Mutable copy of completed dirs — will grow as we process
     final completedDirs = Set<String>.from(params.completedDirs);
-    final isResuming = completedDirs.isNotEmpty;
+    final lastProcessedFiles = Map<String, String>.from(params.lastProcessedFiles);
+    final isResuming = completedDirs.isNotEmpty || lastProcessedFiles.isNotEmpty;
+
+    Timer? saveTimer;
+    if (params.progressFilePath != null) {
+      saveTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        _saveProgressFile(
+          params.progressFilePath!,
+          params.sourcePath,
+          params.destPath,
+          completedDirs,
+          lastProcessedFiles,
+          counts,
+        );
+      });
+    }
 
     try {
       final sourceDir = Directory(params.sourcePath);
@@ -1229,6 +1271,7 @@ class CopyFilesProvider with ChangeNotifier {
         createdDirs,
         batch,
         completedDirs,
+        lastProcessedFiles,
       );
 
       // Process remaining tasks in the final batch
@@ -1244,6 +1287,7 @@ class CopyFilesProvider with ChangeNotifier {
           params.sourcePath,
           params.destPath,
           completedDirs,
+          lastProcessedFiles,
           counts,
         );
       }
@@ -1275,6 +1319,7 @@ class CopyFilesProvider with ChangeNotifier {
           params.sourcePath,
           params.destPath,
           completedDirs,
+          lastProcessedFiles,
           counts,
         );
       }
@@ -1289,6 +1334,8 @@ class CopyFilesProvider with ChangeNotifier {
           errors: counts.errors,
         ),
       );
+    } finally {
+      saveTimer?.cancel();
     }
   }
 
@@ -1453,6 +1500,7 @@ class CopyFilesProvider with ChangeNotifier {
     final progressPath = _progressFilePath(origIdx);
     final progressData = _loadProgressData(progressPath, source, dest);
     Set<String> resumeDirs = {};
+    Map<String, String> lastProcessedFiles = {};
     int initialCopied = 0;
     int initialSkipped = 0;
     int initialAlreadyExist = 0;
@@ -1463,6 +1511,9 @@ class CopyFilesProvider with ChangeNotifier {
       resumeDirs = (progressData['completedDirs'] as List)
           .cast<String>()
           .toSet();
+      if (progressData['lastProcessedFiles'] != null) {
+        lastProcessedFiles = Map<String, String>.from(progressData['lastProcessedFiles'] as Map);
+      }
       initialCopied = progressData['filesCopied'] as int? ?? 0;
       initialSkipped = progressData['filesSkipped'] as int? ?? 0;
       initialAlreadyExist = progressData['filesAlreadyExist'] as int? ?? 0;
@@ -1497,6 +1548,7 @@ class CopyFilesProvider with ChangeNotifier {
       sendPort: receivePort.sendPort,
       progressFilePath: progressPath,
       completedDirs: resumeDirs,
+      lastProcessedFiles: lastProcessedFiles,
       logInterval: logInterval,
       initialCopied: initialCopied,
       initialSkipped: initialSkipped,
