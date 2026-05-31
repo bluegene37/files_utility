@@ -699,6 +699,14 @@ class CopyFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Checks if there is any saved progress.
+  bool get hasSavedProgress {
+    for (int i = 0; i < 20; i++) {
+      if (File(_progressFilePath(i)).existsSync()) return true;
+    }
+    return false;
+  }
+
   /// Clears all saved resume progress. Call this to force a full re-scan.
   Future<void> clearProgress() async {
     for (int i = 0; i < 20; i++) {

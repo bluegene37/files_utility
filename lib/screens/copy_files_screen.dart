@@ -166,7 +166,7 @@ class CopyFilesScreen extends StatelessWidget {
                                 ? provider.startProcessing
                                 : null,
                             icon: const Icon(Icons.copy),
-                            label: const Text('Start Copying'),
+                            label: Text(provider.hasSavedProgress ? 'Resume Copying' : 'Start Copying'),
                           ),
                           const SizedBox(width: 8),
                           OutlinedButton.icon(
