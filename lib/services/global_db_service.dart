@@ -14,6 +14,7 @@ class GlobalDbService {
   final Logger _log = Logger('GlobalDbService');
   List<AppProfile> _profiles = [];
   bool _isInitialized = false;
+  String? appDirPath;
 
   Future<File> _getGlobalConfigFile() async {
     final docsDir = await getApplicationDocumentsDirectory();
@@ -21,6 +22,7 @@ class GlobalDbService {
     if (!await appDir.exists()) {
       await appDir.create(recursive: true);
     }
+    appDirPath = appDir.path;
     return File(p.join(appDir.path, 'global_profiles.json'));
   }
 

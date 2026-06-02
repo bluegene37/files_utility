@@ -11,6 +11,7 @@ import '../services/file_logger.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
 import '../models/run_record.dart';
+import '../services/global_db_service.dart';
 
 /// Message sent FROM the background isolate TO the main isolate.
 class _IsolateProgress {
@@ -168,7 +169,10 @@ class CopyFilesProvider with ChangeNotifier {
   final FileLogger _fileLogger = FileLogger();
   final NumberFormat _numFmt = NumberFormat('#,##0');
 
-  static const String _progressDir = r'C:\temp\file transfer';
+  static String get _progressDir {
+    final appDir = GlobalDbService().appDirPath ?? r'C:\temp\file transfer';
+    return '$appDir\\progress';
+  }
 
   /// Returns the progress file path for a given pair index.
   static String _progressFilePath(int pairIndex) {

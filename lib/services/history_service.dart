@@ -1,16 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
 import '../models/run_record.dart';
+import 'global_db_service.dart';
 
 class HistoryService {
   static final HistoryService _instance = HistoryService._internal();
   factory HistoryService() => _instance;
   HistoryService._internal();
 
-  static const String _logDirectory = r'C:\temp\file transfer';
+  static String get _logDirectory {
+    final appDir = GlobalDbService().appDirPath ?? r'C:\temp\file transfer';
+    return '$appDir\\logs';
+  }
   String _profileId = 'default';
 
-  String get _historyFile => 'C:\\temp\\file transfer\\run_history_$_profileId.json';
+  String get _historyFile => '$_logDirectory\\run_history_$_profileId.json';
 
   bool _directoryVerified = false;
 

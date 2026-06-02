@@ -11,6 +11,7 @@ import '../services/file_logger.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
 import '../models/run_record.dart';
+import '../services/global_db_service.dart';
 
 class _TransferControl {
   final bool pause;
@@ -281,7 +282,8 @@ class FileProcessProvider with ChangeNotifier {
     final s = sourcePath?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? 'src';
     final d = destPath?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? 'dst';
     final profileId = LocalDbService().currentProfileId;
-    return 'C:\\temp\\file transfer\\transfer_progress_${s}_${d}_$profileId.json';
+    final appDir = GlobalDbService().appDirPath ?? r'C:\temp\file transfer';
+    return '$appDir\\progress\\transfer_progress_${s}_${d}_$profileId.json';
   }
 
   Future<void> _loadProgress() async {

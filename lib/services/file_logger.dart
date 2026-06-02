@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:intl/intl.dart';
+import 'global_db_service.dart';
 
 /// Centralized file logger that writes logs to C:\temp\file transfer\
 /// Each run gets a unique Run ID and its own log file.
@@ -11,7 +12,10 @@ class FileLogger {
   factory FileLogger() => _instance;
   FileLogger._internal();
 
-  static const String _logDirectory = r'C:\temp\file transfer';
+  static String get _logDirectory {
+    final appDir = GlobalDbService().appDirPath ?? r'C:\temp\file transfer';
+    return '$appDir\\logs';
+  }
   static const int _bufferFlushSize = 50;
   static const Duration _bufferFlushInterval = Duration(seconds: 2);
 
