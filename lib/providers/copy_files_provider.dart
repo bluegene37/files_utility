@@ -171,8 +171,10 @@ class CopyFilesProvider with ChangeNotifier {
   static const String _progressDir = r'C:\temp\file transfer';
 
   /// Returns the progress file path for a given pair index.
-  static String _progressFilePath(int pairIndex) =>
-      '$_progressDir\\copy_progress_pair$pairIndex.json';
+  static String _progressFilePath(int pairIndex) {
+    final profileId = LocalDbService().currentProfileId;
+    return '$_progressDir\\copy_progress_pair${pairIndex}_$profileId.json';
+  }
 
   /// Loads progress data from a progress file.
   /// Returns null if the file doesn't exist or source/dest don't match.

@@ -8,9 +8,15 @@ class HistoryService {
   HistoryService._internal();
 
   static const String _logDirectory = r'C:\temp\file transfer';
-  static const String _historyFile = r'C:\temp\file transfer\run_history.json';
+  String _profileId = 'default';
+
+  String get _historyFile => 'C:\\temp\\file transfer\\run_history_$_profileId.json';
 
   bool _directoryVerified = false;
+
+  void init(String profileId) {
+    _profileId = profileId;
+  }
 
   Future<void> _ensureDirectory() async {
     if (_directoryVerified) return;

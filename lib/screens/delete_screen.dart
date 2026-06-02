@@ -26,7 +26,9 @@ class DeleteScreen extends StatelessWidget {
                   children: [
                     // Config Section
                     Container(
-                      decoration: AppDecorations.glassCard(glowColor: AppColors.error),
+                      decoration: AppDecorations.glassCard(
+                        glowColor: AppColors.error,
+                      ),
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -41,19 +43,34 @@ class DeleteScreen extends StatelessWidget {
                           Align(
                             alignment: Alignment.centerLeft,
                             child: OutlinedButton.icon(
-                              onPressed: () => _showAdvancedSettingsDialog(context, provider),
-                              icon: const Icon(Icons.settings, size: 16, color: AppColors.accent),
-                              label: const Text('Advanced Settings', style: TextStyle(color: AppColors.accent)),
+                              onPressed: () => _showAdvancedSettingsDialog(
+                                context,
+                                provider,
+                              ),
+                              icon: const Icon(
+                                Icons.settings,
+                                size: 16,
+                                color: AppColors.accent,
+                              ),
+                              label: const Text(
+                                'Advanced Settings',
+                                style: TextStyle(color: AppColors.accent),
+                              ),
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: AppColors.cardBorder),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                side: const BorderSide(
+                                  color: AppColors.cardBorder,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
                                 visualDensity: VisualDensity.compact,
                               ),
                             ),
-                          )
-                  ],
-                ),
-              ),
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 10),
 
                     // Actions, Status, and Stats
@@ -62,7 +79,8 @@ class DeleteScreen extends StatelessWidget {
                         if (!provider.isProcessing) ...[
                           ElevatedButton.icon(
                             onPressed: provider.targetPath != null
-                                ? () => _showDeleteConfirmation(context, provider)
+                                ? () =>
+                                      _showDeleteConfirmation(context, provider)
                                 : null,
                             icon: const Icon(Icons.delete_forever),
                             label: const Text('Delete All'),
@@ -97,7 +115,9 @@ class DeleteScreen extends StatelessWidget {
                             margin: const EdgeInsets.only(right: 8),
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.error.withValues(alpha: 0.8)),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.error.withValues(alpha: 0.8),
+                              ),
                             ),
                           ),
 
@@ -135,9 +155,7 @@ class DeleteScreen extends StatelessWidget {
                     const SizedBox(height: 10),
 
                     // Logs
-                    Expanded(
-                      child: LogConsole(logs: provider.logs),
-                    ),
+                    Expanded(child: LogConsole(logs: provider.logs)),
                   ],
                 ),
               ),
@@ -170,7 +188,11 @@ class DeleteScreen extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 4),
-          const Icon(Icons.delete_forever_rounded, color: AppColors.error, size: 22),
+          const Icon(
+            Icons.delete_forever_rounded,
+            color: AppColors.error,
+            size: 22,
+          ),
           const SizedBox(width: 10),
           const Text(
             'Delete Files',
@@ -228,7 +250,11 @@ class DeleteScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Filter: Year ${provider.selectedYear}, Months: ${provider.validMonths.join(', ')}',
-              style: const TextStyle(fontStyle: FontStyle.italic, color: AppColors.textMuted, fontSize: 13),
+              style: const TextStyle(
+                fontStyle: FontStyle.italic,
+                color: AppColors.textMuted,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 12),
             Container(
@@ -236,7 +262,9 @@ class DeleteScreen extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppColors.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: AppColors.error.withValues(alpha: 0.3),
+                ),
               ),
               child: const Row(
                 children: [
@@ -244,7 +272,11 @@ class DeleteScreen extends StatelessWidget {
                   SizedBox(width: 8),
                   Text(
                     'This action cannot be undone!',
-                    style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w600, fontSize: 13),
+                    style: TextStyle(
+                      color: AppColors.error,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
@@ -272,103 +304,114 @@ class DeleteScreen extends StatelessWidget {
     );
   }
 
-
-  void _showAdvancedSettingsDialog(BuildContext context, DeleteProcessProvider provider) {
+  void _showAdvancedSettingsDialog(
+    BuildContext context,
+    DeleteProcessProvider provider,
+  ) {
     showDialog(
       context: context,
       builder: (dialogContext) {
-        return Consumer<DeleteProcessProvider>(
-          builder: (context, provider, child) {
-            return AlertDialog(
-              title: Row(
-                children: [
-                  Icon(Icons.settings, size: 22, color: AppColors.error),
-                  const SizedBox(width: 8),
-                  const Text('Advanced Settings', style: TextStyle(fontSize: 18)),
-                ],
-              ),
-              contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
-              content: SizedBox(
-                width: MediaQuery.of(context).size.width * 0.7,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                                // ── File Date Filter ──
-                                _sectionLabel('📅 File Date Filter'),
-                                const SizedBox(height: 8),
-                                Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SizedBox(
-                                width: 100,
-                                child: DropdownButtonFormField<int>(
-                                  initialValue: provider.selectedYear,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Year',
+        return ChangeNotifierProvider<DeleteProcessProvider>.value(
+          value: provider,
+          child: Consumer<DeleteProcessProvider>(
+            builder: (context, provider, child) {
+              return AlertDialog(
+                title: Row(
+                  children: [
+                    Icon(Icons.settings, size: 22, color: AppColors.error),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Advanced Settings',
+                      style: TextStyle(fontSize: 18),
+                    ),
+                  ],
+                ),
+                contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                content: SizedBox(
+                  width: MediaQuery.of(context).size.width * 0.7,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // ── File Date Filter ──
+                        _sectionLabel('📅 File Date Filter'),
+                        const SizedBox(height: 8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: 100,
+                              child: DropdownButtonFormField<int>(
+                                initialValue: provider.selectedYear,
+                                decoration: const InputDecoration(
+                                  labelText: 'Year',
+                                ),
+                                dropdownColor: AppColors.bgDark2,
+                                items: provider.availableYears.map((int value) {
+                                  return DropdownMenuItem<int>(
+                                    value: value,
+                                    child: Text(
+                                      value.toString(),
+                                      style: const TextStyle(
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) provider.setYear(val);
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Months:',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textSecondary,
+                                      fontSize: 13,
+                                    ),
                                   ),
-                                  dropdownColor: AppColors.bgDark2,
-                                  items: provider.availableYears.map((int value) {
-                                    return DropdownMenuItem<int>(
-                                      value: value,
-                                      child: Text(
-                                        value.toString(),
-                                        style: const TextStyle(color: AppColors.textPrimary),
-                                      ),
-                                    );
-                                  }).toList(),
-                                  onChanged: (val) {
-                                    if (val != null) provider.setYear(val);
-                                  },
-                                ),
+                                  const SizedBox(height: 4),
+                                  Wrap(
+                                    spacing: 6.0,
+                                    runSpacing: 4.0,
+                                    children: provider.allMonths.map((m) {
+                                      final isSelected = provider.validMonths
+                                          .contains(m);
+                                      return FilterChip(
+                                        label: Text(m),
+                                        selected: isSelected,
+                                        onSelected: (bool selected) {
+                                          provider.toggleMonth(m);
+                                        },
+                                        visualDensity: VisualDensity.compact,
+                                      );
+                                    }).toList(),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Months:',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.textSecondary,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Wrap(
-                                      spacing: 6.0,
-                                      runSpacing: 4.0,
-                                      children: provider.allMonths.map((m) {
-                                        final isSelected = provider.validMonths.contains(m);
-                                        return FilterChip(
-                                          label: Text(m),
-                                          selected: isSelected,
-                                          onSelected: (bool selected) {
-                                            provider.toggleMonth(m);
-                                          },
-                                          visualDensity: VisualDensity.compact,
-                                        );
-                                      }).toList(),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Done'),
-                ),
-              ],
-            );
-          },
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Done'),
+                  ),
+                ],
+              );
+            },
+          ),
         );
       },
     );

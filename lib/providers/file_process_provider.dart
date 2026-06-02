@@ -280,7 +280,8 @@ class FileProcessProvider with ChangeNotifier {
   String get _progressFilePath {
     final s = sourcePath?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? 'src';
     final d = destPath?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? 'dst';
-    return 'C:\\temp\\file transfer\\transfer_progress_${s}_$d.json';
+    final profileId = LocalDbService().currentProfileId;
+    return 'C:\\temp\\file transfer\\transfer_progress_${s}_${d}_$profileId.json';
   }
 
   Future<void> _loadProgress() async {
@@ -310,8 +311,9 @@ class FileProcessProvider with ChangeNotifier {
     if (child != null) lastProcessedChild = child;
     try {
       final file = File(_progressFilePath);
-      if (!await file.parent.exists())
+      if (!await file.parent.exists()) {
         await file.parent.create(recursive: true);
+      }
       await file.writeAsString(
         jsonEncode({
           'parent': lastProcessedParent,

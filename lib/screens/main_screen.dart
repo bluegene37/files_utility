@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../providers/history_provider.dart';
+import '../services/global_db_service.dart';
+import '../services/local_db_service.dart';
 import 'home_screen.dart';
 import 'delete_screen.dart';
 import 'copy_files_screen.dart';
@@ -20,6 +22,12 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currentProfileId = LocalDbService().currentProfileId;
+    final currentProfile = GlobalDbService().profiles.firstWhere(
+      (p) => p.id == currentProfileId,
+      orElse: () => GlobalDbService().profiles.first,
+    );
+
     return Scaffold(
       body: Container(
         decoration: AppDecorations.gradientBackground,
@@ -54,10 +62,10 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                     ),
                     const SizedBox(width: 16),
-                    const Column(
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        const Text(
                           'Files Utility',
                           style: TextStyle(
                             fontSize: 22,
@@ -66,8 +74,8 @@ class _MainScreenState extends State<MainScreen> {
                             letterSpacing: 0.5,
                           ),
                         ),
-                        SizedBox(height: 2),
-                        Text(
+                        const SizedBox(height: 2),
+                        const Text(
                           'Manage your files and transfers',
                           style: TextStyle(
                             fontSize: 13,
@@ -88,6 +96,73 @@ class _MainScreenState extends State<MainScreen> {
                 ),
 
                 const SizedBox(height: 20),
+
+                // Active Profile Banner
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.cardBorder, width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.account_circle, color: AppColors.accent, size: 28),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'ACTIVE PROFILE',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.accent.withValues(alpha: 0.8),
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              currentProfile.name,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            if (currentProfile.description.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                currentProfile.description,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
 
                 // Card Grid
                 Expanded(

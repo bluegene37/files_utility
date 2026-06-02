@@ -11,7 +11,9 @@ class LocalDbService {
 
   final Logger _log = Logger('LocalDbService');
   Map<String, dynamic> _config = {};
-  bool _isInitialized = false;
+  String _profileId = 'default';
+
+  String get currentProfileId => _profileId;
 
   Future<File> _getConfigFile() async {
     final docsDir = await getApplicationDocumentsDirectory();
@@ -19,11 +21,12 @@ class LocalDbService {
     if (!await appDir.exists()) {
       await appDir.create(recursive: true);
     }
-    return File(p.join(appDir.path, 'config.json'));
+    return File(p.join(appDir.path, 'config_$_profileId.json'));
   }
 
-  Future<void> init() async {
-    if (_isInitialized) return;
+  Future<void> init(String profileId) async {
+    _profileId = profileId;
+    _config = {}; // Reset config when switching profiles
     try {
       final file = await _getConfigFile();
       if (await file.exists()) {
@@ -32,11 +35,9 @@ class LocalDbService {
           _config = jsonDecode(contents) as Map<String, dynamic>;
         }
       }
-      _isInitialized = true;
     } catch (e, stack) {
       _log.severe('Failed to initialize LocalDbService', e, stack);
       _config = {};
-      _isInitialized = true;
     }
   }
 
