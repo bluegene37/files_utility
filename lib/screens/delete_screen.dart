@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/delete_process_provider.dart';
 import '../theme/app_theme.dart';
+import '../services/global_db_service.dart';
+import '../services/local_db_service.dart';
 
 class DeleteScreen extends StatelessWidget {
   const DeleteScreen({super.key});
@@ -179,6 +181,12 @@ class DeleteScreen extends StatelessWidget {
   }
 
   Widget _buildAppBar(BuildContext context) {
+    final currentProfileId = LocalDbService().currentProfileId;
+    final currentProfile = GlobalDbService().profiles.firstWhere(
+      (p) => p.id == currentProfileId,
+      orElse: () => GlobalDbService().profiles.first,
+    );
+
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
       child: Row(
@@ -194,8 +202,8 @@ class DeleteScreen extends StatelessWidget {
             size: 22,
           ),
           const SizedBox(width: 10),
-          const Text(
-            'Delete Files',
+          Text(
+            'Delete Files (${currentProfile.name})',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,

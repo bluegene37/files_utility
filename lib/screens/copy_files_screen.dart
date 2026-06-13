@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/copy_files_provider.dart';
 import '../theme/app_theme.dart';
+import '../services/global_db_service.dart';
+import '../services/local_db_service.dart';
 
 class CopyFilesScreen extends StatelessWidget {
   const CopyFilesScreen({super.key});
@@ -385,6 +387,12 @@ class CopyFilesScreen extends StatelessWidget {
   }
 
   Widget _buildAppBar(BuildContext context) {
+    final currentProfileId = LocalDbService().currentProfileId;
+    final currentProfile = GlobalDbService().profiles.firstWhere(
+      (p) => p.id == currentProfileId,
+      orElse: () => GlobalDbService().profiles.first,
+    );
+
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
       child: Row(
@@ -396,8 +404,8 @@ class CopyFilesScreen extends StatelessWidget {
           const SizedBox(width: 4),
           const Icon(Icons.file_copy_rounded, color: AppColors.info, size: 22),
           const SizedBox(width: 10),
-          const Text(
-            'Copy Files',
+          Text(
+            'Copy Files (${currentProfile.name})',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
