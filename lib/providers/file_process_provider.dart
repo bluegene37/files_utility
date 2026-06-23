@@ -586,9 +586,20 @@ class FileProcessProvider with ChangeNotifier {
     _completionRescheduleTimer?.cancel();
     _completionRescheduleTimer = null;
 
-    _workerControlPort?.send(_TransferControl(stop: true));
-
     _saveProgress(lastProcessedParent, lastProcessedChild, filesMoved, errors);
+
+    if (_pauseCompleter != null && !_pauseCompleter!.isCompleted) {
+      _pauseCompleter!.complete();
+    }
+
+    // If the worker isolate is already gone (e.g. transfer completed and is
+    // in the scheduled-pause / "next run" state), clean up immediately.
+    if (_workerIsolate == null) {
+      _cleanupAfterStop();
+      return;
+    }
+
+    _workerControlPort?.send(_TransferControl(stop: true));
 
     // Fallback kill if isolate is completely stuck
     Future.delayed(const Duration(seconds: 2), () {
@@ -598,10 +609,6 @@ class FileProcessProvider with ChangeNotifier {
         _cleanupAfterStop();
       }
     });
-
-    if (_pauseCompleter != null && !_pauseCompleter!.isCompleted) {
-      _pauseCompleter!.complete();
-    }
 
     isPaused = false;
     currentStatus = '⛔ Stopping...';
@@ -641,7 +648,9 @@ class FileProcessProvider with ChangeNotifier {
     _addLog('⏳ Starting transfer...');
     _addLog('  Source: $sourcePath');
     _addLog('  Destination: $destPath');
-    _addLog('  Filter: Year $selectedYear, Months ${validMonths.join(', ')}');
+    if (enableDateRange) {
+      _addLog('  Filter: Year $selectedYear, Months ${validMonths.join(', ')}');
+    }
     if (enableTimeWindow) {
       final String formattedFrom =
           '${runFromTime.hour.toString().padLeft(2, '0')}:${runFromTime.minute.toString().padLeft(2, '0')}';
@@ -948,7 +957,13 @@ class FileProcessProvider with ChangeNotifier {
           file.parent.path,
           from: params.sourcePath,
         );
-        String destDir = p.join(params.destPath, year, relativePath);
+        // Only organize into year-based subdirectories when date range is enabled
+        String destDir;
+        if (params.enableDateRange && year.isNotEmpty) {
+          destDir = p.join(params.destPath, year, relativePath);
+        } else {
+          destDir = p.join(params.destPath, relativePath);
+        }
         String destFilePath = p.join(destDir, p.basename(file.path));
 
         if (!createdDirs.contains(destDir)) {
@@ -959,7 +974,11 @@ class FileProcessProvider with ChangeNotifier {
         await file.copy(destFilePath);
         await file.delete();
 
-        logBatch.add('✓ Moved [$month-$year]: ${p.basename(file.path)}');
+        if (year.isNotEmpty) {
+          logBatch.add('✓ Moved [$month-$year]: ${p.basename(file.path)}');
+        } else {
+          logBatch.add('✓ Moved: ${p.basename(file.path)}');
+        }
         filesMoved++;
       } catch (e) {
         logBatch.add('✗ Failed to move ${file.path}: $e');
@@ -993,13 +1012,18 @@ class FileProcessProvider with ChangeNotifier {
           if (modified.isAfter(threshold)) return;
         }
 
-        String yearStr = DateFormat('yyyy').format(modified);
-        String monthStr = DateFormat('MMM').format(modified);
+        if (params.enableDateRange) {
+          // Date range filter is enabled: check year/month and organize by year
+          String yearStr = DateFormat('yyyy').format(modified);
+          String monthStr = DateFormat('MMM').format(modified);
 
-        if (!params.enableDateRange ||
-            (int.parse(yearStr) <= params.selectedYear &&
-                params.validMonths.contains(monthStr))) {
-          await moveFile(file, yearStr, monthStr);
+          if (int.parse(yearStr) == params.selectedYear &&
+              params.validMonths.contains(monthStr)) {
+            await moveFile(file, yearStr, monthStr);
+          }
+        } else {
+          // No date range filter: move all files, no year-based organization
+          await moveFile(file, '', '');
         }
       } catch (e) {
         logBatch.add('✗ Error accessing ${file.path}: $e');
