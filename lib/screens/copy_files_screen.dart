@@ -180,8 +180,9 @@ class CopyFilesScreen extends StatelessWidget {
                                         onChanged: provider.isProcessing
                                             ? null
                                             : (val) {
-                                                if (val != null)
+                                                if (val != null) {
                                                   provider.setLogInterval(val);
+                                                }
                                               },
                                       ),
                                     ),
@@ -865,8 +866,9 @@ class CopyFilesScreen extends StatelessWidget {
                                         (!provider.isProcessing &&
                                             provider.enableAgeFilter)
                                         ? (val) {
-                                            if (val != null)
+                                            if (val != null) {
                                               provider.setAgeFilterValue(val);
+                                            }
                                           }
                                         : null,
                                   ),
@@ -902,8 +904,9 @@ class CopyFilesScreen extends StatelessWidget {
                                         (!provider.isProcessing &&
                                             provider.enableAgeFilter)
                                         ? (val) {
-                                            if (val != null)
+                                            if (val != null) {
                                               provider.setAgeFilterUnit(val);
+                                            }
                                           }
                                         : null,
                                   ),

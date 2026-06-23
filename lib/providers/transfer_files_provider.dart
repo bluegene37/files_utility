@@ -31,8 +31,8 @@ class _TransferParams {
   final String ageFilterUnit;
   final int ageFilterValue;
   final bool enableDateRange;
-  final int selectedYear;
-  final List<String> validMonths;
+  final int fromEpochMs;
+  final int toEpochMs;
   final String? lastParent;
   final String? lastChild;
   final SendPort mainSendPort;
@@ -46,8 +46,8 @@ class _TransferParams {
     required this.ageFilterUnit,
     required this.ageFilterValue,
     required this.enableDateRange,
-    required this.selectedYear,
-    required this.validMonths,
+    required this.fromEpochMs,
+    required this.toEpochMs,
     this.lastParent,
     this.lastChild,
     required this.mainSendPort,
@@ -89,22 +89,11 @@ class TransferFilesProvider with ChangeNotifier {
   String? sourcePath;
   String? destPath;
   String clientName = 'WaterBrothers'; // Default from script
-  int selectedYear = 2025;
-  List<String> validMonths = ['Jan'];
-  List<String> allMonths = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
+
+  // Date range filter for Transfer
+  bool enableDateRange = false;
+  DateTime fromDate = DateTime(2025, 1, 1);
+  DateTime toDate = DateTime(2025, 1, 31);
 
   List<String> availableClients = [
     'WaterBrothers',
@@ -115,15 +104,6 @@ class TransferFilesProvider with ChangeNotifier {
     'IGPest',
   ];
 
-  List<int> get availableYears {
-    List<int> years = [];
-    int currentYear = DateTime.now().year;
-    for (int i = 2010; i <= currentYear + 5; i++) {
-      years.add(i);
-    }
-    return years.reversed.toList();
-  }
-
   bool isProcessing = false;
   List<String> logs = [];
   String currentStatus = 'Idle';
@@ -132,9 +112,6 @@ class TransferFilesProvider with ChangeNotifier {
   bool enableAgeFilter = false;
   String ageFilterUnit = 'Days';
   int ageFilterValue = 30;
-
-  // Date range filter for Transfer
-  bool enableDateRange = false;
 
   // Resume state
   String? lastProcessedParent;
@@ -217,15 +194,24 @@ class TransferFilesProvider with ChangeNotifier {
     sourcePath = db.getString('sourcePath');
     destPath = db.getString('destPath');
     clientName = db.getString('clientName') ?? 'WaterBrothers';
-    selectedYear = db.getInt('selectedYear') ?? 2025;
+    
+    final fDay = db.getInt('transfer_fromDate_day');
+    final fMonth = db.getInt('transfer_fromDate_month');
+    final fYear = db.getInt('transfer_fromDate_year');
+    if (fDay != null && fMonth != null && fYear != null) {
+      fromDate = DateTime(fYear, fMonth, fDay);
+    }
+    final tDay = db.getInt('transfer_toDate_day');
+    final tMonth = db.getInt('transfer_toDate_month');
+    final tYear = db.getInt('transfer_toDate_year');
+    if (tDay != null && tMonth != null && tYear != null) {
+      toDate = DateTime(tYear, tMonth, tDay);
+    }
+    
     enableAgeFilter = db.getBool('transfer_enableAgeFilter') ?? false;
     ageFilterUnit = db.getString('transfer_ageFilterUnit') ?? 'Days';
     ageFilterValue = db.getInt('transfer_ageFilterValue') ?? 30;
     enableDateRange = db.getBool('transfer_enableDateRange') ?? false;
-    final savedMonths = db.getStringList('transfer_validMonths');
-    if (savedMonths != null && savedMonths.isNotEmpty) {
-      validMonths = savedMonths;
-    }
     _loadProgress();
 
     // Load time window settings
@@ -257,12 +243,19 @@ class TransferFilesProvider with ChangeNotifier {
     if (sourcePath != null) await db.setString('sourcePath', sourcePath!);
     if (destPath != null) await db.setString('destPath', destPath!);
     await db.setString('clientName', clientName);
-    await db.setInt('selectedYear', selectedYear);
+    
+    await db.setInt('transfer_fromDate_day', fromDate.day);
+    await db.setInt('transfer_fromDate_month', fromDate.month);
+    await db.setInt('transfer_fromDate_year', fromDate.year);
+
+    await db.setInt('transfer_toDate_day', toDate.day);
+    await db.setInt('transfer_toDate_month', toDate.month);
+    await db.setInt('transfer_toDate_year', toDate.year);
+    
     await db.setBool('transfer_enableAgeFilter', enableAgeFilter);
     await db.setString('transfer_ageFilterUnit', ageFilterUnit);
     await db.setInt('transfer_ageFilterValue', ageFilterValue);
     await db.setBool('transfer_enableDateRange', enableDateRange);
-    await db.setStringList('transfer_validMonths', validMonths);
 
     await db.setBool('transfer_enableTimeWindow', enableTimeWindow);
     await db.setInt('transfer_runFromHour', runFromTime.hour);
@@ -401,8 +394,16 @@ class TransferFilesProvider with ChangeNotifier {
   // Removed manual setClientName as it's now auto-detected
   // void setClientName(String name) { ... }
 
-  void setYear(int year) {
-    selectedYear = year;
+  void setFromDate(DateTime date) {
+    fromDate = date;
+    if (fromDate.isAfter(toDate)) toDate = fromDate;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setToDate(DateTime date) {
+    toDate = date;
+    if (toDate.isBefore(fromDate)) fromDate = toDate;
     _saveSettings();
     notifyListeners();
   }
@@ -429,16 +430,6 @@ class TransferFilesProvider with ChangeNotifier {
 
   void setAgeFilterValue(int val) {
     ageFilterValue = val;
-    _saveSettings();
-    notifyListeners();
-  }
-
-  void toggleMonth(String month) {
-    if (validMonths.contains(month)) {
-      validMonths.remove(month);
-    } else {
-      validMonths.add(month);
-    }
     _saveSettings();
     notifyListeners();
   }
@@ -649,7 +640,8 @@ class TransferFilesProvider with ChangeNotifier {
     _addLog('  Source: $sourcePath');
     _addLog('  Destination: $destPath');
     if (enableDateRange) {
-      _addLog('  Filter: Year $selectedYear, Months ${validMonths.join(', ')}');
+      final dateFormat = DateFormat('dd/MM/yyyy');
+      _addLog('  Date range: ${dateFormat.format(fromDate)} — ${dateFormat.format(toDate)}');
     }
     if (enableTimeWindow) {
       final String formattedFrom =
@@ -663,8 +655,6 @@ class TransferFilesProvider with ChangeNotifier {
       operation: 'Transfer',
       sourcePath: sourcePath,
       destPath: destPath,
-      year: selectedYear,
-      months: validMonths,
     );
 
     if (lastProcessedParent != null) {
@@ -723,8 +713,8 @@ class TransferFilesProvider with ChangeNotifier {
           ageFilterUnit: ageFilterUnit,
           ageFilterValue: ageFilterValue,
           enableDateRange: enableDateRange,
-          selectedYear: selectedYear,
-          validMonths: validMonths,
+          fromEpochMs: fromDate.millisecondsSinceEpoch,
+          toEpochMs: toDate.millisecondsSinceEpoch,
           lastParent: lastProcessedParent,
           lastChild: lastProcessedChild,
           mainSendPort: receivePort.sendPort,
@@ -1013,14 +1003,20 @@ class TransferFilesProvider with ChangeNotifier {
         }
 
         if (params.enableDateRange) {
-          // Date range filter is enabled: check year/month and organize by year
+          // Date range filter is enabled: check date boundaries and organize by year
+          final fd = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
+          final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
+          final from = DateTime(fd.year, fd.month, fd.day);
+          final to = DateTime(td.year, td.month, td.day);
+          
+          final fileDate = DateTime(modified.year, modified.month, modified.day);
+          if (fileDate.isBefore(from) || fileDate.isAfter(to)) {
+            return;
+          }
+
           String yearStr = DateFormat('yyyy').format(modified);
           String monthStr = DateFormat('MMM').format(modified);
-
-          if (int.parse(yearStr) == params.selectedYear &&
-              params.validMonths.contains(monthStr)) {
-            await moveFile(file, yearStr, monthStr);
-          }
+          await moveFile(file, yearStr, monthStr);
         } else {
           // No date range filter: move all files, no year-based organization
           await moveFile(file, '', '');

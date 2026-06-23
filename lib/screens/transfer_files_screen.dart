@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/transfer_files_provider.dart';
 import '../theme/app_theme.dart';
@@ -207,6 +208,49 @@ class TransferFilesScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildDatePicker(
+    BuildContext context, {
+    required String label,
+    required DateTime date,
+    required bool enabled,
+    required ValueChanged<DateTime> onPicked,
+  }) {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    return InkWell(
+      onTap: enabled
+          ? () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: date,
+                firstDate: DateTime(2010),
+                lastDate: DateTime(DateTime.now().year + 2),
+              );
+              if (picked != null) {
+                onPicked(picked);
+              }
+            }
+          : null,
+      borderRadius: BorderRadius.circular(8),
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.4,
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            suffixIcon: const Icon(
+              Icons.calendar_today,
+              size: 16,
+              color: AppColors.textMuted,
+            ),
+          ),
+          child: Text(
+            dateFormat.format(date),
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _sectionLabel(String text) {
     return Text(
       text,
@@ -287,106 +331,67 @@ class TransferFilesScreen extends StatelessWidget {
                         // ── File Date Filter ──
                         _sectionLabel('📅 File Date Filter'),
                         const SizedBox(height: 8),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8.0),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: Checkbox(
-                                      value: provider.enableDateRange,
-                                      onChanged: provider.isProcessing
-                                          ? null
-                                          : (val) =>
-                                                provider.setEnableDateRange(
-                                                  val ?? false,
-                                                ),
-                                      visualDensity: VisualDensity.compact,
-                                      materialTapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                    ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: Checkbox(
+                                    value: provider.enableDateRange,
+                                    onChanged: provider.isProcessing
+                                        ? null
+                                        : (val) =>
+                                              provider.setEnableDateRange(
+                                                val ?? false,
+                                              ),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                   ),
-                                  const SizedBox(width: 6),
-                                  const Text(
-                                    'Date Range',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            SizedBox(
-                              width: 100,
-                              child: DropdownButtonFormField<int>(
-                                initialValue: provider.selectedYear,
-                                decoration: const InputDecoration(
-                                  labelText: 'Year',
                                 ),
-                                dropdownColor: AppColors.bgDark2,
-                                items: provider.availableYears.map((int value) {
-                                  return DropdownMenuItem<int>(
-                                    value: value,
-                                    child: Text(
-                                      value.toString(),
-                                      style: const TextStyle(
-                                        color: AppColors.textPrimary,
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
-                                onChanged:
-                                    (!provider.isProcessing &&
-                                        provider.enableDateRange)
-                                    ? (val) {
-                                        if (val != null) provider.setYear(val);
-                                      }
-                                    : null,
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Date Range',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(
+                              width: 140,
+                              child: _buildDatePicker(
+                                context,
+                                label: 'From',
+                                date: provider.fromDate,
+                                enabled:
+                                    !provider.isProcessing &&
+                                    provider.enableDateRange,
+                                onPicked: provider.isProcessing
+                                    ? (date) {}
+                                    : (date) => provider.setFromDate(date),
                               ),
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Months:',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.textSecondary,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Wrap(
-                                    spacing: 6.0,
-                                    runSpacing: 4.0,
-                                    children: provider.allMonths.map((m) {
-                                      final isSelected = provider.validMonths
-                                          .contains(m);
-                                      return FilterChip(
-                                        label: Text(m),
-                                        selected: isSelected,
-                                        onSelected:
-                                            (!provider.isProcessing &&
-                                                provider.enableDateRange)
-                                            ? (bool selected) {
-                                                provider.toggleMonth(m);
-                                              }
-                                            : null,
-                                        visualDensity: VisualDensity.compact,
-                                      );
-                                    }).toList(),
-                                  ),
-                                ],
+                            SizedBox(
+                              width: 140,
+                              child: _buildDatePicker(
+                                context,
+                                label: 'To',
+                                date: provider.toDate,
+                                enabled:
+                                    !provider.isProcessing &&
+                                    provider.enableDateRange,
+                                onPicked: provider.isProcessing
+                                    ? (date) {}
+                                    : (date) => provider.setToDate(date),
                               ),
                             ),
                           ],
@@ -463,8 +468,9 @@ class TransferFilesScreen extends StatelessWidget {
                                     (!provider.isProcessing &&
                                         provider.enableAgeFilter)
                                     ? (val) {
-                                        if (val != null)
+                                        if (val != null) {
                                           provider.setAgeFilterValue(val);
+                                        }
                                       }
                                     : null,
                               ),
@@ -500,8 +506,9 @@ class TransferFilesScreen extends StatelessWidget {
                                     (!provider.isProcessing &&
                                         provider.enableAgeFilter)
                                     ? (val) {
-                                        if (val != null)
+                                        if (val != null) {
                                           provider.setAgeFilterUnit(val);
+                                        }
                                       }
                                     : null,
                               ),
