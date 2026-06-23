@@ -69,6 +69,52 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
     await _continueWithProfile(newProfile.id);
   }
 
+  Future<void> _deleteSelectedProfile() async {
+    if (_selectedProfileId == null) return;
+
+    final profiles = GlobalDbService().profiles;
+    if (profiles.length <= 1) return;
+
+    final profileToDelete = profiles.firstWhere(
+      (p) => p.id == _selectedProfileId,
+    );
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Profile'),
+        content: Text(
+          'Are you sure you want to delete "${profileToDelete.name}"?\n\n'
+          'This will remove the profile and its saved settings. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await GlobalDbService().deleteProfile(_selectedProfileId!);
+      setState(() {
+        final remainingProfiles = GlobalDbService().profiles;
+        _selectedProfileId = remainingProfiles.isNotEmpty
+            ? remainingProfiles.first.id
+            : null;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final profiles = GlobalDbService().profiles;
@@ -188,11 +234,47 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                 ),
                               ),
                               const SizedBox(height: 16),
-                              ElevatedButton(
-                                onPressed: _selectedProfileId == null
-                                    ? null
-                                    : () => _continueWithProfile(_selectedProfileId!),
-                                child: const Text('Continue with Selected'),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: _selectedProfileId == null
+                                          ? null
+                                          : () => _continueWithProfile(_selectedProfileId!),
+                                      child: const Text('Continue with Selected'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Tooltip(
+                                    message: profiles.length <= 1
+                                        ? 'Cannot delete the last profile'
+                                        : 'Delete selected profile',
+                                    child: IconButton(
+                                      onPressed: profiles.length <= 1 || _selectedProfileId == null
+                                          ? null
+                                          : _deleteSelectedProfile,
+                                      icon: Icon(
+                                        Icons.delete_outline,
+                                        color: profiles.length <= 1 || _selectedProfileId == null
+                                            ? AppColors.textMuted
+                                            : AppColors.error,
+                                      ),
+                                      style: IconButton.styleFrom(
+                                        backgroundColor: profiles.length <= 1 || _selectedProfileId == null
+                                            ? Colors.transparent
+                                            : AppColors.error.withValues(alpha: 0.1),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          side: BorderSide(
+                                            color: profiles.length <= 1 || _selectedProfileId == null
+                                                ? AppColors.cardBorder
+                                                : AppColors.error.withValues(alpha: 0.3),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                               const SizedBox(height: 24),
                               const Row(
