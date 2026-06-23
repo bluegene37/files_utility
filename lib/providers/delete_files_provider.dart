@@ -43,8 +43,8 @@ class _DeleteParams {
   });
 }
 
-class DeleteProcessProvider with ChangeNotifier {
-  final Logger _log = Logger('DeleteProcessProvider');
+class DeleteFilesProvider with ChangeNotifier {
+  final Logger _log = Logger('DeleteFilesProvider');
   final FileLogger _fileLogger = FileLogger();
   final NumberFormat _numFmt = NumberFormat('#,##0');
 
@@ -85,7 +85,7 @@ class DeleteProcessProvider with ChangeNotifier {
     return years.reversed.toList();
   }
 
-  DeleteProcessProvider() {
+  DeleteFilesProvider() {
     _loadSettings();
   }
 

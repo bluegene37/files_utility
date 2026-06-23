@@ -80,8 +80,8 @@ class _TransferProgress {
   });
 }
 
-class FileProcessProvider with ChangeNotifier {
-  final Logger _log = Logger('FileProcessProvider');
+class TransferFilesProvider with ChangeNotifier {
+  final Logger _log = Logger('TransferFilesProvider');
   final FileLogger _fileLogger = FileLogger();
   final NumberFormat _numFmt = NumberFormat('#,##0');
 
@@ -179,7 +179,7 @@ class FileProcessProvider with ChangeNotifier {
   Isolate? _workerIsolate;
   SendPort? _workerControlPort;
 
-  FileProcessProvider() {
+  TransferFilesProvider() {
     _loadSettings();
   }
 

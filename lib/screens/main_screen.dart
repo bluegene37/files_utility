@@ -5,8 +5,8 @@ import '../theme/app_theme.dart';
 import '../providers/history_provider.dart';
 import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
-import 'home_screen.dart';
-import 'delete_screen.dart';
+import 'transfer_files_screen.dart';
+import 'delete_files_screen.dart';
 import 'copy_files_screen.dart';
 import 'count_files_screen.dart';
 import 'history_screen.dart';
@@ -182,7 +182,7 @@ class _MainScreenState extends State<MainScreen> {
                             title: 'Transfer Files',
                             subtitle: 'Move files by date, month & year filters',
                             accentColor: AppColors.accent,
-                            onTap: () => _navigateTo(context, const TransferScreen()),
+                            onTap: () => _navigateTo(context, const TransferFilesScreen()),
                           ),
                           _DashboardCard(
                             icon: Icons.file_copy_rounded,
@@ -196,7 +196,7 @@ class _MainScreenState extends State<MainScreen> {
                             title: 'Delete Files',
                             subtitle: 'Remove files matching date criteria',
                             accentColor: AppColors.error,
-                            onTap: () => _navigateTo(context, const DeleteScreen()),
+                            onTap: () => _navigateTo(context, const DeleteFilesScreen()),
                           ),
                           _DashboardCard(
                             icon: Icons.analytics_rounded,

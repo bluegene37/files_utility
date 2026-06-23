@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/file_process_provider.dart';
+import '../providers/transfer_files_provider.dart';
 import '../theme/app_theme.dart';
 import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
 
-class TransferScreen extends StatelessWidget {
-  const TransferScreen({super.key});
+class TransferFilesScreen extends StatelessWidget {
+  const TransferFilesScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<FileProcessProvider>(context);
+    final provider = Provider.of<TransferFilesProvider>(context);
 
     return Scaffold(
       body: Container(
@@ -256,14 +256,14 @@ class TransferScreen extends StatelessWidget {
 
   void _showAdvancedSettingsDialog(
     BuildContext context,
-    FileProcessProvider provider,
+    TransferFilesProvider provider,
   ) {
     showDialog(
       context: context,
       builder: (dialogContext) {
-        return ChangeNotifierProvider<FileProcessProvider>.value(
+        return ChangeNotifierProvider<TransferFilesProvider>.value(
           value: provider,
-          child: Consumer<FileProcessProvider>(
+          child: Consumer<TransferFilesProvider>(
             builder: (context, provider, child) {
               return AlertDialog(
                 title: Row(

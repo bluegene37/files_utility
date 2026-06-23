@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 import 'screens/splash_screen.dart';
 
 import 'screens/main_screen.dart';
-import 'providers/file_process_provider.dart';
-import 'providers/delete_process_provider.dart';
+import 'providers/transfer_files_provider.dart';
+import 'providers/delete_files_provider.dart';
 import 'providers/copy_files_provider.dart';
 import 'providers/count_files_provider.dart';
 import 'providers/history_provider.dart';
@@ -39,8 +39,8 @@ class MainAppWrapper extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => HistoryProvider()),
-        ChangeNotifierProvider(create: (_) => FileProcessProvider()),
-        ChangeNotifierProvider(create: (_) => DeleteProcessProvider()),
+        ChangeNotifierProvider(create: (_) => TransferFilesProvider()),
+        ChangeNotifierProvider(create: (_) => DeleteFilesProvider()),
         ChangeNotifierProvider(create: (_) => CopyFilesProvider()),
         ChangeNotifierProvider(create: (_) => CountFilesProvider()),
       ],

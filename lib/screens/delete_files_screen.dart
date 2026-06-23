@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/delete_process_provider.dart';
+import '../providers/delete_files_provider.dart';
 import '../theme/app_theme.dart';
 import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
 
-class DeleteScreen extends StatelessWidget {
-  const DeleteScreen({super.key});
+class DeleteFilesScreen extends StatelessWidget {
+  const DeleteFilesScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<DeleteProcessProvider>(context);
+    final provider = Provider.of<DeleteFilesProvider>(context);
 
     return Scaffold(
       body: Container(
@@ -217,7 +217,7 @@ class DeleteScreen extends StatelessWidget {
 
   void _showDeleteConfirmation(
     BuildContext context,
-    DeleteProcessProvider provider,
+    DeleteFilesProvider provider,
   ) {
     showDialog(
       context: context,
@@ -314,14 +314,14 @@ class DeleteScreen extends StatelessWidget {
 
   void _showAdvancedSettingsDialog(
     BuildContext context,
-    DeleteProcessProvider provider,
+    DeleteFilesProvider provider,
   ) {
     showDialog(
       context: context,
       builder: (dialogContext) {
-        return ChangeNotifierProvider<DeleteProcessProvider>.value(
+        return ChangeNotifierProvider<DeleteFilesProvider>.value(
           value: provider,
-          child: Consumer<DeleteProcessProvider>(
+          child: Consumer<DeleteFilesProvider>(
             builder: (context, provider, child) {
               return AlertDialog(
                 title: Row(
