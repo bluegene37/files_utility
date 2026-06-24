@@ -1151,10 +1151,19 @@ class TransferFilesProvider with ChangeNotifier {
       }
 
       flushProgress('DONE', force: true);
-      params.mainSendPort.send(_TransferProgress(isDone: true));
+      params.mainSendPort.send(_TransferProgress(
+        isDone: true,
+        filesMoved: filesMoved,
+        errors: errors,
+      ));
     } catch (e) {
       params.mainSendPort.send(
-        _TransferProgress(criticalError: e.toString(), isDone: true),
+        _TransferProgress(
+          criticalError: e.toString(),
+          isDone: true,
+          filesMoved: filesMoved,
+          errors: errors,
+        ),
       );
     }
   }

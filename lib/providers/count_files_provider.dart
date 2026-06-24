@@ -328,6 +328,9 @@ class CountFilesProvider with ChangeNotifier {
       params.sendPort.send(_CountProgress(
         errorLog: 'Critical Error: $e',
         isDone: true,
+        files: files,
+        folders: folders,
+        errors: errors,
       ));
     }
   }

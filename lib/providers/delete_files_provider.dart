@@ -422,11 +422,17 @@ class DeleteFilesProvider with ChangeNotifier {
     try {
       await processDirectory(Directory(params.targetPath));
       sendProgress('DONE', force: true);
-      params.sendPort.send(_DeleteProgress(isDone: true));
+      params.sendPort.send(_DeleteProgress(
+        isDone: true,
+        deleted: deletedCount,
+        errors: errorCount,
+      ));
     } catch (e) {
       params.sendPort.send(_DeleteProgress(
         criticalError: e.toString(),
         isDone: true,
+        deleted: deletedCount,
+        errors: errorCount,
       ));
     }
   }
