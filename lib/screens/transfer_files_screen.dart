@@ -328,6 +328,56 @@ class TransferFilesScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // ── Scan Options ──
+                        _sectionLabel('📁 Scan Options'),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: Checkbox(
+                                value: provider.excludeSubfolders,
+                                onChanged: provider.isProcessing
+                                    ? null
+                                    : (val) => provider.setExcludeSubfolders(
+                                          val ?? false,
+                                        ),
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'Source folder only',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                provider.excludeSubfolders
+                                    ? 'Only files directly in the source folder will be scanned'
+                                    : 'All files including subfolders will be scanned',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textMuted,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Divider(
+                          color: AppColors.cardBorder,
+                          thickness: 1,
+                        ),
+                        const SizedBox(height: 8),
                         // ── File Date Filter ──
                         _sectionLabel('📅 File Date Filter'),
                         const SizedBox(height: 8),
