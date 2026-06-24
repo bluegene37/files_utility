@@ -63,6 +63,80 @@ class TransferFilesScreen extends StatelessWidget {
                                   onChanged: provider.setDestPath,
                                 ),
                                 const SizedBox(height: 8),
+                                // Log Interval selector
+                                Row(
+                                  children: [
+                                    const Text(
+                                      'Log Every',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    SizedBox(
+                                      width: 80,
+                                      child: DropdownButtonFormField<int>(
+                                        isExpanded: true,
+                                        initialValue: provider.logInterval,
+                                        decoration: const InputDecoration(
+                                          isDense: true,
+                                          contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 8,
+                                          ),
+                                        ),
+                                        dropdownColor: AppColors.bgDark2,
+                                        items: [1, 5, 10, 25, 50, 100].map((
+                                          int value,
+                                        ) {
+                                          return DropdownMenuItem<int>(
+                                            value: value,
+                                            child: Text(
+                                              value.toString(),
+                                              style: const TextStyle(
+                                                color: AppColors.textPrimary,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
+                                        onChanged: provider.isProcessing
+                                            ? null
+                                            : (val) {
+                                                if (val != null) {
+                                                  provider.setLogInterval(val);
+                                                }
+                                              },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Text(
+                                      'files',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    const Icon(
+                                      Icons.info_outline,
+                                      size: 14,
+                                      color: AppColors.textMuted,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Text(
+                                      'Controls how often progress is logged to the console',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textMuted,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
                                 Align(
                                   alignment: Alignment.centerLeft,
                                   child: OutlinedButton.icon(

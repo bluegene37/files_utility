@@ -38,6 +38,7 @@ class _TransferParams {
   final SendPort mainSendPort;
   final int initialFilesMoved;
   final int initialErrors;
+  final int logInterval;
 
   _TransferParams({
     required this.sourcePath,
@@ -53,6 +54,7 @@ class _TransferParams {
     required this.mainSendPort,
     this.initialFilesMoved = 0,
     this.initialErrors = 0,
+    required this.logInterval,
   });
 }
 
@@ -106,11 +108,13 @@ class TransferFilesProvider with ChangeNotifier {
   List<String> logs = [];
   String currentStatus = 'Idle';
 
-  // Age filter
   bool enableAgeFilter = false;
   String ageFilterUnit = 'Days';
   int ageFilterValue = 30;
   bool excludeSubfolders = false;
+  
+  // Log interval: how often to report progress (every N files)
+  int logInterval = 100;
 
   // Resume state
   String? lastScannedDir;
@@ -211,6 +215,7 @@ class TransferFilesProvider with ChangeNotifier {
     ageFilterValue = db.getInt('transfer_ageFilterValue') ?? 30;
     enableDateRange = db.getBool('transfer_enableDateRange') ?? false;
     excludeSubfolders = db.getBool('transfer_excludeSubfolders') ?? false;
+    logInterval = db.getInt('transfer_logInterval') ?? 100;
     _loadProgress();
 
     // Load time window settings
@@ -256,6 +261,7 @@ class TransferFilesProvider with ChangeNotifier {
     await db.setInt('transfer_ageFilterValue', ageFilterValue);
     await db.setBool('transfer_enableDateRange', enableDateRange);
     await db.setBool('transfer_excludeSubfolders', excludeSubfolders);
+    await db.setInt('transfer_logInterval', logInterval);
 
     await db.setBool('transfer_enableTimeWindow', enableTimeWindow);
     await db.setInt('transfer_runFromHour', runFromTime.hour);
@@ -430,6 +436,12 @@ class TransferFilesProvider with ChangeNotifier {
 
   void setExcludeSubfolders(bool val) {
     excludeSubfolders = val;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setLogInterval(int val) {
+    logInterval = val;
     _saveSettings();
     notifyListeners();
   }
@@ -745,6 +757,7 @@ class TransferFilesProvider with ChangeNotifier {
           mainSendPort: receivePort.sendPort,
           initialFilesMoved: filesMoved,
           initialErrors: errors,
+          logInterval: logInterval,
         ),
       );
 
@@ -966,12 +979,15 @@ class TransferFilesProvider with ChangeNotifier {
         await file.copy(destFilePath);
         await file.delete();
 
-        if (year.isNotEmpty) {
-          logBatch.add('✓ Moved [$month-$year]: ${p.basename(file.path)}');
-        } else {
-          logBatch.add('✓ Moved: ${p.basename(file.path)}');
-        }
         filesMoved++;
+        if (filesMoved % params.logInterval == 0) {
+          if (year.isNotEmpty) {
+            logBatch.add('✓ Moved ${params.logInterval} files (total: $filesMoved) – latest [$month-$year]: ${p.basename(file.path)}');
+          } else {
+            logBatch.add('✓ Moved ${params.logInterval} files (total: $filesMoved) – latest: ${p.basename(file.path)}');
+          }
+          flushProgress(null, force: true);
+        }
       } catch (e) {
         logBatch.add('✗ Failed to move ${file.path}: $e');
         errors++;
