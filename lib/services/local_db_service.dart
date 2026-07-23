@@ -1,8 +1,5 @@
-import 'dart:convert';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
 import 'package:logging/logging.dart';
+import 'app_sqlite_service.dart';
 
 class LocalDbService {
   static final LocalDbService _instance = LocalDbService._internal();
@@ -15,39 +12,14 @@ class LocalDbService {
 
   String get currentProfileId => _profileId;
 
-  Future<File> _getConfigFile() async {
-    final docsDir = await getApplicationDocumentsDirectory();
-    final appDir = Directory(p.join(docsDir.path, 'FilesUtility'));
-    if (!await appDir.exists()) {
-      await appDir.create(recursive: true);
-    }
-    return File(p.join(appDir.path, 'config_$_profileId.json'));
-  }
-
   Future<void> init(String profileId) async {
     _profileId = profileId;
     _config = {}; // Reset config when switching profiles
     try {
-      final file = await _getConfigFile();
-      if (await file.exists()) {
-        final contents = await file.readAsString();
-        if (contents.isNotEmpty) {
-          _config = jsonDecode(contents) as Map<String, dynamic>;
-        }
-      }
+      _config = await AppSqliteService().loadProfileConfig(_profileId);
     } catch (e, stack) {
       _log.severe('Failed to initialize LocalDbService', e, stack);
       _config = {};
-    }
-  }
-
-  Future<void> _saveConfig() async {
-    try {
-      final file = await _getConfigFile();
-      final contents = const JsonEncoder.withIndent('  ').convert(_config);
-      await file.writeAsString(contents);
-    } catch (e, stack) {
-      _log.severe('Failed to save config', e, stack);
     }
   }
 
@@ -57,21 +29,21 @@ class LocalDbService {
   
   Future<void> setString(String key, String value) async {
     _config[key] = value;
-    await _saveConfig();
+    await AppSqliteService().setProfileConfigValue(_profileId, key, value);
   }
 
   int? getInt(String key) => _config[key] as int?;
 
   Future<void> setInt(String key, int value) async {
     _config[key] = value;
-    await _saveConfig();
+    await AppSqliteService().setProfileConfigValue(_profileId, key, value);
   }
 
   bool? getBool(String key) => _config[key] as bool?;
 
   Future<void> setBool(String key, bool value) async {
     _config[key] = value;
-    await _saveConfig();
+    await AppSqliteService().setProfileConfigValue(_profileId, key, value);
   }
 
   List<String>? getStringList(String key) {
@@ -84,12 +56,12 @@ class LocalDbService {
 
   Future<void> setStringList(String key, List<String> value) async {
     _config[key] = value;
-    await _saveConfig();
+    await AppSqliteService().setProfileConfigValue(_profileId, key, value);
   }
 
   Future<void> remove(String key) async {
     _config.remove(key);
-    await _saveConfig();
+    await AppSqliteService().removeProfileConfigValue(_profileId, key);
   }
 
   List<String> getRecentDirectories() {
