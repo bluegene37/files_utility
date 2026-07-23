@@ -15,6 +15,17 @@ class AppSqliteService {
   bool _isInitializing = false;
   String? appDirPath;
 
+  Future<String> _getAppDirPath() async {
+    if (appDirPath != null) return appDirPath!;
+    final docsDir = await getApplicationDocumentsDirectory();
+    final appDir = Directory(p.join(docsDir.path, 'FilesUtility'));
+    if (!await appDir.exists()) {
+      await appDir.create(recursive: true);
+    }
+    appDirPath = appDir.path;
+    return appDirPath!;
+  }
+
   Future<Database> get database async {
     if (_db != null && _db!.isOpen) return _db!;
     while (_isInitializing) {
@@ -29,14 +40,8 @@ class AppSqliteService {
         databaseFactory = databaseFactoryFfi;
       }
 
-      final docsDir = await getApplicationDocumentsDirectory();
-      final appDir = Directory(p.join(docsDir.path, 'FilesUtility'));
-      if (!await appDir.exists()) {
-        await appDir.create(recursive: true);
-      }
-      appDirPath = appDir.path;
-
-      final dbPath = p.join(appDir.path, 'files_utility.db');
+      final dirPath = await _getAppDirPath();
+      final dbPath = p.join(dirPath, 'files_utility.db');
       _db = await openDatabase(
         dbPath,
         version: 1,
@@ -74,7 +79,8 @@ class AppSqliteService {
   /// Automatically migrates legacy global_profiles.json to SQLite database.
   Future<void> _migrateLegacyGlobalProfiles(Database db) async {
     try {
-      final legacyFile = File(p.join(appDirPath!, 'global_profiles.json'));
+      final dirPath = await _getAppDirPath();
+      final legacyFile = File(p.join(dirPath, 'global_profiles.json'));
       if (await legacyFile.exists()) {
         final contents = await legacyFile.readAsString();
         if (contents.trim().isNotEmpty) {
@@ -99,7 +105,8 @@ class AppSqliteService {
   Future<void> migrateLegacyProfileConfig(String profileId) async {
     try {
       final db = await database;
-      final legacyFile = File(p.join(appDirPath!, 'config_$profileId.json'));
+      final dirPath = await _getAppDirPath();
+      final legacyFile = File(p.join(dirPath, 'config_$profileId.json'));
       if (await legacyFile.exists()) {
         final contents = await legacyFile.readAsString();
         if (contents.trim().isNotEmpty) {
