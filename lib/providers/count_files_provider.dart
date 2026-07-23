@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
 import '../services/file_logger.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
@@ -13,6 +14,7 @@ class _CountProgress {
   final int files;
   final int folders;
   final int errors;
+  final List<String> logs;
   final String? currentScanPath;
   final String? errorLog;
   final bool isDone;
@@ -21,6 +23,7 @@ class _CountProgress {
     this.files = 0,
     this.folders = 0,
     this.errors = 0,
+    this.logs = const [],
     this.currentScanPath,
     this.errorLog,
     this.isDone = false,
@@ -29,10 +32,12 @@ class _CountProgress {
 
 class _CountParams {
   final String targetPath;
+  final int logInterval;
   final SendPort sendPort;
 
   _CountParams({
     required this.targetPath,
+    required this.logInterval,
     required this.sendPort,
   });
 }
@@ -48,6 +53,7 @@ class CountFilesProvider with ChangeNotifier {
   int totalFiles = 0;
   int totalFolders = 0;
   int errors = 0;
+  int logInterval = 100;
   bool _stopRequested = false;
   Timer? _refreshTimer;
   Isolate? _workerIsolate;
@@ -72,6 +78,7 @@ class CountFilesProvider with ChangeNotifier {
   Future<void> _loadSettings() async {
     final db = LocalDbService();
     targetPath = db.getString('count_targetPath');
+    logInterval = db.getInt('count_logInterval') ?? 100;
     notifyListeners();
   }
 
@@ -80,6 +87,13 @@ class CountFilesProvider with ChangeNotifier {
     if (targetPath != null) {
       await db.setString('count_targetPath', targetPath!);
     }
+    await db.setInt('count_logInterval', logInterval);
+  }
+
+  void setLogInterval(int val) {
+    logInterval = val;
+    _saveSettings();
+    notifyListeners();
   }
 
   Future<void> pickTarget() async {
@@ -187,6 +201,7 @@ class CountFilesProvider with ChangeNotifier {
         _isolateWorker, 
         _CountParams(
           targetPath: targetPath!,
+          logInterval: logInterval,
           sendPort: receivePort.sendPort,
         ),
       );
@@ -198,7 +213,11 @@ class CountFilesProvider with ChangeNotifier {
           errors = message.errors;
           
           if (message.currentScanPath != null) {
-            currentStatus = '⏳ Scanning: ${message.currentScanPath}';
+            currentStatus = '⏳ Scanning: ${p.basename(message.currentScanPath!)}';
+          }
+
+          for (final log in message.logs) {
+            _addLog(log);
           }
           
           if (message.errorLog != null) {
@@ -259,8 +278,11 @@ class CountFilesProvider with ChangeNotifier {
         filesProcessed: totalFiles,
         foldersProcessed: totalFolders,
         errors: errors,
-        status: wasStopped ? 'Stopped' : 'Completed',
-        configSummary: 'Target: $targetPath',
+        status: wasStopped
+            ? 'Stopped'
+            : (errors > 0 && totalFiles == 0 && totalFolders == 0 ? 'Error' : 'Completed'),
+        configSummary: 'Target: $targetPath, Log Every: $logInterval',
+        sourcePath: targetPath,
       ));
     } catch (_) {}
 
@@ -274,34 +296,37 @@ class CountFilesProvider with ChangeNotifier {
     int files = 0;
     int folders = 0;
     int errors = 0;
-    
+    List<String> logBatch = [];
+
+    void sendProgress(String? currentScanPath, {bool force = false}) {
+      if (force || logBatch.isNotEmpty || files % 100 == 0 || folders % 10 == 0) {
+        params.sendPort.send(_CountProgress(
+          files: files,
+          folders: folders,
+          errors: errors,
+          logs: List.from(logBatch),
+          currentScanPath: currentScanPath,
+        ));
+        logBatch.clear();
+      }
+    }
+
     Future<void> countDir(Directory dir) async {
       try {
         await for (final entity in dir.list(recursive: false, followLinks: true)) {
           if (entity is File) {
             files++;
-            // Update progress occasionally for files, so UI doesn't stall
-            if (files % 1000 == 0) {
-              params.sendPort.send(_CountProgress(
-                files: files,
-                folders: folders,
-                errors: errors,
-                currentScanPath: entity.path,
-              ));
+            if (params.logInterval == 1) {
+              logBatch.add('✓ Counted: ${p.basename(entity.path)}');
+            } else if (files % params.logInterval == 0) {
+              logBatch.add(
+                '✓ Counted ${params.logInterval} files (total: $files) – latest: ${p.basename(entity.path)}',
+              );
             }
+            sendProgress(entity.path);
           } else if (entity is Directory) {
             folders++;
-            
-            // Throttle progress updates to avoid overwhelming the main thread
-            if (folders % 10 == 0) {
-              params.sendPort.send(_CountProgress(
-                files: files,
-                folders: folders,
-                errors: errors,
-                currentScanPath: entity.path,
-              ));
-            }
-            
+            sendProgress(entity.path);
             await countDir(entity);
           }
         }
@@ -318,6 +343,7 @@ class CountFilesProvider with ChangeNotifier {
 
     try {
       await countDir(Directory(params.targetPath));
+      sendProgress(null, force: true);
       params.sendPort.send(_CountProgress(
         files: files,
         folders: folders,

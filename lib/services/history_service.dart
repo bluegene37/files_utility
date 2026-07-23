@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import '../models/run_record.dart';
 import 'global_db_service.dart';
 
@@ -9,17 +10,18 @@ class HistoryService {
   HistoryService._internal();
 
   static String get _logDirectory {
-    final appDir = GlobalDbService().appDirPath ?? r'C:\temp\file transfer';
-    return '$appDir\\logs';
+    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'file_transfer');
+    return p.join(appDir, 'logs');
   }
   String _profileId = 'default';
 
-  String get _historyFile => '$_logDirectory\\run_history_$_profileId.json';
+  String get _historyFile => p.join(_logDirectory, 'run_history_$_profileId.json');
 
   bool _directoryVerified = false;
 
   void init(String profileId) {
     _profileId = profileId;
+    _directoryVerified = false;
   }
 
   Future<void> _ensureDirectory() async {
@@ -31,6 +33,7 @@ class HistoryService {
     _directoryVerified = true;
   }
 
+  /// Loads all historical run records. Records persist permanently until explicitly cleared.
   Future<List<RunRecord>> loadHistory() async {
     try {
       await _ensureDirectory();
@@ -45,26 +48,27 @@ class HistoryService {
       final List<dynamic> jsonList = jsonDecode(content);
       return jsonList.map((json) => RunRecord.fromJson(json as Map<String, dynamic>)).toList();
     } catch (e) {
-      // If there's a parsing error or missing file, return empty history
       return [];
     }
   }
 
+  /// Permanently saves a new run record. History is preserved indefinitely.
   Future<void> saveRecord(RunRecord record) async {
     try {
       final history = await loadHistory();
-      history.insert(0, record); // add to the beginning (latest first)
+      history.insert(0, record); // prepend newest run
       
       await _ensureDirectory();
       final file = File(_historyFile);
       
       final jsonString = jsonEncode(history.map((r) => r.toJson()).toList());
       await file.writeAsString(jsonString);
-    } catch (e) {
-      // Silently ignore write failures to not disrupt the main app flow
+    } catch (_) {
+      // Ignore write failures to prevent disrupting active operations
     }
   }
 
+  /// Deletes history only when explicitly requested by user.
   Future<void> clearHistory() async {
     try {
       await _ensureDirectory();
@@ -72,8 +76,8 @@ class HistoryService {
       if (await file.exists()) {
         await file.delete();
       }
-    } catch (e) {
-      // Ignore errors
+    } catch (_) {
+      // Ignore cleanup errors
     }
   }
 }

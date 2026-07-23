@@ -2,9 +2,10 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
 import 'global_db_service.dart';
 
-/// Centralized file logger that writes logs to C:\temp\file transfer\
+/// Centralized file logger that writes logs to app log directory.
 /// Each run gets a unique Run ID and its own log file.
 /// Writes are buffered for performance (flushes every 2s or when buffer hits 50 lines).
 class FileLogger {
@@ -13,8 +14,8 @@ class FileLogger {
   FileLogger._internal();
 
   static String get _logDirectory {
-    final appDir = GlobalDbService().appDirPath ?? r'C:\temp\file transfer';
-    return '$appDir\\logs';
+    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'file_transfer');
+    return p.join(appDir, 'logs');
   }
   static const int _bufferFlushSize = 50;
   static const Duration _bufferFlushInterval = Duration(seconds: 2);
@@ -68,7 +69,7 @@ class FileLogger {
     final dateTimeStr = DateFormat('yyyy-MM-dd_HH-mm-ss').format(DateTime.now());
     final safeSource = source.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
     final runId = _runIds[source] ?? _generateRunId();
-    return File('$_logDirectory\\${safeSource}_${dateTimeStr}_$runId.log');
+    return File(p.join(_logDirectory, '${safeSource}_${dateTimeStr}_$runId.log'));
   }
 
   /// Buffers a log line and flushes if threshold is reached.

@@ -763,7 +763,9 @@ class CopyFilesProvider with ChangeNotifier {
           errors: errors,
           status: 'Stopped',
           configSummary:
-              'Pairs: ${_pairsToProcess.length}, Dest: ${destPath ?? "Multiple"}',
+              'Source: ${sourcePath ?? "Multiple"}, Dest: ${destPath ?? "Multiple"} (Pairs: ${_pairsToProcess.length}, Exist: $filesAlreadyExist, Skipped: $filesSkipped)',
+          sourcePath: sourcePath,
+          destPath: destPath,
         ),
       );
     } catch (_) {}
@@ -1661,9 +1663,11 @@ class CopyFilesProvider with ChangeNotifier {
                   endTime: DateTime.now(),
                   filesProcessed: filesCopied,
                   errors: errors,
-                  status: 'Completed',
+                  status: errors > 0 && filesCopied == 0 ? 'Error' : 'Completed',
                   configSummary:
-                      'Pairs: ${_pairsToProcess.length}, Dest: ${destPath ?? "Multiple"}',
+                      'Source: ${sourcePath ?? "Multiple"}, Dest: ${destPath ?? "Multiple"} (Pairs: ${_pairsToProcess.length}, Exist: $filesAlreadyExist, Skipped: $filesSkipped)',
+                  sourcePath: sourcePath,
+                  destPath: destPath,
                 ),
               );
             } catch (_) {}

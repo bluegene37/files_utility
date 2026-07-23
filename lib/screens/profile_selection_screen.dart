@@ -121,7 +121,7 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
 
     return Scaffold(
       body: Container(
-        decoration: AppDecorations.gradientBackground,
+        decoration: AppDecorations.gradientBackground(context),
         child: Center(
           child: SingleChildScrollView(
             child: Padding(

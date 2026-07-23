@@ -5,6 +5,9 @@ import '../providers/copy_files_provider.dart';
 import '../theme/app_theme.dart';
 import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
+import '../widgets/history_dialog.dart';
+import '../widgets/theme_toggle_button.dart';
+import '../services/window_service.dart';
 
 class CopyFilesScreen extends StatelessWidget {
   const CopyFilesScreen({super.key});
@@ -12,10 +15,14 @@ class CopyFilesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<CopyFilesProvider>(context);
+    WindowService().updateTitle(
+      'Copy Files',
+      status: provider.isProcessing ? provider.currentStatus : null,
+    );
 
     return Scaffold(
       body: Container(
-        decoration: AppDecorations.gradientBackground,
+        decoration: AppDecorations.gradientBackground(context),
         child: Column(
           children: [
             // App Bar
@@ -138,9 +145,35 @@ class CopyFilesScreen extends StatelessWidget {
                                   ),
                                 ],
                                 const SizedBox(height: 8),
-                                // Log Interval selector
+                                // Advanced Settings & Log Interval on the same line
                                 Row(
                                   children: [
+                                    OutlinedButton.icon(
+                                      onPressed: () => _showAdvancedSettingsDialog(
+                                        context,
+                                        provider,
+                                      ),
+                                      icon: const Icon(
+                                        Icons.settings,
+                                        size: 16,
+                                        color: AppColors.accent,
+                                      ),
+                                      label: const Text(
+                                        'Advanced Settings',
+                                        style: TextStyle(color: AppColors.accent),
+                                      ),
+                                      style: OutlinedButton.styleFrom(
+                                        side: const BorderSide(
+                                          color: AppColors.cardBorder,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 8,
+                                        ),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
                                     const Text(
                                       'Log Every',
                                       style: TextStyle(
@@ -201,45 +234,27 @@ class CopyFilesScreen extends StatelessWidget {
                                       color: AppColors.textMuted,
                                     ),
                                     const SizedBox(width: 4),
-                                    const Text(
-                                      'Controls how often progress is logged to the console',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: AppColors.textMuted,
-                                        fontStyle: FontStyle.italic,
+                                    const Expanded(
+                                      child: Text(
+                                        'Controls how often progress is logged to the console',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.textMuted,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    StatBadge(
+                                      title: 'History',
+                                      value: 'View',
+                                      color: AppColors.accent,
+                                      icon: Icons.history,
+                                      onTap: () => showHistoryDialog(context, initialOperation: 'Copy'),
                                     ),
                                   ],
-                                ),
-                                const SizedBox(height: 8),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: OutlinedButton.icon(
-                                    onPressed: () =>
-                                        _showAdvancedSettingsDialog(
-                                          context,
-                                          provider,
-                                        ),
-                                    icon: const Icon(
-                                      Icons.settings,
-                                      size: 16,
-                                      color: AppColors.accent,
-                                    ),
-                                    label: const Text(
-                                      'Advanced Settings',
-                                      style: TextStyle(color: AppColors.accent),
-                                    ),
-                                    style: OutlinedButton.styleFrom(
-                                      side: const BorderSide(
-                                        color: AppColors.cardBorder,
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 8,
-                                      ),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                  ),
                                 ),
                               ],
                             ),
@@ -399,20 +414,22 @@ class CopyFilesScreen extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back_rounded, color: AppColors.accent),
+            icon: Icon(Icons.arrow_back_rounded, color: context.primaryAccent),
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 4),
-          const Icon(Icons.file_copy_rounded, color: AppColors.info, size: 22),
+          Icon(Icons.file_copy_rounded, color: context.isDarkMode ? AppColors.info : const Color(0xFF0284C7), size: 22),
           const SizedBox(width: 10),
           Text(
             'Copy Files (${currentProfile.name})',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
+              color: context.textPrimary,
             ),
           ),
+          const Spacer(),
+          const ThemeToggleButton(),
         ],
       ),
     );

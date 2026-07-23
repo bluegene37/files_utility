@@ -8,6 +8,8 @@ class RunRecord {
   final int errors;
   final String status; // 'Completed', 'Stopped', 'Error'
   final String configSummary;
+  final String? sourcePath;
+  final String? destPath;
 
   RunRecord({
     required this.id,
@@ -19,6 +21,8 @@ class RunRecord {
     required this.errors,
     required this.status,
     required this.configSummary,
+    this.sourcePath,
+    this.destPath,
   });
 
   Duration get duration => endTime.difference(startTime);
@@ -34,6 +38,8 @@ class RunRecord {
       'errors': errors,
       'status': status,
       'configSummary': configSummary,
+      if (sourcePath != null) 'sourcePath': sourcePath,
+      if (destPath != null) 'destPath': destPath,
     };
   }
 
@@ -48,6 +54,8 @@ class RunRecord {
       errors: json['errors'] as int? ?? 0,
       status: json['status'] as String? ?? 'Unknown',
       configSummary: json['configSummary'] as String? ?? '',
+      sourcePath: json['sourcePath'] as String?,
+      destPath: json['destPath'] as String?,
     );
   }
 }

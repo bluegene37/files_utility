@@ -4,6 +4,9 @@ import '../providers/count_files_provider.dart';
 import '../theme/app_theme.dart';
 import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
+import '../widgets/history_dialog.dart';
+import '../widgets/theme_toggle_button.dart';
+import '../services/window_service.dart';
 
 class CountFilesScreen extends StatelessWidget {
   const CountFilesScreen({super.key});
@@ -11,10 +14,14 @@ class CountFilesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<CountFilesProvider>(context);
+    WindowService().updateTitle(
+      'Count Files',
+      status: provider.isCounting ? provider.currentStatus : null,
+    );
 
     return Scaffold(
       body: Container(
-        decoration: AppDecorations.gradientBackground,
+        decoration: AppDecorations.gradientBackground(context),
         child: Column(
           children: [
             // App Bar
@@ -30,11 +37,99 @@ class CountFilesScreen extends StatelessWidget {
                     Container(
                       decoration: AppDecorations.glassCard(glowColor: AppColors.success),
                       padding: const EdgeInsets.all(16.0),
-                      child: PathRow(
-                        label: 'Target Folder',
-                        path: provider.targetPath,
-                        onPick: provider.isCounting ? null : provider.pickTarget,
-                        onChanged: provider.isCounting ? null : provider.setTargetPath,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          PathRow(
+                            label: 'Target Folder',
+                            path: provider.targetPath,
+                            onPick: provider.isCounting ? null : provider.pickTarget,
+                            onChanged: provider.isCounting ? null : provider.setTargetPath,
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Text(
+                                'Log Every',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 80,
+                                child: DropdownButtonFormField<int>(
+                                  isExpanded: true,
+                                  initialValue: provider.logInterval,
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 8,
+                                    ),
+                                  ),
+                                  dropdownColor: AppColors.bgDark2,
+                                  items: [1, 5, 10, 25, 50, 100].map((int value) {
+                                    return DropdownMenuItem<int>(
+                                      value: value,
+                                      child: Text(
+                                        value.toString(),
+                                        style: const TextStyle(
+                                          color: AppColors.textPrimary,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: provider.isCounting
+                                      ? null
+                                      : (val) {
+                                          if (val != null) {
+                                            provider.setLogInterval(val);
+                                          }
+                                        },
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'files',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              const Icon(
+                                Icons.info_outline,
+                                size: 14,
+                                color: AppColors.textMuted,
+                              ),
+                              const SizedBox(width: 4),
+                              const Expanded(
+                                child: Text(
+                                  'Controls how often progress is logged to the console (larger numbers run faster)',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textMuted,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              StatBadge(
+                                title: 'History',
+                                value: 'View',
+                                color: AppColors.accent,
+                                icon: Icons.history,
+                                onTap: () => showHistoryDialog(context, initialOperation: 'Count'),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -146,20 +241,22 @@ class CountFilesScreen extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back_rounded, color: AppColors.accent),
+            icon: Icon(Icons.arrow_back_rounded, color: context.primaryAccent),
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 4),
-          const Icon(Icons.analytics_rounded, color: AppColors.success, size: 22),
+          Icon(Icons.analytics_rounded, color: context.isDarkMode ? AppColors.success : const Color(0xFF16A34A), size: 22),
           const SizedBox(width: 10),
           Text(
             'Count Files (${currentProfile.name})',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
+              color: context.textPrimary,
             ),
           ),
+          const Spacer(),
+          const ThemeToggleButton(),
         ],
       ),
     );

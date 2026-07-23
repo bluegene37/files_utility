@@ -33,12 +33,14 @@ class _DeleteParams {
   final String targetPath;
   final int selectedYear;
   final List<String> validMonths;
+  final int logInterval;
   final SendPort sendPort;
 
   _DeleteParams({
     required this.targetPath,
     required this.selectedYear,
     required this.validMonths,
+    required this.logInterval,
     required this.sendPort,
   });
 }
@@ -60,6 +62,7 @@ class DeleteFilesProvider with ChangeNotifier {
 
   int selectedYear = 2025;
   List<String> validMonths = ['Jan'];
+  int logInterval = 100;
 
   List<String> allMonths = [
     'Jan',
@@ -100,6 +103,7 @@ class DeleteFilesProvider with ChangeNotifier {
     final db = LocalDbService();
     targetPath = db.getString('delete_targetPath');
     selectedYear = db.getInt('delete_selectedYear') ?? 2025;
+    logInterval = db.getInt('delete_logInterval') ?? 100;
     final savedMonths = db.getStringList('delete_validMonths');
     if (savedMonths != null && savedMonths.isNotEmpty) {
       validMonths = savedMonths;
@@ -113,7 +117,14 @@ class DeleteFilesProvider with ChangeNotifier {
       await db.setString('delete_targetPath', targetPath!);
     }
     await db.setInt('delete_selectedYear', selectedYear);
+    await db.setInt('delete_logInterval', logInterval);
     await db.setStringList('delete_validMonths', validMonths);
+  }
+
+  void setLogInterval(int val) {
+    logInterval = val;
+    _saveSettings();
+    notifyListeners();
   }
 
   void setYear(int year) {
@@ -254,6 +265,7 @@ class DeleteFilesProvider with ChangeNotifier {
           targetPath: targetPath!,
           selectedYear: selectedYear,
           validMonths: validMonths,
+          logInterval: logInterval,
           sendPort: receivePort.sendPort,
         ),
       );
@@ -317,7 +329,6 @@ class DeleteFilesProvider with ChangeNotifier {
       wasStopped: wasStopped,
     );
 
-    try {
       await HistoryService().saveRecord(RunRecord(
         id: runId,
         operation: 'Delete',
@@ -325,10 +336,13 @@ class DeleteFilesProvider with ChangeNotifier {
         endTime: DateTime.now(),
         filesProcessed: deletedCount,
         errors: errorCount,
-        status: wasStopped ? 'Stopped' : 'Completed',
-        configSummary: 'Target: $targetPath, Year: $selectedYear, Months: $validMonths',
+        status: wasStopped
+            ? 'Stopped'
+            : (errorCount > 0 && deletedCount == 0 ? 'Error' : 'Completed'),
+        configSummary:
+            'Target: $targetPath, Filter: Year $selectedYear, Months: ${validMonths.join(", ")}',
+        sourcePath: targetPath,
       ));
-    } catch (_) {}
 
     isProcessing = false;
     currentStatus = 'Idle';
@@ -366,7 +380,13 @@ class DeleteFilesProvider with ChangeNotifier {
       try {
         await file.delete();
         deletedCount++;
-        logBatch.add('✓ Deleted: ${p.basename(file.path)}');
+        if (params.logInterval == 1) {
+          logBatch.add('✓ Deleted: ${p.basename(file.path)}');
+        } else if (deletedCount % params.logInterval == 0) {
+          logBatch.add(
+            '✓ Deleted ${params.logInterval} files (total: $deletedCount) – latest: ${p.basename(file.path)}',
+          );
+        }
       } catch (e) {
         logBatch.add('✗ Failed to delete ${p.basename(file.path)}: $e');
         errorCount++;

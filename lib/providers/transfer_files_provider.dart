@@ -849,9 +849,14 @@ class TransferFilesProvider with ChangeNotifier {
           startTime: start,
           endTime: DateTime.now(),
           filesProcessed: filesMoved,
+          foldersProcessed: 0,
           errors: errors,
-          status: wasStopped ? 'Stopped' : 'Completed',
+          status: wasStopped
+              ? 'Stopped'
+              : (errors > 0 && filesMoved == 0 ? 'Error' : 'Completed'),
           configSummary: 'Source: $sourcePath, Dest: $destPath',
+          sourcePath: sourcePath,
+          destPath: destPath,
         ),
       );
     } catch (_) {}
@@ -874,12 +879,34 @@ class TransferFilesProvider with ChangeNotifier {
 
   /// Cleanup helper after stop is requested during pause-wait.
   void _cleanupAfterStop() {
+    final runId = _fileLogger.getRunId('Transfer') ?? 'UNKNOWN';
+    final start = _fileLogger.getStartTime('Transfer') ?? DateTime.now();
+
     _fileLogger.logRunEnd(
       operation: 'Transfer',
       filesProcessed: filesMoved,
       errors: errors,
       wasStopped: true,
     );
+
+    try {
+      HistoryService().saveRecord(
+        RunRecord(
+          id: runId,
+          operation: 'Transfer',
+          startTime: start,
+          endTime: DateTime.now(),
+          filesProcessed: filesMoved,
+          foldersProcessed: 0,
+          errors: errors,
+          status: 'Stopped',
+          configSummary: 'Source: $sourcePath, Dest: $destPath',
+          sourcePath: sourcePath,
+          destPath: destPath,
+        ),
+      );
+    } catch (_) {}
+
     isProcessing = false;
     isPaused = false;
     currentStatus = '⛔ Stopped by user.';
