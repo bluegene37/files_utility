@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../models/run_record.dart';
@@ -42,11 +41,6 @@ class HistoryService {
     _isInitializing = true;
 
     try {
-      if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
-        sqfliteFfiInit();
-        databaseFactory = databaseFactoryFfi;
-      }
-
       final dir = Directory(_baseDirectory);
       if (!await dir.exists()) {
         await dir.create(recursive: true);

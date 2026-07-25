@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -35,11 +34,6 @@ class AppSqliteService {
     _isInitializing = true;
 
     try {
-      if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
-        sqfliteFfiInit();
-        databaseFactory = databaseFactoryFfi;
-      }
-
       final dirPath = await _getAppDirPath();
       final dbPath = p.join(dirPath, 'files_utility.db');
       _db = await openDatabase(
