@@ -400,7 +400,13 @@ class _HistoryScreenState extends State<HistoryScreen>
                 ),
                 DataColumn(
                   label: Text(
-                    'Date & Time',
+                    'Start Date/Time',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                  ),
+                ),
+                DataColumn(
+                  label: Text(
+                    'End Date/Time',
                     style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
                   ),
                 ),
@@ -498,6 +504,12 @@ class _HistoryScreenState extends State<HistoryScreen>
                     DataCell(
                       Text(
                         dateFormat.format(record.startTime),
+                        style: TextStyle(fontSize: 12, color: context.textPrimary),
+                      ),
+                    ),
+                    DataCell(
+                      Text(
+                        dateFormat.format(record.endTime),
                         style: TextStyle(fontSize: 12, color: context.textPrimary),
                       ),
                     ),

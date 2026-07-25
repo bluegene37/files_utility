@@ -35,7 +35,7 @@ class CountFilesScreen extends StatelessWidget {
                   children: [
                     // Config Section
                     Container(
-                      decoration: AppDecorations.glassCard(glowColor: AppColors.success),
+                      decoration: AppDecorations.glassCard(context: context, glowColor: AppColors.success),
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

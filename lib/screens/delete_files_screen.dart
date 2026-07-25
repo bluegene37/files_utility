@@ -36,6 +36,7 @@ class DeleteFilesScreen extends StatelessWidget {
                     // Config Section
                     Container(
                       decoration: AppDecorations.glassCard(
+                        context: context,
                         glowColor: AppColors.error,
                       ),
                       padding: const EdgeInsets.all(16.0),

@@ -47,6 +47,7 @@ class TransferFilesScreen extends StatelessWidget {
                         child: SingleChildScrollView(
                           child: Container(
                             decoration: AppDecorations.glassCard(
+                              context: context,
                               glowColor: AppColors.accent,
                             ),
                             padding: const EdgeInsets.symmetric(

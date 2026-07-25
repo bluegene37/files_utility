@@ -44,6 +44,7 @@ class CopyFilesScreen extends StatelessWidget {
                         child: SingleChildScrollView(
                           child: Container(
                             decoration: AppDecorations.glassCard(
+                              context: context,
                               glowColor: AppColors.info,
                             ),
                             padding: const EdgeInsets.all(16.0),

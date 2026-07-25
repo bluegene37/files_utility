@@ -224,7 +224,7 @@ class _MainScreenState extends State<MainScreen> {
                   Icon(Icons.analytics_outlined, color: context.primaryAccent, size: 22),
                   const SizedBox(width: 8),
                   Text(
-                    'History & Analytics Dashboard',
+                    'History & Analytics Dashboard (All Profiles)',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -323,184 +323,232 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildRecentActivityTable(BuildContext context, List<RunRecord> records) {
-    final dateFormat = DateFormat('MMM dd, HH:mm:ss');
+    final dateFormat = DateFormat('MMM dd, yyyy HH:mm:ss');
     final isDark = context.isDarkMode;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          headingRowColor: WidgetStateProperty.all(
-            isDark ? AppColors.bgDark2 : const Color(0xFFE2E8F0),
-          ),
-          dataRowMinHeight: 48,
-          dataRowMaxHeight: 56,
-          horizontalMargin: 12,
-          columnSpacing: 16,
-          columns: [
-            DataColumn(
-              label: Text(
-                'Operation',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
-              ),
-            ),
-            DataColumn(
-              label: Text(
-                'Status',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
-              ),
-            ),
-            DataColumn(
-              label: Text(
-                'Date & Time',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
-              ),
-            ),
-            DataColumn(
-              label: Text(
-                'Duration',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
-              ),
-            ),
-            DataColumn(
-              label: Text(
-                'Target / Source Directory',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
-              ),
-            ),
-            DataColumn(
-              label: Text(
-                'Files',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
-              ),
-            ),
-            DataColumn(
-              label: Text(
-                'Errors',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
-              ),
-            ),
-          ],
-          rows: records.map((record) {
-            final duration = record.duration;
-            final durationStr = duration.inHours > 0
-                ? '${duration.inHours}h ${duration.inMinutes.remainder(60)}m'
-                : duration.inMinutes > 0
-                    ? '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s'
-                    : '${duration.inSeconds}s';
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.vertical,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(
+                  isDark ? AppColors.bgDark2 : const Color(0xFFE2E8F0),
+                ),
+                dataRowMinHeight: 48,
+                dataRowMaxHeight: 56,
+                horizontalMargin: 12,
+                columnSpacing: 16,
+                columns: [
+                  DataColumn(
+                    label: Text(
+                      'Operation',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Status',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Start Date/Time',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'End Date/Time',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Duration',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Source / Target Directory',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Destination Directory',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Files',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Folders',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Errors',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                    ),
+                  ),
+                ],
+                rows: records.map((record) {
+                  final duration = record.duration;
+                  final durationStr = duration.inHours > 0
+                      ? '${duration.inHours}h ${duration.inMinutes.remainder(60)}m ${duration.inSeconds.remainder(60)}s'
+                      : duration.inMinutes > 0
+                          ? '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s'
+                          : '${duration.inSeconds}s';
 
-            Color opColor;
-            IconData opIcon;
-            switch (record.operation) {
-              case 'Transfer':
-                opColor = isDark ? AppColors.accent : const Color(0xFF0D9488);
-                opIcon = Icons.move_up;
-                break;
-              case 'Copy':
-                opColor = isDark ? AppColors.info : const Color(0xFF0284C7);
-                opIcon = Icons.file_copy;
-                break;
-              case 'Delete':
-                opColor = AppColors.error;
-                opIcon = Icons.delete_forever;
-                break;
-              case 'Count':
-                opColor = isDark ? AppColors.success : const Color(0xFF16A34A);
-                opIcon = Icons.analytics;
-                break;
-              default:
-                opColor = context.textMuted;
-                opIcon = Icons.help_outline;
-            }
+                  Color opColor;
+                  IconData opIcon;
+                  switch (record.operation) {
+                    case 'Transfer':
+                      opColor = isDark ? AppColors.accent : const Color(0xFF0D9488);
+                      opIcon = Icons.move_up;
+                      break;
+                    case 'Copy':
+                      opColor = isDark ? AppColors.info : const Color(0xFF0284C7);
+                      opIcon = Icons.file_copy;
+                      break;
+                    case 'Delete':
+                      opColor = AppColors.error;
+                      opIcon = Icons.delete_forever;
+                      break;
+                    case 'Count':
+                      opColor = isDark ? AppColors.success : const Color(0xFF16A34A);
+                      opIcon = Icons.analytics;
+                      break;
+                    default:
+                      opColor = context.textMuted;
+                      opIcon = Icons.help_outline;
+                  }
 
-            Color statusColor = record.status == 'Completed'
-                ? (isDark ? AppColors.success : const Color(0xFF16A34A))
-                : record.status == 'Stopped'
-                    ? (isDark ? AppColors.warning : const Color(0xFFD97706))
-                    : AppColors.error;
+                  Color statusColor = record.status == 'Completed'
+                      ? (isDark ? AppColors.success : const Color(0xFF16A34A))
+                      : record.status == 'Stopped'
+                          ? (isDark ? AppColors.warning : const Color(0xFFD97706))
+                          : AppColors.error;
 
-            return DataRow(
-              cells: [
-                DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(opIcon, color: opColor, size: 14),
-                      const SizedBox(width: 6),
-                      Text(
-                        record.operation,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: opColor,
+                  return DataRow(
+                    cells: [
+                      DataCell(
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(opIcon, color: opColor, size: 14),
+                            const SizedBox(width: 6),
+                            Text(
+                              record.operation,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: opColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      DataCell(
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: statusColor.withValues(alpha: 0.1),
+                            border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            record.status,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: statusColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          dateFormat.format(record.startTime),
+                          style: TextStyle(fontSize: 11, color: context.textPrimary),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          dateFormat.format(record.endTime),
+                          style: TextStyle(fontSize: 11, color: context.textPrimary),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          durationStr,
+                          style: TextStyle(fontSize: 11, color: context.textSecondary),
+                        ),
+                      ),
+                      DataCell(
+                        SizedBox(
+                          width: 200,
+                          child: Text(
+                            record.sourcePath ?? '-',
+                            style: TextStyle(fontSize: 11, fontFamily: 'Consolas', color: context.textPrimary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        SizedBox(
+                          width: 200,
+                          child: Text(
+                            record.destPath ?? '-',
+                            style: TextStyle(fontSize: 11, fontFamily: 'Consolas', color: context.textSecondary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          NumberFormat('#,##0').format(record.filesProcessed),
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textPrimary),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          NumberFormat('#,##0').format(record.foldersProcessed),
+                          style: TextStyle(fontSize: 11, color: context.textSecondary),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          NumberFormat('#,##0').format(record.errors),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: record.errors > 0 ? AppColors.error : context.textMuted,
+                          ),
                         ),
                       ),
                     ],
-                  ),
-                ),
-                DataCell(
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.1),
-                      border: Border.all(color: statusColor.withValues(alpha: 0.5)),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      record.status,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: statusColor,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    dateFormat.format(record.startTime),
-                    style: TextStyle(fontSize: 11, color: context.textPrimary),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    durationStr,
-                    style: TextStyle(fontSize: 11, color: context.textSecondary),
-                  ),
-                ),
-                DataCell(
-                  SizedBox(
-                    width: 250,
-                    child: Text(
-                      record.sourcePath ?? '-',
-                      style: TextStyle(fontSize: 11, fontFamily: 'Consolas', color: context.textPrimary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    NumberFormat('#,##0').format(record.filesProcessed),
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textPrimary),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    NumberFormat('#,##0').format(record.errors),
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: record.errors > 0 ? AppColors.error : context.textMuted,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          }).toList(),
-        ),
-      ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

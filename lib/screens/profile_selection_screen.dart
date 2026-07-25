@@ -175,7 +175,7 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                   Container(
                     width: 400,
                     padding: const EdgeInsets.all(24),
-                    decoration: AppDecorations.glassCard(),
+                    decoration: AppDecorations.glassCard(context: context),
                     child: _isLoading
                         ? const Center(
                             child: CircularProgressIndicator(

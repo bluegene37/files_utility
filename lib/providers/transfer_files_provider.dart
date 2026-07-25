@@ -122,6 +122,8 @@ class TransferFilesProvider with ChangeNotifier {
   // Stats
   int filesMoved = 0;
   int errors = 0;
+  int _sessionStartFilesMoved = 0;
+  int _sessionStartErrors = 0;
 
   // Time Schedule Feature
   bool enableTimeWindow = false;
@@ -662,10 +664,17 @@ class TransferFilesProvider with ChangeNotifier {
       _addLog('    outside the source folder.');
     }
 
+    if (lastScannedDir == null) {
+      filesMoved = 0;
+      errors = 0;
+    }
+    _sessionStartFilesMoved = filesMoved;
+    _sessionStartErrors = errors;
+
     isProcessing = true;
     _stopRequested = false;
     isPaused = false;
-    // Initial filesMoved and errors are kept from _loadProgress()
+    currentStatus = '⏳ Starting transfer...';
     notifyListeners();
 
     _addLog('⏳ Starting transfer...');
@@ -823,11 +832,14 @@ class TransferFilesProvider with ChangeNotifier {
 
   Future<void> _finishRun({required bool wasStopped}) async {
     final elapsed = _getElapsedStr();
+    final int sessionFilesMoved = filesMoved - _sessionStartFilesMoved;
+    final int sessionErrors = errors - _sessionStartErrors;
+
     if (wasStopped) {
       _addLog('⛔ Stopped by user.');
     } else {
       _addLog(
-        '🏁 Completed: ${_numFmt.format(filesMoved)} moved, ${_numFmt.format(errors)} errors in $elapsed',
+        '🏁 Completed: ${_numFmt.format(sessionFilesMoved)} moved, ${_numFmt.format(sessionErrors)} errors in $elapsed',
       );
     }
 
@@ -836,8 +848,8 @@ class TransferFilesProvider with ChangeNotifier {
 
     await _fileLogger.logRunEnd(
       operation: 'Transfer',
-      filesProcessed: filesMoved,
-      errors: errors,
+      filesProcessed: sessionFilesMoved,
+      errors: sessionErrors,
       wasStopped: wasStopped,
     );
 
@@ -848,12 +860,12 @@ class TransferFilesProvider with ChangeNotifier {
           operation: 'Transfer',
           startTime: start,
           endTime: DateTime.now(),
-          filesProcessed: filesMoved,
+          filesProcessed: sessionFilesMoved,
           foldersProcessed: 0,
-          errors: errors,
+          errors: sessionErrors,
           status: wasStopped
               ? 'Stopped'
-              : (errors > 0 && filesMoved == 0 ? 'Error' : 'Completed'),
+              : (sessionErrors > 0 && sessionFilesMoved == 0 ? 'Error' : 'Completed'),
           configSummary: 'Source: $sourcePath, Dest: $destPath',
           sourcePath: sourcePath,
           destPath: destPath,
@@ -870,9 +882,12 @@ class TransferFilesProvider with ChangeNotifier {
     } else {
       isProcessing = false;
       isPaused = false;
-      currentStatus = wasStopped ? '⛔ Stopped by user.' : 'Idle';
+      currentStatus = wasStopped ? '⛔ Stopped by user.' : '🏁 Transfer completed.';
       _completionRescheduleTimer?.cancel();
       _completionRescheduleTimer = null;
+      if (!wasStopped) {
+        await clearProgress();
+      }
     }
     notifyListeners();
   }
@@ -881,11 +896,13 @@ class TransferFilesProvider with ChangeNotifier {
   void _cleanupAfterStop() {
     final runId = _fileLogger.getRunId('Transfer') ?? 'UNKNOWN';
     final start = _fileLogger.getStartTime('Transfer') ?? DateTime.now();
+    final int sessionFilesMoved = filesMoved - _sessionStartFilesMoved;
+    final int sessionErrors = errors - _sessionStartErrors;
 
     _fileLogger.logRunEnd(
       operation: 'Transfer',
-      filesProcessed: filesMoved,
-      errors: errors,
+      filesProcessed: sessionFilesMoved,
+      errors: sessionErrors,
       wasStopped: true,
     );
 
@@ -896,9 +913,9 @@ class TransferFilesProvider with ChangeNotifier {
           operation: 'Transfer',
           startTime: start,
           endTime: DateTime.now(),
-          filesProcessed: filesMoved,
+          filesProcessed: sessionFilesMoved,
           foldersProcessed: 0,
-          errors: errors,
+          errors: sessionErrors,
           status: 'Stopped',
           configSummary: 'Source: $sourcePath, Dest: $destPath',
           sourcePath: sourcePath,
@@ -947,6 +964,7 @@ class TransferFilesProvider with ChangeNotifier {
       String? scannedDir,
     }) {
       if (force ||
+          status != null ||
           logBatch.isNotEmpty ||
           scanCount % 10 == 0 ||
           scannedDir != null) {
@@ -1013,7 +1031,7 @@ class TransferFilesProvider with ChangeNotifier {
           } else {
             logBatch.add('✓ Moved ${params.logInterval} files (total: $filesMoved) – latest: ${p.basename(file.path)}');
           }
-          flushProgress(null, force: true);
+          flushProgress('⏳ Moving files ($filesMoved moved)...', force: true);
         }
       } catch (e) {
         logBatch.add('✗ Failed to move ${file.path}: $e');

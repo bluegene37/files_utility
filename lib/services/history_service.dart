@@ -113,10 +113,69 @@ class HistoryService {
     }
   }
 
-  /// Loads all history records sorted by startTime descending.
-  Future<List<RunRecord>> loadHistory({String operation = 'All'}) async {
+  /// Loads history records sorted by startTime descending across ALL profiles by default.
+  Future<List<RunRecord>> loadHistory({
+    String operation = 'All',
+    bool allProfiles = true,
+  }) async {
     try {
-      final db = await _getDatabase();
+      if (!allProfiles) {
+        return await _loadSingleProfileHistory(_profileId, operation: operation);
+      }
+
+      final profiles = GlobalDbService().profiles;
+      final Set<String> loadedProfileIds = {};
+      final List<RunRecord> combinedRecords = [];
+
+      for (final profile in profiles) {
+        loadedProfileIds.add(profile.id);
+        final recs = await _loadSingleProfileHistory(profile.id, operation: operation);
+        combinedRecords.addAll(recs);
+      }
+
+      // Also check any legacy or orphaned profile db files in _baseDirectory
+      try {
+        final dir = Directory(_baseDirectory);
+        if (await dir.exists()) {
+          final entities = await dir.list().toList();
+          for (final entity in entities) {
+            if (entity is File && p.basename(entity.path).startsWith('history_') && entity.path.endsWith('.db')) {
+              final filename = p.basename(entity.path);
+              final pId = filename.substring('history_'.length, filename.length - '.db'.length);
+              if (!loadedProfileIds.contains(pId)) {
+                loadedProfileIds.add(pId);
+                final recs = await _loadSingleProfileHistory(pId, operation: operation);
+                combinedRecords.addAll(recs);
+              }
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Remove duplicates by id if any
+      final Map<String, RunRecord> uniqueMap = {};
+      for (final r in combinedRecords) {
+        uniqueMap[r.id] = r;
+      }
+
+      final uniqueRecords = uniqueMap.values.toList();
+      uniqueRecords.sort((a, b) => b.startTime.compareTo(a.startTime));
+      return uniqueRecords;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<List<RunRecord>> _loadSingleProfileHistory(
+    String profileId, {
+    String operation = 'All',
+  }) async {
+    try {
+      final dbPath = p.join(_baseDirectory, 'history_$profileId.db');
+      final file = File(dbPath);
+      if (!await file.exists()) return [];
+
+      final db = await openDatabase(dbPath, version: 1);
       List<Map<String, dynamic>> maps;
 
       if (operation == 'All') {
@@ -132,6 +191,7 @@ class HistoryService {
           orderBy: 'startTime DESC',
         );
       }
+      await db.close();
 
       return maps.map((json) => RunRecord.fromJson(json)).toList();
     } catch (e) {
@@ -153,10 +213,47 @@ class HistoryService {
     }
   }
 
-  /// Clears history from SQLite database.
-  Future<void> clearHistory({String operation = 'All'}) async {
+  /// Clears history from SQLite database across all profiles or specific operation.
+  Future<void> clearHistory({String operation = 'All', bool allProfiles = true}) async {
     try {
-      final db = await _getDatabase();
+      if (allProfiles) {
+        final profiles = GlobalDbService().profiles;
+        final Set<String> loadedProfileIds = {};
+        for (final profile in profiles) {
+          loadedProfileIds.add(profile.id);
+          await _clearSingleProfileHistory(profile.id, operation: operation);
+        }
+        try {
+          final dir = Directory(_baseDirectory);
+          if (await dir.exists()) {
+            final entities = await dir.list().toList();
+            for (final entity in entities) {
+              if (entity is File && p.basename(entity.path).startsWith('history_') && entity.path.endsWith('.db')) {
+                final filename = p.basename(entity.path);
+                final pId = filename.substring('history_'.length, filename.length - '.db'.length);
+                if (!loadedProfileIds.contains(pId)) {
+                  loadedProfileIds.add(pId);
+                  await _clearSingleProfileHistory(pId, operation: operation);
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      } else {
+        await _clearSingleProfileHistory(_profileId, operation: operation);
+      }
+    } catch (_) {
+      // Ignore clear failures
+    }
+  }
+
+  Future<void> _clearSingleProfileHistory(String profileId, {String operation = 'All'}) async {
+    try {
+      final dbPath = p.join(_baseDirectory, 'history_$profileId.db');
+      final file = File(dbPath);
+      if (!await file.exists()) return;
+
+      final db = await openDatabase(dbPath, version: 1);
       if (operation == 'All') {
         await db.delete('run_history');
       } else {
@@ -166,8 +263,7 @@ class HistoryService {
           whereArgs: [operation],
         );
       }
-    } catch (_) {
-      // Ignore clear failures
-    }
+      await db.close();
+    } catch (_) {}
   }
 }

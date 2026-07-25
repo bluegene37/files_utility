@@ -40,11 +40,11 @@ class HistoryProvider with ChangeNotifier {
     refreshHistory();
   }
 
-  Future<void> refreshHistory() async {
+  Future<void> refreshHistory({bool allProfiles = true}) async {
     _isLoading = true;
     notifyListeners();
 
-    _records = await _service.loadHistory();
+    _records = await _service.loadHistory(allProfiles: allProfiles);
     
     _isLoading = false;
     notifyListeners();
@@ -55,8 +55,8 @@ class HistoryProvider with ChangeNotifier {
     await refreshHistory();
   }
 
-  Future<void> clearHistory() async {
-    await _service.clearHistory();
-    await refreshHistory();
+  Future<void> clearHistory({bool allProfiles = true}) async {
+    await _service.clearHistory(allProfiles: allProfiles);
+    await refreshHistory(allProfiles: allProfiles);
   }
 }

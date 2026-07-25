@@ -357,7 +357,7 @@ class DeleteFilesProvider with ChangeNotifier {
     int scanCount = 0;
 
     void sendProgress(String? status, {bool force = false}) {
-      if (force || logBatch.isNotEmpty || scanCount % 10 == 0) {
+      if (force || status != null || logBatch.isNotEmpty || scanCount % 10 == 0) {
         params.sendPort.send(_DeleteProgress(
           deleted: deletedCount,
           errors: errorCount,

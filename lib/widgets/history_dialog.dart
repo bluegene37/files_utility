@@ -15,6 +15,7 @@ void showHistoryDialog(BuildContext context, {String initialOperation = 'All'}) 
 
   showDialog(
     context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.7),
     builder: (dialogContext) {
       final child = HistoryDialog(initialOperation: initialOperation);
       if (historyProvider != null) {
@@ -72,7 +73,7 @@ class _HistoryDialogState extends State<HistoryDialog> {
       child: Container(
         width: MediaQuery.of(context).size.width * 0.88,
         height: MediaQuery.of(context).size.height * 0.85,
-        decoration: AppDecorations.glassCard(context: context),
+        decoration: AppDecorations.dialogCard(context: context),
         child: Column(
           children: [
             // Header
@@ -314,7 +315,13 @@ class _HistoryDialogState extends State<HistoryDialog> {
             ),
             DataColumn(
               label: Text(
-                'Start - End Time',
+                'Start Date/Time',
+                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+              ),
+            ),
+            DataColumn(
+              label: Text(
+                'End Date/Time',
                 style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
               ),
             ),
@@ -400,21 +407,18 @@ class _HistoryDialogState extends State<HistoryDialog> {
                     ],
                   ),
                 ),
-                // Start - End Time
+                // Start Date/Time
                 DataCell(
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        dateFormat.format(record.startTime),
-                        style: TextStyle(fontSize: 11, color: context.textPrimary),
-                      ),
-                      Text(
-                        'to ${DateFormat('HH:mm:ss').format(record.endTime)}',
-                        style: TextStyle(fontSize: 10, color: context.textMuted),
-                      ),
-                    ],
+                  Text(
+                    dateFormat.format(record.startTime),
+                    style: TextStyle(fontSize: 11, color: context.textPrimary),
+                  ),
+                ),
+                // End Date/Time
+                DataCell(
+                  Text(
+                    dateFormat.format(record.endTime),
+                    style: TextStyle(fontSize: 11, color: context.textPrimary),
                   ),
                 ),
                 // Duration

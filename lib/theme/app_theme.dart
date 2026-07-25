@@ -368,7 +368,7 @@ class AppDecorations {
     final isDark = context == null || Theme.of(context).brightness == Brightness.dark;
     return BoxDecoration(
       color: isDark
-          ? AppColors.surface.withValues(alpha: 0.6)
+          ? AppColors.surface.withValues(alpha: 0.95)
           : AppColors.lightSurface,
       borderRadius: BorderRadius.circular(16),
       border: Border.all(
@@ -383,6 +383,27 @@ class AppDecorations {
               : Colors.black.withValues(alpha: 0.05),
           blurRadius: 16,
           spreadRadius: 0,
+        ),
+      ],
+    );
+  }
+
+  /// Solid card decoration for popups/dialogs to prevent background bleed-through.
+  static BoxDecoration dialogCard({BuildContext? context, Color? glowColor}) {
+    final isDark = context == null || Theme.of(context).brightness == Brightness.dark;
+    return BoxDecoration(
+      color: isDark ? const Color(0xFF16162A) : AppColors.lightSurface,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(
+        color: (glowColor ?? (isDark ? AppColors.accent : const Color(0xFF0D9488)))
+            .withValues(alpha: isDark ? 0.3 : 0.4),
+        width: 1.5,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.2),
+          blurRadius: 24,
+          spreadRadius: 2,
         ),
       ],
     );
