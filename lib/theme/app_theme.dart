@@ -11,63 +11,64 @@ extension ThemeContextExtension on BuildContext {
   Color get textSecondary => isDarkMode ? AppColors.textSecondary : AppColors.lightTextSecondary;
   Color get textMuted => isDarkMode ? AppColors.textMuted : AppColors.lightTextMuted;
   Color get cardBg => isDarkMode ? AppColors.surface : AppColors.lightSurface;
-  Color get containerBg => isDarkMode ? AppColors.bgDark2 : const Color(0xFFF1F5F9);
+  Color get containerBg => isDarkMode ? AppColors.bgDark2 : AppColors.lightBg2;
   Color get border => isDarkMode ? AppColors.cardBorder : AppColors.lightCardBorder;
-  Color get primaryAccent => isDarkMode ? AppColors.accent : const Color(0xFF0D9488);
+  Color get primaryAccent => isDarkMode ? AppColors.accent : AppColors.lightAccent;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Color Palette
+// Color Palette (Coffee & Cream Palette inspired by genexis.dev)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AppColors {
   AppColors._();
 
-  // Base dark backgrounds
-  static const Color bgDark1 = Color(0xFF0D0D1A);
-  static const Color bgDark2 = Color(0xFF1A1A2E);
-  static const Color bgDark3 = Color(0xFF16213E);
-  static const Color bgDark4 = Color(0xFF0F3460);
+  // Coffee Dark Backgrounds (Espresso Roast)
+  static const Color bgDark1 = Color(0xFF161413); // Deep dark espresso
+  static const Color bgDark2 = Color(0xFF1E1A17); // Dark roast coffee
+  static const Color bgDark3 = Color(0xFF26211E); // Warm coffee blend
+  static const Color bgDark4 = Color(0xFF302A26);
 
   // Surface & card (Dark)
-  static const Color surface = Color(0xFF1E1E36);
-  static const Color surfaceLight = Color(0xFF262644);
-  static const Color cardBorder = Color(0xFF2E2E50);
+  static const Color surface = Color(0xFF221E1B);
+  static const Color surfaceLight = Color(0xFF2C2622);
+  static const Color cardBorder = Color(0xFF3D3530);
 
-  // Surface & card (Light)
-  static const Color lightBg1 = Color(0xFFF8FAFC);
-  static const Color lightBg2 = Color(0xFFF1F5F9);
-  static const Color lightBg3 = Color(0xFFE2E8F0);
-  static const Color lightSurface = Color(0xFFFFFFFF);
-  static const Color lightCardBorder = Color(0xFFCBD5E1);
+  // Coffee Light (Warm Cream & Paper from genexis.dev)
+  static const Color lightBg1 = Color(0xFFF2EDE3); // Warm cream cotton paper (--paper)
+  static const Color lightBg2 = Color(0xFFEAE3D5); // Soft warm latte (--paper-deep)
+  static const Color lightBg3 = Color(0xFFE0D7C5); // Recessed warm paper
+  static const Color lightSurface = Color(0xFFFAF7F0); // Paper raised (--paper-raised)
+  static const Color lightCardBorder = Color(0xFFD8D0BF); // Hairline border
 
-  // Accent
-  static const Color accent = Color(0xFF14CCCC);
-  static const Color accentLight = Color(0xFF1AEAEA);
-  static const Color accentMuted = Color(0xFF0F9999);
+  // Accent (Terracotta Roast / Coffee Crema)
+  static const Color accent = Color(0xFFD47754); // Cinnamon / Terracotta Crema (Dark)
+  static const Color accentLight = Color(0xFFE28D6E);
+  static const Color accentMuted = Color(0xFFA85538);
+  static const Color lightAccent = Color(0xFFB4402C); // Warm terracotta lead (--lead from genexis.dev)
 
   // Semantic
-  static const Color success = Color(0xFF4ADE80);
-  static const Color error = Color(0xFFFF6B6B);
-  static const Color warning = Color(0xFFFBBF24);
-  static const Color info = Color(0xFF60A5FA);
+  static const Color success = Color(0xFF529A72); // Muted sage roast green
+  static const Color error = Color(0xFFC74838); // Terracotta error
+  static const Color warning = Color(0xFFD98A2B); // Warm honey amber
+  static const Color info = Color(0xFF6B8BA6); // Muted slate blue
 
   // Text (Dark)
-  static const Color textPrimary = Color(0xFFF0F0F5);
-  static const Color textSecondary = Color(0xFFA0A0BE);
-  static const Color textMuted = Color(0xFF6B6B8A);
+  static const Color textPrimary = Color(0xFFFAF7F0); // Warm cream
+  static const Color textSecondary = Color(0xFFD5CCB8); // Warm oat
+  static const Color textMuted = Color(0xFF8E8478); // Coffee muted
 
-  // Text (Light)
-  static const Color lightTextPrimary = Color(0xFF0F172A);
-  static const Color lightTextSecondary = Color(0xFF334155);
-  static const Color lightTextMuted = Color(0xFF64748B);
+  // Text (Light - from genexis.dev)
+  static const Color lightTextPrimary = Color(0xFF16161A); // Deep ink
+  static const Color lightTextSecondary = Color(0xFF5A564E); // Soft ink / roasted bean
+  static const Color lightTextMuted = Color(0xFF7D776C); // Graphite
 
   // Log console colors
-  static const Color logSuccess = Color(0xFF4ADE80);
-  static const Color logError = Color(0xFFFF6B6B);
-  static const Color logInfo = Color(0xFF67E8F9);
-  static const Color logWarning = Color(0xFFFBBF24);
-  static const Color logDefault = Color(0xFFD0D0E8);
+  static const Color logSuccess = Color(0xFF68C28A);
+  static const Color logError = Color(0xFFE06253);
+  static const Color logInfo = Color(0xFFE0A076);
+  static const Color logWarning = Color(0xFFEBB44E);
+  static const Color logDefault = Color(0xFFEBE5D8);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,7 +107,7 @@ class AppTheme {
         iconTheme: IconThemeData(color: AppColors.accent),
       ),
       cardTheme: CardThemeData(
-        color: AppColors.surface.withValues(alpha: 0.7),
+        color: AppColors.surface.withValues(alpha: 0.9),
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
@@ -163,7 +164,7 @@ class AppTheme {
       ),
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.bgDark2,
-        selectedColor: AppColors.accent.withValues(alpha: 0.2),
+        selectedColor: AppColors.accent.withValues(alpha: 0.25),
         checkmarkColor: AppColors.accent,
         labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
         side: const BorderSide(color: AppColors.cardBorder),
@@ -192,7 +193,7 @@ class AppTheme {
       toggleButtonsTheme: ToggleButtonsThemeData(
         selectedColor: AppColors.accent,
         color: AppColors.textSecondary,
-        fillColor: AppColors.accent.withValues(alpha: 0.15),
+        fillColor: AppColors.accent.withValues(alpha: 0.18),
         selectedBorderColor: AppColors.accent,
         borderColor: AppColors.cardBorder,
         borderRadius: BorderRadius.circular(8),
@@ -214,10 +215,10 @@ class AppTheme {
       brightness: Brightness.light,
       useMaterial3: true,
       fontFamily: 'Segoe UI',
-      scaffoldBackgroundColor: AppColors.lightBg2,
+      scaffoldBackgroundColor: AppColors.lightBg1,
       colorScheme: const ColorScheme.light(
-        primary: Color(0xFF0D9488),
-        secondary: Color(0xFF0F766E),
+        primary: AppColors.lightAccent,
+        secondary: AppColors.accentMuted,
         surface: AppColors.lightSurface,
         error: AppColors.error,
         onPrimary: Colors.white,
@@ -235,7 +236,7 @@ class AppTheme {
           color: AppColors.lightTextPrimary,
           letterSpacing: 0.5,
         ),
-        iconTheme: IconThemeData(color: Color(0xFF0D9488)),
+        iconTheme: IconThemeData(color: AppColors.lightAccent),
       ),
       cardTheme: CardThemeData(
         color: AppColors.lightSurface,
@@ -248,8 +249,8 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF0D9488),
-          foregroundColor: Colors.white,
+          backgroundColor: AppColors.lightAccent,
+          foregroundColor: AppColors.lightSurface,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -258,8 +259,8 @@ class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFF0D9488),
-          side: const BorderSide(color: Color(0xFF0D9488), width: 1),
+          foregroundColor: AppColors.lightAccent,
+          side: const BorderSide(color: AppColors.lightAccent, width: 1),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
@@ -267,7 +268,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white,
+        fillColor: AppColors.lightSurface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: AppColors.lightCardBorder),
@@ -278,7 +279,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF0D9488), width: 1.5),
+          borderSide: const BorderSide(color: AppColors.lightAccent, width: 1.5),
         ),
         labelStyle: const TextStyle(color: AppColors.lightTextSecondary, fontSize: 13),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -286,7 +287,7 @@ class AppTheme {
       ),
       checkboxTheme: CheckboxThemeData(
         fillColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return const Color(0xFF0D9488);
+          if (states.contains(WidgetState.selected)) return AppColors.lightAccent;
           return Colors.transparent;
         }),
         checkColor: WidgetStateProperty.all(Colors.white),
@@ -294,9 +295,9 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: Colors.white,
-        selectedColor: const Color(0xFF0D9488).withValues(alpha: 0.15),
-        checkmarkColor: const Color(0xFF0D9488),
+        backgroundColor: AppColors.lightSurface,
+        selectedColor: AppColors.lightAccent.withValues(alpha: 0.15),
+        checkmarkColor: AppColors.lightAccent,
         labelStyle: const TextStyle(color: AppColors.lightTextSecondary, fontSize: 12),
         side: const BorderSide(color: AppColors.lightCardBorder),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -306,7 +307,7 @@ class AppTheme {
         textStyle: TextStyle(color: AppColors.lightTextPrimary, fontSize: 14),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.lightSurface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: AppColors.lightCardBorder),
@@ -322,10 +323,10 @@ class AppTheme {
         thickness: 1,
       ),
       toggleButtonsTheme: ToggleButtonsThemeData(
-        selectedColor: const Color(0xFF0D9488),
+        selectedColor: AppColors.lightAccent,
         color: AppColors.lightTextSecondary,
-        fillColor: const Color(0xFF0D9488).withValues(alpha: 0.15),
-        selectedBorderColor: const Color(0xFF0D9488),
+        fillColor: AppColors.lightAccent.withValues(alpha: 0.12),
+        selectedBorderColor: AppColors.lightAccent,
         borderColor: AppColors.lightCardBorder,
         borderRadius: BorderRadius.circular(8),
         textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),

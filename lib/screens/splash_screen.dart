@@ -91,7 +91,7 @@ class _SplashScreenState extends State<SplashScreen>
                     borderRadius: BorderRadius.circular(32),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.accent.withValues(alpha: 0.3),
+                        color: context.primaryAccent.withValues(alpha: 0.25),
                         blurRadius: 40,
                         spreadRadius: 5,
                       ),
@@ -107,12 +107,12 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
                 const SizedBox(height: 32),
                 // App name
-                const Text(
+                Text(
                   'Files Utility',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                    color: context.textPrimary,
                     letterSpacing: 1.2,
                   ),
                 ),
@@ -121,7 +121,7 @@ class _SplashScreenState extends State<SplashScreen>
                   'Manage your files and transfers with ease',
                   style: TextStyle(
                     fontSize: 14,
-                    color: AppColors.textSecondary.withValues(alpha: 0.7),
+                    color: context.textSecondary.withValues(alpha: 0.8),
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -130,7 +130,7 @@ class _SplashScreenState extends State<SplashScreen>
                   'v1.0.0',
                   style: TextStyle(
                     fontSize: 12,
-                    color: AppColors.textMuted.withValues(alpha: 0.5),
+                    color: context.textMuted.withValues(alpha: 0.6),
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -142,7 +142,7 @@ class _SplashScreenState extends State<SplashScreen>
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.accent.withValues(alpha: 0.8),
+                      context.primaryAccent.withValues(alpha: 0.9),
                     ),
                   ),
                 ),

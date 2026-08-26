@@ -54,7 +54,7 @@ class _MainScreenState extends State<MainScreen> {
                         icon: Icons.move_to_inbox_rounded,
                         title: 'Transfer Files',
                         subtitle: 'Move files by date & filters',
-                        accentColor: context.isDarkMode ? AppColors.accent : const Color(0xFF0D9488),
+                        accentColor: context.primaryAccent,
                         onTap: () => _navigateTo(context, const TransferFilesScreen()),
                       ),
                     ),
@@ -64,7 +64,7 @@ class _MainScreenState extends State<MainScreen> {
                         icon: Icons.file_copy_rounded,
                         title: 'Copy Files',
                         subtitle: 'Mirror directories with date range',
-                        accentColor: context.isDarkMode ? AppColors.info : const Color(0xFF0284C7),
+                        accentColor: context.isDarkMode ? const Color(0xFFE2A06E) : const Color(0xFFA0582C),
                         onTap: () => _navigateTo(context, const CopyFilesScreen()),
                       ),
                     ),
@@ -84,7 +84,7 @@ class _MainScreenState extends State<MainScreen> {
                         icon: Icons.analytics_rounded,
                         title: 'Count Files',
                         subtitle: 'Audit file & folder totals',
-                        accentColor: context.isDarkMode ? AppColors.success : const Color(0xFF16A34A),
+                        accentColor: AppColors.success,
                         onTap: () => _navigateTo(context, const CountFilesScreen()),
                       ),
                     ),
@@ -244,13 +244,13 @@ class _MainScreenState extends State<MainScreen> {
               // Comparative Operation Graphs
               Row(
                 children: [
-                  Expanded(child: _buildMiniGraphBar(context, 'Transfer', transferFiles, transferFiles / maxFiles, context.isDarkMode ? AppColors.accent : const Color(0xFF0D9488))),
+                  Expanded(child: _buildMiniGraphBar(context, 'Transfer', transferFiles, transferFiles / maxFiles, context.primaryAccent)),
                   const SizedBox(width: 10),
-                  Expanded(child: _buildMiniGraphBar(context, 'Copy', copyFiles, copyFiles / maxFiles, context.isDarkMode ? AppColors.info : const Color(0xFF0284C7))),
+                  Expanded(child: _buildMiniGraphBar(context, 'Copy', copyFiles, copyFiles / maxFiles, context.isDarkMode ? const Color(0xFFE2A06E) : const Color(0xFFA0582C))),
                   const SizedBox(width: 10),
                   Expanded(child: _buildMiniGraphBar(context, 'Delete', deleteFiles, deleteFiles / maxFiles, AppColors.error)),
                   const SizedBox(width: 10),
-                  Expanded(child: _buildMiniGraphBar(context, 'Count', countFiles, countFiles / maxFiles, context.isDarkMode ? AppColors.success : const Color(0xFF16A34A))),
+                  Expanded(child: _buildMiniGraphBar(context, 'Count', countFiles, countFiles / maxFiles, AppColors.success)),
                 ],
               ),
               const SizedBox(height: 16),
@@ -416,11 +416,11 @@ class _MainScreenState extends State<MainScreen> {
                   IconData opIcon;
                   switch (record.operation) {
                     case 'Transfer':
-                      opColor = isDark ? AppColors.accent : const Color(0xFF0D9488);
+                      opColor = context.primaryAccent;
                       opIcon = Icons.move_up;
                       break;
                     case 'Copy':
-                      opColor = isDark ? AppColors.info : const Color(0xFF0284C7);
+                      opColor = isDark ? const Color(0xFFE2A06E) : const Color(0xFFA0582C);
                       opIcon = Icons.file_copy;
                       break;
                     case 'Delete':
@@ -428,7 +428,7 @@ class _MainScreenState extends State<MainScreen> {
                       opIcon = Icons.delete_forever;
                       break;
                     case 'Count':
-                      opColor = isDark ? AppColors.success : const Color(0xFF16A34A);
+                      opColor = AppColors.success;
                       opIcon = Icons.analytics;
                       break;
                     default:
@@ -437,9 +437,9 @@ class _MainScreenState extends State<MainScreen> {
                   }
 
                   Color statusColor = record.status == 'Completed'
-                      ? (isDark ? AppColors.success : const Color(0xFF16A34A))
+                      ? AppColors.success
                       : record.status == 'Stopped'
-                          ? (isDark ? AppColors.warning : const Color(0xFFD97706))
+                          ? AppColors.warning
                           : AppColors.error;
 
                   return DataRow(

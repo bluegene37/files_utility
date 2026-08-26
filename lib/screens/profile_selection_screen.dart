@@ -149,7 +149,7 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.accent.withValues(alpha: 0.3),
+                          color: context.primaryAccent.withValues(alpha: 0.25),
                           blurRadius: 20,
                           spreadRadius: 2,
                         ),
@@ -164,20 +164,20 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  const Text(
+                  Text(
                     'Select Run Session',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
+                      color: context.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Choose a profile to keep settings and history isolated.',
                     style: TextStyle(
                       fontSize: 14,
-                      color: AppColors.textSecondary,
+                      color: context.textSecondary,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -189,20 +189,20 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                     padding: const EdgeInsets.all(24),
                     decoration: AppDecorations.glassCard(context: context),
                     child: _isLoading
-                        ? const Center(
+                        ? Center(
                             child: CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
+                              valueColor: AlwaysStoppedAnimation<Color>(context.primaryAccent),
                             ),
                           )
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              const Text(
+                              Text(
                                 'Existing Profiles',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
+                                  color: context.textPrimary,
                                 ),
                               ),
                               const SizedBox(height: 12),
@@ -215,7 +215,7 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                     value: _selectedProfileId,
                                     isExpanded: true,
                                     itemHeight: 68,
-                                    dropdownColor: AppColors.bgDark2,
+                                    dropdownColor: context.cardBg,
                                     items: profiles.map((p) {
                                       return DropdownMenuItem<String>(
                                         value: p.id,
@@ -223,11 +223,11 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Text(p.name, style: const TextStyle(color: AppColors.textPrimary)),
+                                            Text(p.name, style: TextStyle(color: context.textPrimary)),
                                             if (p.description.isNotEmpty)
                                               Text(
                                                 p.description,
-                                                style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                                                style: TextStyle(fontSize: 11, color: context.textMuted),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                               ),
@@ -300,12 +300,12 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                 ],
                               ),
                               const SizedBox(height: 24),
-                              const Text(
+                              Text(
                                 'Create New Profile',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
+                                  color: context.textPrimary,
                                 ),
                               ),
                               const SizedBox(height: 12),
@@ -315,7 +315,7 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                   labelText: 'Profile Name',
                                   hintText: 'e.g., Nightly Backup, Server A',
                                 ),
-                                style: const TextStyle(color: AppColors.textPrimary),
+                                style: TextStyle(color: context.textPrimary),
                               ),
                               const SizedBox(height: 12),
                               TextField(
@@ -324,7 +324,7 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                   labelText: 'Description (Optional)',
                                   hintText: 'e.g., Daily copy of photos to external drive',
                                 ),
-                                style: const TextStyle(color: AppColors.textPrimary),
+                                style: TextStyle(color: context.textPrimary),
                               ),
                               const SizedBox(height: 16),
                               OutlinedButton.icon(
