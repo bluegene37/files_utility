@@ -73,11 +73,11 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
     });
 
     final newProfile = await GlobalDbService().createProfile(name, desc);
-    
+
     // Clear inputs
     _nameController.clear();
     _descController.clear();
-    
+
     await _continueWithProfile(newProfile.id);
   }
 
@@ -191,7 +191,9 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                     child: _isLoading
                         ? Center(
                             child: CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(context.primaryAccent),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                context.primaryAccent,
+                              ),
                             ),
                           )
                         : Column(
@@ -220,14 +222,23 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                       return DropdownMenuItem<String>(
                                         value: p.id,
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Text(p.name, style: TextStyle(color: context.textPrimary)),
+                                            Text(
+                                              p.name,
+                                              style: TextStyle(
+                                                color: context.textPrimary,
+                                              ),
+                                            ),
                                             if (p.description.isNotEmpty)
                                               Text(
                                                 p.description,
-                                                style: TextStyle(fontSize: 11, color: context.textMuted),
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: context.textMuted,
+                                                ),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                               ),
@@ -252,8 +263,12 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                     child: ElevatedButton(
                                       onPressed: _selectedProfileId == null
                                           ? null
-                                          : () => _continueWithProfile(_selectedProfileId!),
-                                      child: const Text('Continue with Selected'),
+                                          : () => _continueWithProfile(
+                                              _selectedProfileId!,
+                                            ),
+                                      child: const Text(
+                                        'Continue with Selected',
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -262,25 +277,39 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                         ? 'Cannot delete the last profile'
                                         : 'Delete selected profile',
                                     child: IconButton(
-                                      onPressed: profiles.length <= 1 || _selectedProfileId == null
+                                      onPressed:
+                                          profiles.length <= 1 ||
+                                              _selectedProfileId == null
                                           ? null
                                           : _deleteSelectedProfile,
                                       icon: Icon(
                                         Icons.delete_outline,
-                                        color: profiles.length <= 1 || _selectedProfileId == null
+                                        color:
+                                            profiles.length <= 1 ||
+                                                _selectedProfileId == null
                                             ? context.textMuted
                                             : AppColors.error,
                                       ),
                                       style: IconButton.styleFrom(
-                                        backgroundColor: profiles.length <= 1 || _selectedProfileId == null
+                                        backgroundColor:
+                                            profiles.length <= 1 ||
+                                                _selectedProfileId == null
                                             ? Colors.transparent
-                                            : AppColors.error.withValues(alpha: 0.1),
+                                            : AppColors.error.withValues(
+                                                alpha: 0.1,
+                                              ),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(10),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
                                           side: BorderSide(
-                                            color: profiles.length <= 1 || _selectedProfileId == null
+                                            color:
+                                                profiles.length <= 1 ||
+                                                    _selectedProfileId == null
                                                 ? context.border
-                                                : AppColors.error.withValues(alpha: 0.3),
+                                                : AppColors.error.withValues(
+                                                    alpha: 0.3,
+                                                  ),
                                           ),
                                         ),
                                       ),
@@ -291,12 +320,24 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                               const SizedBox(height: 24),
                               Row(
                                 children: [
-                                  Expanded(child: Divider(color: context.border)),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                                    child: Text('OR', style: TextStyle(color: context.textMuted, fontSize: 12)),
+                                  Expanded(
+                                    child: Divider(color: context.border),
                                   ),
-                                  Expanded(child: Divider(color: context.border)),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    child: Text(
+                                      'OR',
+                                      style: TextStyle(
+                                        color: context.textMuted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Divider(color: context.border),
+                                  ),
                                 ],
                               ),
                               const SizedBox(height: 24),
@@ -322,7 +363,8 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                 controller: _descController,
                                 decoration: const InputDecoration(
                                   labelText: 'Description (Optional)',
-                                  hintText: 'e.g., Daily copy of photos to external drive',
+                                  hintText:
+                                      'e.g., Daily copy of photos to external drive',
                                 ),
                                 style: TextStyle(color: context.textPrimary),
                               ),

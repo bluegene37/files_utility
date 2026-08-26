@@ -35,7 +35,10 @@ class CountFilesScreen extends StatelessWidget {
                   children: [
                     // Config Section
                     Container(
-                      decoration: AppDecorations.glassCard(context: context, glowColor: AppColors.success),
+                      decoration: AppDecorations.glassCard(
+                        context: context,
+                        glowColor: AppColors.success,
+                      ),
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -43,8 +46,12 @@ class CountFilesScreen extends StatelessWidget {
                           PathRow(
                             label: 'Target Folder',
                             path: provider.targetPath,
-                            onPick: provider.isCounting ? null : provider.pickTarget,
-                            onChanged: provider.isCounting ? null : provider.setTargetPath,
+                            onPick: provider.isCounting
+                                ? null
+                                : provider.pickTarget,
+                            onChanged: provider.isCounting
+                                ? null
+                                : provider.setTargetPath,
                           ),
                           const SizedBox(height: 8),
                           Row(
@@ -71,7 +78,9 @@ class CountFilesScreen extends StatelessWidget {
                                     ),
                                   ),
                                   dropdownColor: context.cardBg,
-                                  items: [1, 5, 10, 25, 50, 100].map((int value) {
+                                  items: [1, 5, 10, 25, 50, 100].map((
+                                    int value,
+                                  ) {
                                     return DropdownMenuItem<int>(
                                       value: value,
                                       child: Text(
@@ -125,7 +134,10 @@ class CountFilesScreen extends StatelessWidget {
                                 value: 'View',
                                 color: AppColors.accent,
                                 icon: Icons.history,
-                                onTap: () => showHistoryDialog(context, initialOperation: 'Count'),
+                                onTap: () => showHistoryDialog(
+                                  context,
+                                  initialOperation: 'Count',
+                                ),
                               ),
                             ],
                           ),
@@ -171,7 +183,9 @@ class CountFilesScreen extends StatelessWidget {
                             margin: const EdgeInsets.only(right: 8),
                             child: const CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.success),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.success,
+                              ),
                             ),
                           ),
 
@@ -216,9 +230,7 @@ class CountFilesScreen extends StatelessWidget {
                     const SizedBox(height: 10),
 
                     // Logs
-                    Expanded(
-                      child: LogConsole(logs: provider.logs),
-                    ),
+                    Expanded(child: LogConsole(logs: provider.logs)),
                   ],
                 ),
               ),
@@ -245,7 +257,13 @@ class CountFilesScreen extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 4),
-          Icon(Icons.analytics_rounded, color: context.isDarkMode ? AppColors.success : const Color(0xFF16A34A), size: 22),
+          Icon(
+            Icons.analytics_rounded,
+            color: context.isDarkMode
+                ? AppColors.success
+                : const Color(0xFF16A34A),
+            size: 22,
+          ),
           const SizedBox(width: 10),
           Text(
             'Count Files (${currentProfile.name})',

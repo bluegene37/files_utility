@@ -198,10 +198,7 @@ class CountFilesProvider with ChangeNotifier {
     _addLog('⏳ Starting file count...');
     _addLog('  Target: $targetPath');
 
-    await _fileLogger.logRunStart(
-      operation: 'Count',
-      targetPath: targetPath,
-    );
+    await _fileLogger.logRunStart(operation: 'Count', targetPath: targetPath);
 
     _startTimer();
 
@@ -209,16 +206,19 @@ class CountFilesProvider with ChangeNotifier {
       final targetDir = Directory(targetPath!);
       if (!await targetDir.exists()) {
         _addLog('✗ Error: Target directory does not exist.');
-        await _fileLogger.error('Count', 'Target directory does not exist: $targetPath');
+        await _fileLogger.error(
+          'Count',
+          'Target directory does not exist: $targetPath',
+        );
         _finishRun(wasStopped: false);
         return;
       }
 
       _receivePort?.close();
       _receivePort = ReceivePort();
-      
+
       _workerIsolate = await Isolate.spawn(
-        _isolateWorker, 
+        _isolateWorker,
         _CountParams(
           targetPath: targetPath!,
           logInterval: logInterval,
@@ -231,15 +231,16 @@ class CountFilesProvider with ChangeNotifier {
           totalFiles = message.files;
           totalFolders = message.folders;
           errors = message.errors;
-          
+
           if (message.currentScanPath != null) {
-            currentStatus = '⏳ Scanning: ${p.basename(message.currentScanPath!)}';
+            currentStatus =
+                '⏳ Scanning: ${p.basename(message.currentScanPath!)}';
           }
 
           for (final log in message.logs) {
             _addLog(log);
           }
-          
+
           if (message.errorLog != null) {
             _addLog('✗ ${message.errorLog}');
             _fileLogger.error('Count', message.errorLog!);
@@ -265,7 +266,9 @@ class CountFilesProvider with ChangeNotifier {
     final elapsed = _getElapsedStr();
     if (wasStopped) {
       _addLog('⛔ Stopped by user.');
-      _addLog('  Count so far — Files: ${_numFmt.format(totalFiles)}, Folders: ${_numFmt.format(totalFolders)} in $elapsed');
+      _addLog(
+        '  Count so far — Files: ${_numFmt.format(totalFiles)}, Folders: ${_numFmt.format(totalFolders)} in $elapsed',
+      );
     } else {
       _addLog('🏁 Count completed in $elapsed');
       _addLog('  Total Files: ${_numFmt.format(totalFiles)}');
@@ -290,20 +293,24 @@ class CountFilesProvider with ChangeNotifier {
     );
 
     try {
-      await HistoryService().saveRecord(RunRecord(
-        id: runId,
-        operation: 'Count',
-        startTime: start,
-        endTime: DateTime.now(),
-        filesProcessed: totalFiles,
-        foldersProcessed: totalFolders,
-        errors: errors,
-        status: wasStopped
-            ? 'Stopped'
-            : (errors > 0 && totalFiles == 0 && totalFolders == 0 ? 'Error' : 'Completed'),
-        configSummary: 'Target: $targetPath, Log Every: $logInterval',
-        sourcePath: targetPath,
-      ));
+      await HistoryService().saveRecord(
+        RunRecord(
+          id: runId,
+          operation: 'Count',
+          startTime: start,
+          endTime: DateTime.now(),
+          filesProcessed: totalFiles,
+          foldersProcessed: totalFolders,
+          errors: errors,
+          status: wasStopped
+              ? 'Stopped'
+              : (errors > 0 && totalFiles == 0 && totalFolders == 0
+                    ? 'Error'
+                    : 'Completed'),
+          configSummary: 'Target: $targetPath, Log Every: $logInterval',
+          sourcePath: targetPath,
+        ),
+      );
     } catch (_) {}
 
     isCounting = false;
@@ -320,14 +327,19 @@ class CountFilesProvider with ChangeNotifier {
     final Set<String> visitedPaths = {};
 
     void sendProgress(String? currentScanPath, {bool force = false}) {
-      if (force || logBatch.isNotEmpty || files % 100 == 0 || folders % 10 == 0) {
-        params.sendPort.send(_CountProgress(
-          files: files,
-          folders: folders,
-          errors: errors,
-          logs: List.from(logBatch),
-          currentScanPath: currentScanPath,
-        ));
+      if (force ||
+          logBatch.isNotEmpty ||
+          files % 100 == 0 ||
+          folders % 10 == 0) {
+        params.sendPort.send(
+          _CountProgress(
+            files: files,
+            folders: folders,
+            errors: errors,
+            logs: List.from(logBatch),
+            currentScanPath: currentScanPath,
+          ),
+        );
         logBatch.clear();
       }
     }
@@ -346,7 +358,10 @@ class CountFilesProvider with ChangeNotifier {
       visitedPaths.add(canonicalPath);
 
       try {
-        await for (final entity in dir.list(recursive: false, followLinks: false)) {
+        await for (final entity in dir.list(
+          recursive: false,
+          followLinks: false,
+        )) {
           if (entity is File) {
             files++;
             if (params.logInterval == 1) {
@@ -377,32 +392,38 @@ class CountFilesProvider with ChangeNotifier {
         }
       } catch (e) {
         errors++;
-        params.sendPort.send(_CountProgress(
-          files: files,
-          folders: folders,
-          errors: errors,
-          errorLog: 'Error accessing: ${dir.path} — $e',
-        ));
+        params.sendPort.send(
+          _CountProgress(
+            files: files,
+            folders: folders,
+            errors: errors,
+            errorLog: 'Error accessing: ${dir.path} — $e',
+          ),
+        );
       }
     }
 
     try {
       await countDir(Directory(params.targetPath));
       sendProgress(null, force: true);
-      params.sendPort.send(_CountProgress(
-        files: files,
-        folders: folders,
-        errors: errors,
-        isDone: true,
-      ));
+      params.sendPort.send(
+        _CountProgress(
+          files: files,
+          folders: folders,
+          errors: errors,
+          isDone: true,
+        ),
+      );
     } catch (e) {
-      params.sendPort.send(_CountProgress(
-        errorLog: 'Critical Error: $e',
-        isDone: true,
-        files: files,
-        folders: folders,
-        errors: errors,
-      ));
+      params.sendPort.send(
+        _CountProgress(
+          errorLog: 'Critical Error: $e',
+          isDone: true,
+          files: files,
+          folders: folders,
+          errors: errors,
+        ),
+      );
     }
   }
 }

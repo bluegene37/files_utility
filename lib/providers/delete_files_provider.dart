@@ -256,7 +256,9 @@ class DeleteFilesProvider with ChangeNotifier {
 
     _addLog('⏳ Starting deletion...');
     _addLog('  Target: $targetPath');
-    _addLog('  Filter: Files up to Year $selectedYear, Months ${validMonths.join(', ')}');
+    _addLog(
+      '  Filter: Files up to Year $selectedYear, Months ${validMonths.join(', ')}',
+    );
 
     await _fileLogger.logRunStart(
       operation: 'Delete',
@@ -271,14 +273,17 @@ class DeleteFilesProvider with ChangeNotifier {
       final targetDir = Directory(targetPath!);
       if (!await targetDir.exists()) {
         _addLog('✗ Error: Target directory does not exist.');
-        await _fileLogger.error('Delete', 'Target directory does not exist: $targetPath');
+        await _fileLogger.error(
+          'Delete',
+          'Target directory does not exist: $targetPath',
+        );
         _finishRun(wasStopped: false);
         return;
       }
 
       _receivePort?.close();
       _receivePort = ReceivePort();
-      
+
       _workerIsolate = await Isolate.spawn(
         _isolateWorker,
         _DeleteParams(
@@ -294,11 +299,11 @@ class DeleteFilesProvider with ChangeNotifier {
         if (message is _DeleteProgress) {
           deletedCount = message.deleted;
           errorCount = message.errors;
-          
+
           if (message.currentStatus != null) {
             currentStatus = message.currentStatus!;
           }
-          
+
           for (final log in message.logs) {
             _addLog(log);
             if (log.startsWith('✗')) {
@@ -308,7 +313,10 @@ class DeleteFilesProvider with ChangeNotifier {
 
           if (message.criticalError != null) {
             _addLog('✗ Critical Error: ${message.criticalError}');
-            _fileLogger.error('Delete', 'Critical Error: ${message.criticalError}');
+            _fileLogger.error(
+              'Delete',
+              'Critical Error: ${message.criticalError}',
+            );
           }
 
           if (message.isDone) {
@@ -331,9 +339,13 @@ class DeleteFilesProvider with ChangeNotifier {
   Future<void> _finishRun({required bool wasStopped}) async {
     final elapsed = _getElapsedStr();
     if (wasStopped) {
-      _addLog('⛔ Stopped by user. Deleted ${_numFmt.format(deletedCount)} files in $elapsed');
+      _addLog(
+        '⛔ Stopped by user. Deleted ${_numFmt.format(deletedCount)} files in $elapsed',
+      );
     } else {
-      _addLog('🏁 Deletion completed: ${_numFmt.format(deletedCount)} deleted, ${_numFmt.format(errorCount)} errors in $elapsed');
+      _addLog(
+        '🏁 Deletion completed: ${_numFmt.format(deletedCount)} deleted, ${_numFmt.format(errorCount)} errors in $elapsed',
+      );
     }
 
     // Capture before logRunEnd clears them
@@ -348,20 +360,22 @@ class DeleteFilesProvider with ChangeNotifier {
     );
 
     try {
-      await HistoryService().saveRecord(RunRecord(
-        id: runId,
-        operation: 'Delete',
-        startTime: start,
-        endTime: DateTime.now(),
-        filesProcessed: deletedCount,
-        errors: errorCount,
-        status: wasStopped
-            ? 'Stopped'
-            : (errorCount > 0 && deletedCount == 0 ? 'Error' : 'Completed'),
-        configSummary:
-            'Target: $targetPath, Filter: Year $selectedYear, Months: ${validMonths.join(", ")}',
-        sourcePath: targetPath,
-      ));
+      await HistoryService().saveRecord(
+        RunRecord(
+          id: runId,
+          operation: 'Delete',
+          startTime: start,
+          endTime: DateTime.now(),
+          filesProcessed: deletedCount,
+          errors: errorCount,
+          status: wasStopped
+              ? 'Stopped'
+              : (errorCount > 0 && deletedCount == 0 ? 'Error' : 'Completed'),
+          configSummary:
+              'Target: $targetPath, Filter: Year $selectedYear, Months: ${validMonths.join(", ")}',
+          sourcePath: targetPath,
+        ),
+      );
     } catch (_) {}
 
     isProcessing = false;
@@ -378,13 +392,18 @@ class DeleteFilesProvider with ChangeNotifier {
     final Set<String> visitedPaths = {};
 
     void sendProgress(String? status, {bool force = false}) {
-      if (force || status != null || logBatch.isNotEmpty || scanCount % 10 == 0) {
-        params.sendPort.send(_DeleteProgress(
-          deleted: deletedCount,
-          errors: errorCount,
-          logs: List.from(logBatch),
-          currentStatus: status,
-        ));
+      if (force ||
+          status != null ||
+          logBatch.isNotEmpty ||
+          scanCount % 10 == 0) {
+        params.sendPort.send(
+          _DeleteProgress(
+            deleted: deletedCount,
+            errors: errorCount,
+            logs: List.from(logBatch),
+            currentStatus: status,
+          ),
+        );
         logBatch.clear();
       }
     }
@@ -446,7 +465,10 @@ class DeleteFilesProvider with ChangeNotifier {
       visitedPaths.add(canonicalPath);
 
       try {
-        await for (final entity in dir.list(recursive: false, followLinks: false)) {
+        await for (final entity in dir.list(
+          recursive: false,
+          followLinks: false,
+        )) {
           scanCount++;
           if (entity is File) {
             await checkAndDeleteFile(entity);
@@ -473,7 +495,9 @@ class DeleteFilesProvider with ChangeNotifier {
               await dir.delete();
               logBatch.add('✓ Deleted empty folder: ${p.basename(dir.path)}');
             } catch (e) {
-              logBatch.add('✗ Failed to delete folder ${p.basename(dir.path)}: $e');
+              logBatch.add(
+                '✗ Failed to delete folder ${p.basename(dir.path)}: $e',
+              );
             }
           }
         }
@@ -486,18 +510,22 @@ class DeleteFilesProvider with ChangeNotifier {
     try {
       await processDirectory(Directory(params.targetPath));
       sendProgress('DONE', force: true);
-      params.sendPort.send(_DeleteProgress(
-        isDone: true,
-        deleted: deletedCount,
-        errors: errorCount,
-      ));
+      params.sendPort.send(
+        _DeleteProgress(
+          isDone: true,
+          deleted: deletedCount,
+          errors: errorCount,
+        ),
+      );
     } catch (e) {
-      params.sendPort.send(_DeleteProgress(
-        criticalError: e.toString(),
-        isDone: true,
-        deleted: deletedCount,
-        errors: errorCount,
-      ));
+      params.sendPort.send(
+        _DeleteProgress(
+          criticalError: e.toString(),
+          isDone: true,
+          deleted: deletedCount,
+          errors: errorCount,
+        ),
+      );
     }
   }
 }

@@ -22,7 +22,6 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-
   @override
   Widget build(BuildContext context) {
     WindowService().updateTitle('Main Dashboard');
@@ -55,7 +54,8 @@ class _MainScreenState extends State<MainScreen> {
                         title: 'Transfer Files',
                         subtitle: 'Move files by date & filters',
                         accentColor: context.primaryAccent,
-                        onTap: () => _navigateTo(context, const TransferFilesScreen()),
+                        onTap: () =>
+                            _navigateTo(context, const TransferFilesScreen()),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -64,8 +64,11 @@ class _MainScreenState extends State<MainScreen> {
                         icon: Icons.file_copy_rounded,
                         title: 'Copy Files',
                         subtitle: 'Mirror directories with date range',
-                        accentColor: context.isDarkMode ? const Color(0xFFE2A06E) : const Color(0xFFA0582C),
-                        onTap: () => _navigateTo(context, const CopyFilesScreen()),
+                        accentColor: context.isDarkMode
+                            ? const Color(0xFFE2A06E)
+                            : const Color(0xFFA0582C),
+                        onTap: () =>
+                            _navigateTo(context, const CopyFilesScreen()),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -75,7 +78,8 @@ class _MainScreenState extends State<MainScreen> {
                         title: 'Delete Files',
                         subtitle: 'Remove files matching criteria',
                         accentColor: AppColors.error,
-                        onTap: () => _navigateTo(context, const DeleteFilesScreen()),
+                        onTap: () =>
+                            _navigateTo(context, const DeleteFilesScreen()),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -85,7 +89,8 @@ class _MainScreenState extends State<MainScreen> {
                         title: 'Count Files',
                         subtitle: 'Audit file & folder totals',
                         accentColor: AppColors.success,
-                        onTap: () => _navigateTo(context, const CountFilesScreen()),
+                        onTap: () =>
+                            _navigateTo(context, const CountFilesScreen()),
                       ),
                     ),
                   ],
@@ -94,9 +99,7 @@ class _MainScreenState extends State<MainScreen> {
                 const SizedBox(height: 16),
 
                 // Expanded History Dashboard at the Bottom
-                Expanded(
-                  child: _buildHistoryDashboard(context),
-                ),
+                Expanded(child: _buildHistoryDashboard(context)),
               ],
             ),
           ),
@@ -123,10 +126,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: Image.asset(
-              'assets/images/app_icon.png',
-              fit: BoxFit.cover,
-            ),
+            child: Image.asset('assets/images/app_icon.png', fit: BoxFit.cover),
           ),
         ),
         const SizedBox(width: 12),
@@ -144,10 +144,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             Text(
               'Manage your files and transfers',
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textMuted,
-              ),
+              style: TextStyle(fontSize: 12, color: context.textMuted),
             ),
           ],
         ),
@@ -163,7 +160,11 @@ class _MainScreenState extends State<MainScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.account_circle, color: context.primaryAccent, size: 20),
+              Icon(
+                Icons.account_circle,
+                color: context.primaryAccent,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -203,13 +204,25 @@ class _MainScreenState extends State<MainScreen> {
       builder: (context, provider, child) {
         final records = provider.records;
 
-        int transferFiles = records.where((r) => r.operation == 'Transfer').fold(0, (sum, r) => sum + r.filesProcessed);
-        int copyFiles = records.where((r) => r.operation == 'Copy').fold(0, (sum, r) => sum + r.filesProcessed);
-        int deleteFiles = records.where((r) => r.operation == 'Delete').fold(0, (sum, r) => sum + r.filesProcessed);
-        int countFiles = records.where((r) => r.operation == 'Count').fold(0, (sum, r) => sum + r.filesProcessed);
+        int transferFiles = records
+            .where((r) => r.operation == 'Transfer')
+            .fold(0, (sum, r) => sum + r.filesProcessed);
+        int copyFiles = records
+            .where((r) => r.operation == 'Copy')
+            .fold(0, (sum, r) => sum + r.filesProcessed);
+        int deleteFiles = records
+            .where((r) => r.operation == 'Delete')
+            .fold(0, (sum, r) => sum + r.filesProcessed);
+        int countFiles = records
+            .where((r) => r.operation == 'Count')
+            .fold(0, (sum, r) => sum + r.filesProcessed);
 
-        int maxFiles = [transferFiles, copyFiles, deleteFiles, countFiles]
-            .reduce((max, val) => val > max ? val : max);
+        int maxFiles = [
+          transferFiles,
+          copyFiles,
+          deleteFiles,
+          countFiles,
+        ].reduce((max, val) => val > max ? val : max);
         if (maxFiles == 0) maxFiles = 1;
 
         return Container(
@@ -221,7 +234,11 @@ class _MainScreenState extends State<MainScreen> {
               // Dashboard Header
               Row(
                 children: [
-                  Icon(Icons.analytics_outlined, color: context.primaryAccent, size: 22),
+                  Icon(
+                    Icons.analytics_outlined,
+                    color: context.primaryAccent,
+                    size: 22,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'History & Analytics Dashboard (All Profiles)',
@@ -233,7 +250,8 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                   const Spacer(),
                   TextButton.icon(
-                    onPressed: () => _navigateTo(context, const HistoryScreen()),
+                    onPressed: () =>
+                        _navigateTo(context, const HistoryScreen()),
                     icon: const Icon(Icons.bar_chart_rounded, size: 16),
                     label: const Text('View Full Analytics'),
                   ),
@@ -244,13 +262,47 @@ class _MainScreenState extends State<MainScreen> {
               // Comparative Operation Graphs
               Row(
                 children: [
-                  Expanded(child: _buildMiniGraphBar(context, 'Transfer', transferFiles, transferFiles / maxFiles, context.primaryAccent)),
+                  Expanded(
+                    child: _buildMiniGraphBar(
+                      context,
+                      'Transfer',
+                      transferFiles,
+                      transferFiles / maxFiles,
+                      context.primaryAccent,
+                    ),
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: _buildMiniGraphBar(context, 'Copy', copyFiles, copyFiles / maxFiles, context.isDarkMode ? const Color(0xFFE2A06E) : const Color(0xFFA0582C))),
+                  Expanded(
+                    child: _buildMiniGraphBar(
+                      context,
+                      'Copy',
+                      copyFiles,
+                      copyFiles / maxFiles,
+                      context.isDarkMode
+                          ? const Color(0xFFE2A06E)
+                          : const Color(0xFFA0582C),
+                    ),
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: _buildMiniGraphBar(context, 'Delete', deleteFiles, deleteFiles / maxFiles, AppColors.error)),
+                  Expanded(
+                    child: _buildMiniGraphBar(
+                      context,
+                      'Delete',
+                      deleteFiles,
+                      deleteFiles / maxFiles,
+                      AppColors.error,
+                    ),
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: _buildMiniGraphBar(context, 'Count', countFiles, countFiles / maxFiles, AppColors.success)),
+                  Expanded(
+                    child: _buildMiniGraphBar(
+                      context,
+                      'Count',
+                      countFiles,
+                      countFiles / maxFiles,
+                      AppColors.success,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -271,10 +323,16 @@ class _MainScreenState extends State<MainScreen> {
                     ? Center(
                         child: Text(
                           'No history records available.',
-                          style: TextStyle(color: context.textMuted, fontSize: 13),
+                          style: TextStyle(
+                            color: context.textMuted,
+                            fontSize: 13,
+                          ),
                         ),
                       )
-                    : _buildRecentActivityTable(context, records.take(10).toList()),
+                    : _buildRecentActivityTable(
+                        context,
+                        records.take(10).toList(),
+                      ),
               ),
             ],
           ),
@@ -283,7 +341,13 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildMiniGraphBar(BuildContext context, String label, int filesCount, double ratio, Color color) {
+  Widget _buildMiniGraphBar(
+    BuildContext context,
+    String label,
+    int filesCount,
+    double ratio,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -298,12 +362,20 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               Text(
                 label,
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
               ),
               const Spacer(),
               Text(
                 NumberFormat('#,##0').format(filesCount),
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textPrimary),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: context.textPrimary,
+                ),
               ),
             ],
           ),
@@ -322,7 +394,10 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildRecentActivityTable(BuildContext context, List<RunRecord> records) {
+  Widget _buildRecentActivityTable(
+    BuildContext context,
+    List<RunRecord> records,
+  ) {
     final dateFormat = DateFormat('MMM dd, yyyy HH:mm:ss');
     final isDark = context.isDarkMode;
 
@@ -346,61 +421,101 @@ class _MainScreenState extends State<MainScreen> {
                   DataColumn(
                     label: Text(
                       'Operation',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: context.textSecondary,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                   DataColumn(
                     label: Text(
                       'Status',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: context.textSecondary,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                   DataColumn(
                     label: Text(
                       'Start Date/Time',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: context.textSecondary,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                   DataColumn(
                     label: Text(
                       'End Date/Time',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: context.textSecondary,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                   DataColumn(
                     label: Text(
                       'Duration',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: context.textSecondary,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                   DataColumn(
                     label: Text(
                       'Source / Target Directory',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: context.textSecondary,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                   DataColumn(
                     label: Text(
                       'Destination Directory',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: context.textSecondary,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                   DataColumn(
                     label: Text(
                       'Files',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: context.textSecondary,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                   DataColumn(
                     label: Text(
                       'Folders',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: context.textSecondary,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                   DataColumn(
                     label: Text(
                       'Errors',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: context.textSecondary,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                 ],
@@ -409,8 +524,8 @@ class _MainScreenState extends State<MainScreen> {
                   final durationStr = duration.inHours > 0
                       ? '${duration.inHours}h ${duration.inMinutes.remainder(60)}m ${duration.inSeconds.remainder(60)}s'
                       : duration.inMinutes > 0
-                          ? '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s'
-                          : '${duration.inSeconds}s';
+                      ? '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s'
+                      : '${duration.inSeconds}s';
 
                   Color opColor;
                   IconData opIcon;
@@ -420,7 +535,9 @@ class _MainScreenState extends State<MainScreen> {
                       opIcon = Icons.move_up;
                       break;
                     case 'Copy':
-                      opColor = isDark ? const Color(0xFFE2A06E) : const Color(0xFFA0582C);
+                      opColor = isDark
+                          ? const Color(0xFFE2A06E)
+                          : const Color(0xFFA0582C);
                       opIcon = Icons.file_copy;
                       break;
                     case 'Delete':
@@ -439,8 +556,8 @@ class _MainScreenState extends State<MainScreen> {
                   Color statusColor = record.status == 'Completed'
                       ? AppColors.success
                       : record.status == 'Stopped'
-                          ? AppColors.warning
-                          : AppColors.error;
+                      ? AppColors.warning
+                      : AppColors.error;
 
                   return DataRow(
                     cells: [
@@ -463,10 +580,15 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                       DataCell(
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: statusColor.withValues(alpha: 0.1),
-                            border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                            border: Border.all(
+                              color: statusColor.withValues(alpha: 0.5),
+                            ),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -482,19 +604,28 @@ class _MainScreenState extends State<MainScreen> {
                       DataCell(
                         Text(
                           dateFormat.format(record.startTime),
-                          style: TextStyle(fontSize: 11, color: context.textPrimary),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.textPrimary,
+                          ),
                         ),
                       ),
                       DataCell(
                         Text(
                           dateFormat.format(record.endTime),
-                          style: TextStyle(fontSize: 11, color: context.textPrimary),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.textPrimary,
+                          ),
                         ),
                       ),
                       DataCell(
                         Text(
                           durationStr,
-                          style: TextStyle(fontSize: 11, color: context.textSecondary),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.textSecondary,
+                          ),
                         ),
                       ),
                       DataCell(
@@ -502,7 +633,11 @@ class _MainScreenState extends State<MainScreen> {
                           width: 200,
                           child: Text(
                             record.sourcePath ?? '-',
-                            style: TextStyle(fontSize: 11, fontFamily: 'Consolas', color: context.textPrimary),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontFamily: 'Consolas',
+                              color: context.textPrimary,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -513,7 +648,11 @@ class _MainScreenState extends State<MainScreen> {
                           width: 200,
                           child: Text(
                             record.destPath ?? '-',
-                            style: TextStyle(fontSize: 11, fontFamily: 'Consolas', color: context.textSecondary),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontFamily: 'Consolas',
+                              color: context.textSecondary,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -522,13 +661,20 @@ class _MainScreenState extends State<MainScreen> {
                       DataCell(
                         Text(
                           NumberFormat('#,##0').format(record.filesProcessed),
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textPrimary),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: context.textPrimary,
+                          ),
                         ),
                       ),
                       DataCell(
                         Text(
                           NumberFormat('#,##0').format(record.foldersProcessed),
-                          style: TextStyle(fontSize: 11, color: context.textSecondary),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.textSecondary,
+                          ),
                         ),
                       ),
                       DataCell(
@@ -537,7 +683,9 @@ class _MainScreenState extends State<MainScreen> {
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: record.errors > 0 ? AppColors.error : context.textMuted,
+                            color: record.errors > 0
+                                ? AppColors.error
+                                : context.textMuted,
                           ),
                         ),
                       ),
@@ -561,10 +709,13 @@ class _MainScreenState extends State<MainScreen> {
           return FadeTransition(
             opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
             child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0.02, 0),
-                end: Offset.zero,
-              ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+              position:
+                  Tween<Offset>(
+                    begin: const Offset(0.02, 0),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(parent: animation, curve: Curves.easeOut),
+                  ),
               child: child,
             ),
           );
@@ -646,7 +797,9 @@ class _DashboardCardState extends State<_DashboardCard> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: widget.accentColor.withValues(alpha: isDark ? 0.15 : 0.1),
+                    color: widget.accentColor.withValues(
+                      alpha: isDark ? 0.15 : 0.1,
+                    ),
                     borderRadius: BorderRadius.circular(10),
                     boxShadow: _isHovered
                         ? [
@@ -658,11 +811,7 @@ class _DashboardCardState extends State<_DashboardCard> {
                           ]
                         : [],
                   ),
-                  child: Icon(
-                    widget.icon,
-                    color: widget.accentColor,
-                    size: 20,
-                  ),
+                  child: Icon(widget.icon, color: widget.accentColor, size: 20),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -675,7 +824,9 @@ class _DashboardCardState extends State<_DashboardCard> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: _isHovered ? widget.accentColor : context.textPrimary,
+                          color: _isHovered
+                              ? widget.accentColor
+                              : context.textPrimary,
                           letterSpacing: 0.2,
                         ),
                         maxLines: 1,

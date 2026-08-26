@@ -1,15 +1,29 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:files_utility/models/app_profile.dart';
 import 'package:files_utility/models/run_record.dart';
 import 'package:files_utility/providers/copy_files_provider.dart';
 import 'package:files_utility/providers/count_files_provider.dart';
 import 'package:files_utility/providers/delete_files_provider.dart';
 import 'package:files_utility/providers/theme_provider.dart';
+import 'package:files_utility/services/app_sqlite_service.dart';
 import 'package:files_utility/main.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    // Use the FFI sqlite implementation and a temp app directory so the
+    // services behind the providers work without platform channels.
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    AppSqliteService().appDirPath = Directory.systemTemp
+        .createTempSync('files_utility_test_')
+        .path;
+  });
 
   group('Model Unit Tests', () {
     test('AppProfile serialization and deserialization', () {
@@ -62,7 +76,7 @@ void main() {
       expect(fromJson.filesProcessed, record.filesProcessed);
     });
 
-    test('DirectoryPair JSON serialization', () {
+    test('DirectoryPair JSON serialization round-trips', () {
       final pair = DirectoryPair(
         sourcePath: '/src/folder',
         destPath: '/dst/folder',
@@ -70,8 +84,8 @@ void main() {
       );
 
       final json = pair.toJson();
-      expect(json['sourcePath'], '/src/folder');
-      expect(json['destPath'], '/dst/folder');
+      expect(json['source'], '/src/folder');
+      expect(json['dest'], '/dst/folder');
       expect(json['runOrder'], 2);
 
       final decoded = DirectoryPair.fromJson(json);
@@ -121,7 +135,9 @@ void main() {
   });
 
   group('Widget Tests', () {
-    testWidgets('App renders SplashScreen and initializes cleanly', (WidgetTester tester) async {
+    testWidgets('App renders SplashScreen and initializes cleanly', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(const MyApp());
       await tester.pump();
 

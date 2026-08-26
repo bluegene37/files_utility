@@ -95,8 +95,9 @@ class _CountState {
 class _CopyTask {
   final File source;
   final String destFilePath;
+  final DateTime modified;
 
-  _CopyTask(this.source, this.destFilePath);
+  _CopyTask(this.source, this.destFilePath, this.modified);
 }
 
 /// A source→destination directory pair for multi-directory mode.
@@ -170,14 +171,19 @@ class CopyFilesProvider with ChangeNotifier {
   final NumberFormat _numFmt = NumberFormat('#,##0');
 
   static String get _progressDir {
-    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'files_utility');
+    final appDir =
+        GlobalDbService().appDirPath ??
+        p.join(Directory.systemTemp.path, 'files_utility');
     return p.join(appDir, 'progress');
   }
 
   /// Returns the progress file path for a given pair index.
   static String _progressFilePath(int pairIndex) {
     final profileId = LocalDbService().currentProfileId;
-    return p.join(_progressDir, 'copy_progress_pair${pairIndex}_$profileId.json');
+    return p.join(
+      _progressDir,
+      'copy_progress_pair${pairIndex}_$profileId.json',
+    );
   }
 
   /// Loads progress data from a progress file.
@@ -924,7 +930,25 @@ class CopyFilesProvider with ChangeNotifier {
     final futures = batch.map((task) async {
       await semaphore.acquire();
       try {
-        await task.source.copy(task.destFilePath);
+        // Copy to a temporary name first, then swap into place — an
+        // interrupted network copy must never leave a partial file with
+        // the final name (the size-based "already exists" check would
+        // otherwise treat it as needing no re-copy once sizes match).
+        final tempPath = '${task.destFilePath}.part';
+        try {
+          await task.source.copy(tempPath);
+          // Keep the original modified date so age/date filters and
+          // resume checks see the right timestamps at the destination.
+          try {
+            await File(tempPath).setLastModified(task.modified);
+          } catch (_) {}
+          await File(tempPath).rename(task.destFilePath);
+        } catch (copyErr) {
+          try {
+            await File(tempPath).delete();
+          } catch (_) {}
+          rethrow;
+        }
         counts.filesCopied++;
 
         if (counts.filesCopied % params.logInterval == 0) {
@@ -1180,7 +1204,9 @@ class CopyFilesProvider with ChangeNotifier {
             createdDirs.add(destDirPath);
             await Directory(destDirPath).create(recursive: true);
           }
-          batch.add(_CopyTask(entity, p.join(destDirPath, fileName)));
+          batch.add(
+            _CopyTask(entity, p.join(destDirPath, fileName), stats.modified),
+          );
         } catch (e) {
           counts.errors++;
           params.sendPort.send(
@@ -1290,8 +1316,11 @@ class CopyFilesProvider with ChangeNotifier {
     final batch = <_CopyTask>[];
     // Mutable copy of completed dirs — will grow as we process
     final completedDirs = Set<String>.from(params.completedDirs);
-    final lastProcessedFiles = Map<String, String>.from(params.lastProcessedFiles);
-    final isResuming = completedDirs.isNotEmpty || lastProcessedFiles.isNotEmpty;
+    final lastProcessedFiles = Map<String, String>.from(
+      params.lastProcessedFiles,
+    );
+    final isResuming =
+        completedDirs.isNotEmpty || lastProcessedFiles.isNotEmpty;
 
     Timer? saveTimer;
     if (params.progressFilePath != null) {
@@ -1573,7 +1602,9 @@ class CopyFilesProvider with ChangeNotifier {
           .cast<String>()
           .toSet();
       if (progressData['lastProcessedFiles'] != null) {
-        lastProcessedFiles = Map<String, String>.from(progressData['lastProcessedFiles'] as Map);
+        lastProcessedFiles = Map<String, String>.from(
+          progressData['lastProcessedFiles'] as Map,
+        );
       }
       initialCopied = progressData['filesCopied'] as int? ?? 0;
       initialSkipped = progressData['filesSkipped'] as int? ?? 0;
@@ -1716,7 +1747,9 @@ class CopyFilesProvider with ChangeNotifier {
                   endTime: DateTime.now(),
                   filesProcessed: filesCopied,
                   errors: errors,
-                  status: errors > 0 && filesCopied == 0 ? 'Error' : 'Completed',
+                  status: errors > 0 && filesCopied == 0
+                      ? 'Error'
+                      : 'Completed',
                   configSummary:
                       'Source: ${sourcePath ?? "Multiple"}, Dest: ${destPath ?? "Multiple"} (Pairs: ${_pairsToProcess.length}, Exist: $filesAlreadyExist, Skipped: $filesSkipped)',
                   sourcePath: sourcePath,

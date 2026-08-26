@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
+import '../app_info.dart';
 import 'global_db_service.dart';
 
 /// Centralized file logger that writes logs to app log directory.
@@ -14,9 +15,12 @@ class FileLogger {
   FileLogger._internal();
 
   static String get _logDirectory {
-    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'files_utility');
+    final appDir =
+        GlobalDbService().appDirPath ??
+        p.join(Directory.systemTemp.path, 'files_utility');
     return p.join(appDir, 'logs');
   }
+
   static const int _bufferFlushSize = 50;
   static const Duration _bufferFlushInterval = Duration(seconds: 2);
 
@@ -52,7 +56,10 @@ class FileLogger {
   String _generateRunId() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final rng = Random();
-    final code = List.generate(4, (_) => chars[rng.nextInt(chars.length)]).join();
+    final code = List.generate(
+      4,
+      (_) => chars[rng.nextInt(chars.length)],
+    ).join();
     return 'RUN-$code';
   }
 
@@ -66,17 +73,23 @@ class FileLogger {
 
   /// Creates a new log file named with operation, date-time, and run ID.
   File _createRunFile(String source) {
-    final dateTimeStr = DateFormat('yyyy-MM-dd_HH-mm-ss').format(DateTime.now());
+    final dateTimeStr = DateFormat(
+      'yyyy-MM-dd_HH-mm-ss',
+    ).format(DateTime.now());
     final safeSource = source.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
     final runId = _runIds[source] ?? _generateRunId();
-    return File(p.join(_logDirectory, '${safeSource}_${dateTimeStr}_$runId.log'));
+    return File(
+      p.join(_logDirectory, '${safeSource}_${dateTimeStr}_$runId.log'),
+    );
   }
 
   /// Buffers a log line and flushes if threshold is reached.
   Future<void> _write(String level, String source, String message) async {
     try {
       await _ensureDirectory();
-      final timestamp = DateFormat('yyyy-MM-dd HH:mm:ss.SSS').format(DateTime.now());
+      final timestamp = DateFormat(
+        'yyyy-MM-dd HH:mm:ss.SSS',
+      ).format(DateTime.now());
       final runId = _runIds[source] ?? '--------';
       final logLine = '[$timestamp] [$runId] [$level] [$source] $message';
 
@@ -159,21 +172,36 @@ class FileLogger {
     // Rich header
     final now = DateTime.now();
     final machineInfo = Platform.localHostname;
-    final osInfo = '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
+    final osInfo =
+        '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
 
-    await info(operation, '╔══════════════════════════════════════════════════════════════');
+    await info(
+      operation,
+      '╔══════════════════════════════════════════════════════════════',
+    );
     await info(operation, '║  RUN STARTED — $runId');
     await info(operation, '║  Operation:  $operation');
-    await info(operation, '║  Timestamp:  ${DateFormat('yyyy-MM-dd HH:mm:ss').format(now)}');
+    await info(
+      operation,
+      '║  Timestamp:  ${DateFormat('yyyy-MM-dd HH:mm:ss').format(now)}',
+    );
     await info(operation, '║  Machine:    $machineInfo');
     await info(operation, '║  OS:         $osInfo');
-    await info(operation, '║  App:        Files Utility v1.0.0');
+    await info(
+      operation,
+      '║  App:        ${AppInfo.appName} v${AppInfo.appVersion}',
+    );
     if (sourcePath != null) await info(operation, '║  Source:     $sourcePath');
     if (destPath != null) await info(operation, '║  Dest:       $destPath');
     if (targetPath != null) await info(operation, '║  Target:     $targetPath');
     if (year != null) await info(operation, '║  Year:       $year');
-    if (months != null) await info(operation, '║  Months:     ${months.join(', ')}');
-    await info(operation, '╚══════════════════════════════════════════════════════════════');
+    if (months != null) {
+      await info(operation, '║  Months:     ${months.join(', ')}');
+    }
+    await info(
+      operation,
+      '╚══════════════════════════════════════════════════════════════',
+    );
 
     // Force-flush the header immediately
     await flush(operation);
@@ -197,7 +225,10 @@ class FileLogger {
 
     final throughput = _calculateThroughput(filesProcessed, startTime);
 
-    await info(operation, '╔══════════════════════════════════════════════════════════════');
+    await info(
+      operation,
+      '╔══════════════════════════════════════════════════════════════',
+    );
     await info(operation, '║  RUN SUMMARY — $runId');
     await info(operation, '║  Files processed:  $filesProcessed');
     if (errors > 0) {
@@ -214,7 +245,10 @@ class FileLogger {
     } else {
       await info(operation, '║  Status:           ✅ COMPLETED SUCCESSFULLY');
     }
-    await info(operation, '╚══════════════════════════════════════════════════════════════');
+    await info(
+      operation,
+      '╚══════════════════════════════════════════════════════════════',
+    );
 
     // Force-flush everything and clean up
     await flush(operation);

@@ -156,7 +156,10 @@ class DeleteFilesScreen extends StatelessWidget {
                                 value: 'View',
                                 color: AppColors.accent,
                                 icon: Icons.history,
-                                onTap: () => showHistoryDialog(context, initialOperation: 'Delete'),
+                                onTap: () => showHistoryDialog(
+                                  context,
+                                  initialOperation: 'Delete',
+                                ),
                               ),
                             ],
                           ),

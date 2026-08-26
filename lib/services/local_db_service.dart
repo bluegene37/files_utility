@@ -57,7 +57,7 @@ class LocalDbService {
   dynamic get(String key) => _config[key];
 
   String? getString(String key) => _config[key] as String?;
-  
+
   Future<void> setString(String key, String value) async {
     _config[key] = value;
     await AppSqliteService().setProfileConfigValue(_profileId, key, value);

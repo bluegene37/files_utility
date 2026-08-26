@@ -1,5 +1,5 @@
 name: "files_utility"
-description: "A Files Utility"
+description: "Desktop utility for transferring, copying, counting, and cleaning up files between servers, network shares, and NAS locations."
 publish_to: "none"
 version: "1.0.0+1"
 environment:
@@ -40,7 +40,7 @@ flutter:
     - "assets/images/app_icon.png"
 msix_config:
   display_name: "Files Utility"
-  publisher_display_name: "Developer"
+  publisher_display_name: "CodeGenexis"
   identity_name: "FilesUtility"
   msix_version: "1.0.0.0"
   logo_path: "windows/runner/resources/app_icon.ico"

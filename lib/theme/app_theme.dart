@@ -7,13 +7,18 @@ import '../services/local_db_service.dart';
 
 extension ThemeContextExtension on BuildContext {
   bool get isDarkMode => Theme.of(this).brightness == Brightness.dark;
-  Color get textPrimary => isDarkMode ? AppColors.textPrimary : AppColors.lightTextPrimary;
-  Color get textSecondary => isDarkMode ? AppColors.textSecondary : AppColors.lightTextSecondary;
-  Color get textMuted => isDarkMode ? AppColors.textMuted : AppColors.lightTextMuted;
+  Color get textPrimary =>
+      isDarkMode ? AppColors.textPrimary : AppColors.lightTextPrimary;
+  Color get textSecondary =>
+      isDarkMode ? AppColors.textSecondary : AppColors.lightTextSecondary;
+  Color get textMuted =>
+      isDarkMode ? AppColors.textMuted : AppColors.lightTextMuted;
   Color get cardBg => isDarkMode ? AppColors.surface : AppColors.lightSurface;
   Color get containerBg => isDarkMode ? AppColors.bgDark2 : AppColors.lightBg2;
-  Color get border => isDarkMode ? AppColors.cardBorder : AppColors.lightCardBorder;
-  Color get primaryAccent => isDarkMode ? AppColors.accent : AppColors.lightAccent;
+  Color get border =>
+      isDarkMode ? AppColors.cardBorder : AppColors.lightCardBorder;
+  Color get primaryAccent =>
+      isDarkMode ? AppColors.accent : AppColors.lightAccent;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,17 +40,27 @@ class AppColors {
   static const Color cardBorder = Color(0xFF3D3530);
 
   // Coffee Light (Warm Cream & Paper from genexis.dev)
-  static const Color lightBg1 = Color(0xFFF2EDE3); // Warm cream cotton paper (--paper)
-  static const Color lightBg2 = Color(0xFFEAE3D5); // Soft warm latte (--paper-deep)
+  static const Color lightBg1 = Color(
+    0xFFF2EDE3,
+  ); // Warm cream cotton paper (--paper)
+  static const Color lightBg2 = Color(
+    0xFFEAE3D5,
+  ); // Soft warm latte (--paper-deep)
   static const Color lightBg3 = Color(0xFFE0D7C5); // Recessed warm paper
-  static const Color lightSurface = Color(0xFFFAF7F0); // Paper raised (--paper-raised)
+  static const Color lightSurface = Color(
+    0xFFFAF7F0,
+  ); // Paper raised (--paper-raised)
   static const Color lightCardBorder = Color(0xFFD8D0BF); // Hairline border
 
   // Accent (Terracotta Roast / Coffee Crema)
-  static const Color accent = Color(0xFFD47754); // Cinnamon / Terracotta Crema (Dark)
+  static const Color accent = Color(
+    0xFFD47754,
+  ); // Cinnamon / Terracotta Crema (Dark)
   static const Color accentLight = Color(0xFFE28D6E);
   static const Color accentMuted = Color(0xFFA85538);
-  static const Color lightAccent = Color(0xFFB4402C); // Warm terracotta lead (--lead from genexis.dev)
+  static const Color lightAccent = Color(
+    0xFFB4402C,
+  ); // Warm terracotta lead (--lead from genexis.dev)
 
   // Semantic
   static const Color success = Color(0xFF529A72); // Muted sage roast green
@@ -60,7 +75,9 @@ class AppColors {
 
   // Text (Light - from genexis.dev)
   static const Color lightTextPrimary = Color(0xFF16161A); // Deep ink
-  static const Color lightTextSecondary = Color(0xFF5A564E); // Soft ink / roasted bean
+  static const Color lightTextSecondary = Color(
+    0xFF5A564E,
+  ); // Soft ink / roasted bean
   static const Color lightTextMuted = Color(0xFF7D776C); // Graphite
 
   // Log console colors
@@ -121,7 +138,9 @@ class AppTheme {
           foregroundColor: AppColors.bgDark1,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
         ),
       ),
@@ -130,7 +149,9 @@ class AppTheme {
           foregroundColor: AppColors.accent,
           side: const BorderSide(color: AppColors.accent, width: 1),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
         ),
       ),
@@ -149,8 +170,14 @@ class AppTheme {
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
         ),
-        labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        labelStyle: const TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 13,
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
         isDense: true,
       ),
       checkboxTheme: CheckboxThemeData(
@@ -166,7 +193,10 @@ class AppTheme {
         backgroundColor: AppColors.bgDark2,
         selectedColor: AppColors.accent.withValues(alpha: 0.25),
         checkmarkColor: AppColors.accent,
-        labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        labelStyle: const TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 12,
+        ),
         side: const BorderSide(color: AppColors.cardBorder),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -261,7 +291,9 @@ class AppTheme {
           foregroundColor: AppColors.lightSurface,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
         ),
       ),
@@ -270,7 +302,9 @@ class AppTheme {
           foregroundColor: AppColors.lightAccent,
           side: const BorderSide(color: AppColors.lightAccent, width: 1),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
         ),
       ),
@@ -287,15 +321,26 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.lightAccent, width: 1.5),
+          borderSide: const BorderSide(
+            color: AppColors.lightAccent,
+            width: 1.5,
+          ),
         ),
-        labelStyle: const TextStyle(color: AppColors.lightTextSecondary, fontSize: 13),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        labelStyle: const TextStyle(
+          color: AppColors.lightTextSecondary,
+          fontSize: 13,
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
         isDense: true,
       ),
       checkboxTheme: CheckboxThemeData(
         fillColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return AppColors.lightAccent;
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.lightAccent;
+          }
           return Colors.transparent;
         }),
         checkColor: WidgetStateProperty.all(Colors.white),
@@ -306,7 +351,10 @@ class AppTheme {
         backgroundColor: AppColors.lightSurface,
         selectedColor: AppColors.lightAccent.withValues(alpha: 0.15),
         checkmarkColor: AppColors.lightAccent,
-        labelStyle: const TextStyle(color: AppColors.lightTextSecondary, fontSize: 12),
+        labelStyle: const TextStyle(
+          color: AppColors.lightTextSecondary,
+          fontSize: 12,
+        ),
         side: const BorderSide(color: AppColors.lightCardBorder),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -332,7 +380,10 @@ class AppTheme {
       ),
       popupMenuTheme: PopupMenuThemeData(
         color: AppColors.lightSurface,
-        textStyle: const TextStyle(color: AppColors.lightTextPrimary, fontSize: 13),
+        textStyle: const TextStyle(
+          color: AppColors.lightTextPrimary,
+          fontSize: 13,
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
           side: const BorderSide(color: AppColors.lightCardBorder),
@@ -368,7 +419,8 @@ class AppDecorations {
 
   /// Full-screen gradient background.
   static BoxDecoration gradientBackground([BuildContext? context]) {
-    final isDark = context == null || Theme.of(context).brightness == Brightness.dark;
+    final isDark =
+        context == null || Theme.of(context).brightness == Brightness.dark;
     return BoxDecoration(
       gradient: LinearGradient(
         begin: Alignment.topLeft,
@@ -382,15 +434,17 @@ class AppDecorations {
 
   /// Glassmorphism card decoration.
   static BoxDecoration glassCard({BuildContext? context, Color? glowColor}) {
-    final isDark = context == null || Theme.of(context).brightness == Brightness.dark;
+    final isDark =
+        context == null || Theme.of(context).brightness == Brightness.dark;
     return BoxDecoration(
       color: isDark
           ? AppColors.surface.withValues(alpha: 0.95)
           : AppColors.lightSurface,
       borderRadius: BorderRadius.circular(16),
       border: Border.all(
-        color: (glowColor ?? (isDark ? AppColors.accent : const Color(0xFF0D9488)))
-            .withValues(alpha: isDark ? 0.15 : 0.3),
+        color:
+            (glowColor ?? (isDark ? AppColors.accent : const Color(0xFF0D9488)))
+                .withValues(alpha: isDark ? 0.15 : 0.3),
         width: 1,
       ),
       boxShadow: [
@@ -407,13 +461,15 @@ class AppDecorations {
 
   /// Solid card decoration for popups/dialogs to prevent background bleed-through.
   static BoxDecoration dialogCard({BuildContext? context, Color? glowColor}) {
-    final isDark = context == null || Theme.of(context).brightness == Brightness.dark;
+    final isDark =
+        context == null || Theme.of(context).brightness == Brightness.dark;
     return BoxDecoration(
       color: isDark ? const Color(0xFF16162A) : AppColors.lightSurface,
       borderRadius: BorderRadius.circular(16),
       border: Border.all(
-        color: (glowColor ?? (isDark ? AppColors.accent : const Color(0xFF0D9488)))
-            .withValues(alpha: isDark ? 0.3 : 0.4),
+        color:
+            (glowColor ?? (isDark ? AppColors.accent : const Color(0xFF0D9488)))
+                .withValues(alpha: isDark ? 0.3 : 0.4),
         width: 1.5,
       ),
       boxShadow: [
@@ -428,7 +484,8 @@ class AppDecorations {
 
   /// Log console decoration.
   static BoxDecoration logConsole([BuildContext? context]) {
-    final isDark = context == null || Theme.of(context).brightness == Brightness.dark;
+    final isDark =
+        context == null || Theme.of(context).brightness == Brightness.dark;
     return BoxDecoration(
       color: isDark ? const Color(0xFF0A0A18) : const Color(0xFF0F172A),
       borderRadius: BorderRadius.circular(12),
@@ -442,7 +499,8 @@ class AppDecorations {
 
   /// Path row field decoration.
   static BoxDecoration pathField([BuildContext? context]) {
-    final isDark = context == null || Theme.of(context).brightness == Brightness.dark;
+    final isDark =
+        context == null || Theme.of(context).brightness == Brightness.dark;
     return BoxDecoration(
       color: isDark ? AppColors.bgDark2 : AppColors.lightSurface,
       border: Border.all(
@@ -460,16 +518,28 @@ class AppDecorations {
 /// Returns the color for a log message based on its content.
 Color getLogColor(String message) {
   final lower = message.toLowerCase();
-  if (lower.contains('✗') || lower.contains('error') || lower.contains('failed') || lower.contains('critical')) {
+  if (lower.contains('✗') ||
+      lower.contains('error') ||
+      lower.contains('failed') ||
+      lower.contains('critical')) {
     return AppColors.logError;
   }
-  if (lower.contains('✓') || lower.contains('completed') || lower.contains('done') || lower.contains('copied:')) {
+  if (lower.contains('✓') ||
+      lower.contains('completed') ||
+      lower.contains('done') ||
+      lower.contains('copied:')) {
     return AppColors.logSuccess;
   }
-  if (lower.contains('⚠') || lower.contains('warning') || lower.contains('skipped') || lower.contains('already exist')) {
+  if (lower.contains('⚠') ||
+      lower.contains('warning') ||
+      lower.contains('skipped') ||
+      lower.contains('already exist')) {
     return AppColors.logWarning;
   }
-  if (lower.contains('⏳') || lower.contains('scanning') || lower.contains('starting') || lower.contains('waiting')) {
+  if (lower.contains('⏳') ||
+      lower.contains('scanning') ||
+      lower.contains('starting') ||
+      lower.contains('waiting')) {
     return AppColors.logInfo;
   }
   return AppColors.logDefault;
@@ -604,15 +674,10 @@ class _PathRowState extends State<PathRow> {
           child: TextField(
             controller: _controller,
             onChanged: widget.onChanged,
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 13,
-            ),
+            style: TextStyle(color: context.textPrimary, fontSize: 13),
             decoration: InputDecoration(
               hintText: 'Not Selected',
-              hintStyle: TextStyle(
-                color: context.textMuted,
-              ),
+              hintStyle: TextStyle(color: context.textMuted),
             ),
           ),
         ),
@@ -631,25 +696,27 @@ class _PathRowState extends State<PathRow> {
                   enabled: false,
                   child: Text(
                     'No recent directories',
-                    style: TextStyle(
-                      color: context.textMuted,
+                    style: TextStyle(color: context.textMuted),
+                  ),
+                ),
+              ];
+            }
+            return recent
+                .map(
+                  (path) => PopupMenuItem<String>(
+                    value: path,
+                    child: Text(
+                      path,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 13,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 )
-              ];
-            }
-            return recent.map((path) => PopupMenuItem<String>(
-              value: path,
-              child: Text(
-                path,
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 13,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            )).toList();
+                .toList();
           },
           onSelected: (path) {
             if (path.isNotEmpty && widget.onChanged != null) {
@@ -700,7 +767,9 @@ class LogConsole extends StatelessWidget {
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: logs.isEmpty ? AppColors.textMuted : AppColors.success,
+                    color: logs.isEmpty
+                        ? AppColors.textMuted
+                        : AppColors.success,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -789,14 +858,15 @@ class StyledTimePicker extends StatelessWidget {
         child: InputDecorator(
           decoration: InputDecoration(
             labelText: label,
-            suffixIcon: const Icon(Icons.access_time, size: 16, color: AppColors.textMuted),
+            suffixIcon: const Icon(
+              Icons.access_time,
+              size: 16,
+              color: AppColors.textMuted,
+            ),
           ),
           child: Text(
             time.format(context),
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 13,
-            ),
+            style: TextStyle(color: context.textPrimary, fontSize: 13),
           ),
         ),
       ),

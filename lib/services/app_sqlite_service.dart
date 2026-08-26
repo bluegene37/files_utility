@@ -11,7 +11,7 @@ class AppSqliteService {
   AppSqliteService._internal();
 
   Database? _db;
-  bool _isInitializing = false;
+  Future<Database>? _openingDb;
   String? appDirPath;
 
   Future<String> _getAppDirPath() async {
@@ -25,23 +25,22 @@ class AppSqliteService {
     return appDirPath!;
   }
 
-  Future<Database> get database async {
-    if (_db != null && _db!.isOpen) return _db!;
-    while (_isInitializing) {
-      await Future.delayed(const Duration(milliseconds: 50));
-      if (_db != null && _db!.isOpen) return _db!;
-    }
-    _isInitializing = true;
+  Future<Database> get database {
+    if (_db != null && _db!.isOpen) return Future.value(_db);
+    // Share one opening future so concurrent callers don't race to open
+    // the database twice.
+    return _openingDb ??= _openDatabase().whenComplete(() => _openingDb = null);
+  }
 
-    try {
-      final dirPath = await _getAppDirPath();
-      final dbPath = p.join(dirPath, 'files_utility.db');
-      _db = await openDatabase(
-        dbPath,
-        version: 1,
-        onCreate: (db, version) async {
-          // Global Profiles table
-          await db.execute('''
+  Future<Database> _openDatabase() async {
+    final dirPath = await _getAppDirPath();
+    final dbPath = p.join(dirPath, 'files_utility.db');
+    _db = await openDatabase(
+      dbPath,
+      version: 1,
+      onCreate: (db, version) async {
+        // Global Profiles table
+        await db.execute('''
             CREATE TABLE profiles (
               id TEXT PRIMARY KEY,
               name TEXT NOT NULL,
@@ -49,8 +48,8 @@ class AppSqliteService {
             )
           ''');
 
-          // Profile-specific configurations, templates, and settings table
-          await db.execute('''
+        // Profile-specific configurations, templates, and settings table
+        await db.execute('''
             CREATE TABLE profile_configs (
               profile_id TEXT NOT NULL,
               key TEXT NOT NULL,
@@ -60,30 +59,27 @@ class AppSqliteService {
             )
           ''');
 
-          // App-wide global settings table (e.g. theme mode)
-          await db.execute('''
+        // App-wide global settings table (e.g. theme mode)
+        await db.execute('''
             CREATE TABLE IF NOT EXISTS global_settings (
               key TEXT PRIMARY KEY,
               value TEXT
             )
           ''');
-        },
-        onOpen: (db) async {
-          await db.execute('''
+      },
+      onOpen: (db) async {
+        await db.execute('''
             CREATE TABLE IF NOT EXISTS global_settings (
               key TEXT PRIMARY KEY,
               value TEXT
             )
           ''');
-        },
-      );
+      },
+    );
 
-      // Automatically migrate legacy JSON files if present
-      await _migrateLegacyGlobalProfiles(_db!);
-      return _db!;
-    } finally {
-      _isInitializing = false;
-    }
+    // Automatically migrate legacy JSON files if present
+    await _migrateLegacyGlobalProfiles(_db!);
+    return _db!;
   }
 
   /// Automatically migrates legacy global_profiles.json to SQLite database.
@@ -120,7 +116,8 @@ class AppSqliteService {
       if (await legacyFile.exists()) {
         final contents = await legacyFile.readAsString();
         if (contents.trim().isNotEmpty) {
-          final Map<String, dynamic> config = jsonDecode(contents) as Map<String, dynamic>;
+          final Map<String, dynamic> config =
+              jsonDecode(contents) as Map<String, dynamic>;
           final batch = db.batch();
           config.forEach((key, val) {
             String valueType = 'string';
@@ -135,16 +132,12 @@ class AppSqliteService {
               valStr = jsonEncode(val);
             }
 
-            batch.insert(
-              'profile_configs',
-              {
-                'profile_id': profileId,
-                'key': key,
-                'value_type': valueType,
-                'value': valStr,
-              },
-              conflictAlgorithm: ConflictAlgorithm.replace,
-            );
+            batch.insert('profile_configs', {
+              'profile_id': profileId,
+              'key': key,
+              'value_type': valueType,
+              'value': valStr,
+            }, conflictAlgorithm: ConflictAlgorithm.replace);
           });
           await batch.commit(noResult: true);
         }
@@ -173,7 +166,11 @@ class AppSqliteService {
   Future<void> deleteProfile(String profileId) async {
     final db = await database;
     await db.delete('profiles', where: 'id = ?', whereArgs: [profileId]);
-    await db.delete('profile_configs', where: 'profile_id = ?', whereArgs: [profileId]);
+    await db.delete(
+      'profile_configs',
+      where: 'profile_id = ?',
+      whereArgs: [profileId],
+    );
   }
 
   // --- Profile Config / Template Operations ---
@@ -212,7 +209,11 @@ class AppSqliteService {
     return result;
   }
 
-  Future<void> setProfileConfigValue(String profileId, String key, dynamic value) async {
+  Future<void> setProfileConfigValue(
+    String profileId,
+    String key,
+    dynamic value,
+  ) async {
     final db = await database;
     if (value == null) {
       await db.delete(
@@ -235,16 +236,12 @@ class AppSqliteService {
       valStr = jsonEncode(value);
     }
 
-    await db.insert(
-      'profile_configs',
-      {
-        'profile_id': profileId,
-        'key': key,
-        'value_type': valueType,
-        'value': valStr,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('profile_configs', {
+      'profile_id': profileId,
+      'key': key,
+      'value_type': valueType,
+      'value': valStr,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> removeProfileConfigValue(String profileId, String key) async {
@@ -273,10 +270,9 @@ class AppSqliteService {
 
   Future<void> setGlobalSetting(String key, String value) async {
     final db = await database;
-    await db.insert(
-      'global_settings',
-      {'key': key, 'value': value},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('global_settings', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 }

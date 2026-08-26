@@ -87,7 +87,9 @@ class TransferFilesScreen extends StatelessWidget {
                                       ),
                                       label: const Text(
                                         'Advanced Settings',
-                                        style: TextStyle(color: AppColors.accent),
+                                        style: TextStyle(
+                                          color: AppColors.accent,
+                                        ),
                                       ),
                                       style: OutlinedButton.styleFrom(
                                         side: const BorderSide(
@@ -154,33 +156,36 @@ class TransferFilesScreen extends StatelessWidget {
                                         color: context.textSecondary,
                                       ),
                                     ),
-                                     const SizedBox(width: 12),
-                                     Icon(
-                                       Icons.info_outline,
-                                       size: 14,
-                                       color: context.textMuted,
-                                     ),
-                                     const SizedBox(width: 4),
-                                     Expanded(
-                                       child: Text(
-                                         'Controls how often progress is logged to the console',
-                                         style: TextStyle(
-                                           fontSize: 11,
-                                           color: context.textMuted,
-                                           fontStyle: FontStyle.italic,
-                                         ),
-                                         maxLines: 1,
-                                         overflow: TextOverflow.ellipsis,
-                                       ),
-                                     ),
-                                     const SizedBox(width: 12),
-                                     StatBadge(
-                                       title: 'History',
-                                       value: 'View',
-                                       color: AppColors.accent,
-                                       icon: Icons.history,
-                                       onTap: () => showHistoryDialog(context, initialOperation: 'Transfer'),
-                                     ),
+                                    const SizedBox(width: 12),
+                                    Icon(
+                                      Icons.info_outline,
+                                      size: 14,
+                                      color: context.textMuted,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        'Controls how often progress is logged to the console',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: context.textMuted,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    StatBadge(
+                                      title: 'History',
+                                      value: 'View',
+                                      color: AppColors.accent,
+                                      icon: Icons.history,
+                                      onTap: () => showHistoryDialog(
+                                        context,
+                                        initialOperation: 'Transfer',
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ],
@@ -434,8 +439,8 @@ class TransferFilesScreen extends StatelessWidget {
                                 onChanged: provider.isProcessing
                                     ? null
                                     : (val) => provider.setExcludeSubfolders(
-                                          val ?? false,
-                                        ),
+                                        val ?? false,
+                                      ),
                                 visualDensity: VisualDensity.compact,
                                 materialTapTargetSize:
                                     MaterialTapTargetSize.shrinkWrap,
@@ -466,10 +471,7 @@ class TransferFilesScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        Divider(
-                          color: context.border,
-                          thickness: 1,
-                        ),
+                        Divider(color: context.border, thickness: 1),
                         const SizedBox(height: 8),
                         // ── File Date Filter ──
                         _sectionLabel(context, '📅 File Date Filter'),
@@ -489,10 +491,9 @@ class TransferFilesScreen extends StatelessWidget {
                                     value: provider.enableDateRange,
                                     onChanged: provider.isProcessing
                                         ? null
-                                        : (val) =>
-                                              provider.setEnableDateRange(
-                                                val ?? false,
-                                              ),
+                                        : (val) => provider.setEnableDateRange(
+                                            val ?? false,
+                                          ),
                                     visualDensity: VisualDensity.compact,
                                     materialTapTargetSize:
                                         MaterialTapTargetSize.shrinkWrap,
@@ -540,10 +541,7 @@ class TransferFilesScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        Divider(
-                          color: context.border,
-                          thickness: 1,
-                        ),
+                        Divider(color: context.border, thickness: 1),
                         const SizedBox(height: 8),
                         // Age filter
                         Wrap(
@@ -659,10 +657,7 @@ class TransferFilesScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        Divider(
-                          color: context.border,
-                          thickness: 1,
-                        ),
+                        Divider(color: context.border, thickness: 1),
                         const SizedBox(height: 8),
                         // ── Schedule ──
                         _sectionLabel(context, '⏰ Schedule'),
@@ -768,10 +763,7 @@ class TransferFilesScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Divider(
-                          color: context.border,
-                          thickness: 1,
-                        ),
+                        Divider(color: context.border, thickness: 1),
                         const SizedBox(height: 8),
                         // ── Completion ──
                         _sectionLabel(context, '✅ Completion'),

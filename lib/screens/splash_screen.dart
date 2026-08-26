@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../app_info.dart';
 import '../theme/app_theme.dart';
 import 'profile_selection_screen.dart';
 
@@ -14,6 +16,7 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _controller;
   late Animation<double> _fadeIn;
   late Animation<double> _scale;
+  Timer? _navigationTimer;
 
   @override
   void initState() {
@@ -40,7 +43,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    Future.delayed(const Duration(milliseconds: 2500), () {
+    _navigationTimer = Timer(const Duration(milliseconds: 2500), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
@@ -48,8 +51,8 @@ class _SplashScreenState extends State<SplashScreen>
                 const ProfileSelectionScreen(),
             transitionsBuilder:
                 (context, animation, secondaryAnimation, child) {
-              return FadeTransition(opacity: animation, child: child);
-            },
+                  return FadeTransition(opacity: animation, child: child);
+                },
             transitionDuration: const Duration(milliseconds: 500),
           ),
         );
@@ -59,6 +62,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
+    _navigationTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -74,10 +78,7 @@ class _SplashScreenState extends State<SplashScreen>
             builder: (context, child) {
               return Opacity(
                 opacity: _fadeIn.value,
-                child: Transform.scale(
-                  scale: _scale.value,
-                  child: child,
-                ),
+                child: Transform.scale(scale: _scale.value, child: child),
               );
             },
             child: Column(
@@ -108,7 +109,7 @@ class _SplashScreenState extends State<SplashScreen>
                 const SizedBox(height: 32),
                 // App name
                 Text(
-                  'Files Utility',
+                  AppInfo.appName,
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
@@ -127,7 +128,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'v1.0.0',
+                  'v${AppInfo.appVersion}',
                   style: TextStyle(
                     fontSize: 12,
                     color: context.textMuted.withValues(alpha: 0.6),

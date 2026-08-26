@@ -18,18 +18,28 @@ class GlobalDbService {
     if (_isInitialized) return;
     try {
       _profiles = await AppSqliteService().getAllProfiles();
-      
+
       // Ensure at least one default profile exists
       if (_profiles.isEmpty) {
-        final defaultProfile = AppProfile(id: 'default', name: 'Default Run', description: 'Default configuration');
+        final defaultProfile = AppProfile(
+          id: 'default',
+          name: 'Default Run',
+          description: 'Default configuration',
+        );
         await AppSqliteService().saveProfile(defaultProfile);
         _profiles = [defaultProfile];
       }
-      
+
       _isInitialized = true;
     } catch (e, stack) {
       _log.severe('Failed to initialize GlobalDbService', e, stack);
-      _profiles = [AppProfile(id: 'default', name: 'Default Run', description: 'Fallback profile')];
+      _profiles = [
+        AppProfile(
+          id: 'default',
+          name: 'Default Run',
+          description: 'Fallback profile',
+        ),
+      ];
       _isInitialized = true;
     }
   }

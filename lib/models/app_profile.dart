@@ -3,18 +3,10 @@ class AppProfile {
   final String name;
   final String description;
 
-  AppProfile({
-    required this.id,
-    required this.name,
-    this.description = '',
-  });
+  AppProfile({required this.id, required this.name, this.description = ''});
 
   Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'description': description,
-    };
+    return {'id': id, 'name': name, 'description': description};
   }
 
   factory AppProfile.fromJson(Map<String, dynamic> json) {

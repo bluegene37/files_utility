@@ -20,7 +20,13 @@ class _HistoryScreenState extends State<HistoryScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  final List<String> _operations = ['All', 'Transfer', 'Copy', 'Delete', 'Count'];
+  final List<String> _operations = [
+    'All',
+    'Transfer',
+    'Copy',
+    'Delete',
+    'Count',
+  ];
 
   @override
   void initState() {
@@ -61,7 +67,9 @@ class _HistoryScreenState extends State<HistoryScreen>
                   if (provider.isLoading) {
                     return Center(
                       child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(context.primaryAccent),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          context.primaryAccent,
+                        ),
                       ),
                     );
                   }
@@ -87,8 +95,13 @@ class _HistoryScreenState extends State<HistoryScreen>
                             indicatorColor: context.primaryAccent,
                             labelColor: context.primaryAccent,
                             unselectedLabelColor: context.textSecondary,
-                            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                            tabs: _operations.map((op) => Tab(text: '$op History')).toList(),
+                            labelStyle: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                            tabs: _operations
+                                .map((op) => Tab(text: '$op History'))
+                                .toList(),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -100,7 +113,9 @@ class _HistoryScreenState extends State<HistoryScreen>
                             children: _operations.map((op) {
                               final filtered = op == 'All'
                                   ? provider.records
-                                  : provider.records.where((r) => r.operation == op).toList();
+                                  : provider.records
+                                        .where((r) => r.operation == op)
+                                        .toList();
                               return _buildHistoryTable(context, filtered);
                             }).toList(),
                           ),
@@ -140,11 +155,21 @@ class _HistoryScreenState extends State<HistoryScreen>
           const Spacer(),
           TextButton.icon(
             onPressed: () {
-              final provider = Provider.of<HistoryProvider>(context, listen: false);
+              final provider = Provider.of<HistoryProvider>(
+                context,
+                listen: false,
+              );
               _showClearConfirmation(context, provider);
             },
-            icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.error),
-            label: const Text('Clear All History', style: TextStyle(color: AppColors.error)),
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 18,
+              color: AppColors.error,
+            ),
+            label: const Text(
+              'Clear All History',
+              style: TextStyle(color: AppColors.error),
+            ),
           ),
           const SizedBox(width: 12),
           const ThemeToggleButton(),
@@ -153,16 +178,31 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
-  Widget _buildVisualGraphsDashboard(BuildContext context, HistoryProvider provider) {
+  Widget _buildVisualGraphsDashboard(
+    BuildContext context,
+    HistoryProvider provider,
+  ) {
     final records = provider.records;
 
-    int transferFiles = records.where((r) => r.operation == 'Transfer').fold(0, (sum, r) => sum + r.filesProcessed);
-    int copyFiles = records.where((r) => r.operation == 'Copy').fold(0, (sum, r) => sum + r.filesProcessed);
-    int deleteFiles = records.where((r) => r.operation == 'Delete').fold(0, (sum, r) => sum + r.filesProcessed);
-    int countFiles = records.where((r) => r.operation == 'Count').fold(0, (sum, r) => sum + r.filesProcessed);
+    int transferFiles = records
+        .where((r) => r.operation == 'Transfer')
+        .fold(0, (sum, r) => sum + r.filesProcessed);
+    int copyFiles = records
+        .where((r) => r.operation == 'Copy')
+        .fold(0, (sum, r) => sum + r.filesProcessed);
+    int deleteFiles = records
+        .where((r) => r.operation == 'Delete')
+        .fold(0, (sum, r) => sum + r.filesProcessed);
+    int countFiles = records
+        .where((r) => r.operation == 'Count')
+        .fold(0, (sum, r) => sum + r.filesProcessed);
 
-    int maxFiles = [transferFiles, copyFiles, deleteFiles, countFiles]
-        .reduce((max, val) => val > max ? val : max);
+    int maxFiles = [
+      transferFiles,
+      copyFiles,
+      deleteFiles,
+      countFiles,
+    ].reduce((max, val) => val > max ? val : max);
     if (maxFiles == 0) maxFiles = 1;
 
     return Container(
@@ -173,7 +213,11 @@ class _HistoryScreenState extends State<HistoryScreen>
         children: [
           Row(
             children: [
-              Icon(Icons.query_stats_rounded, color: context.primaryAccent, size: 20),
+              Icon(
+                Icons.query_stats_rounded,
+                color: context.primaryAccent,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Operation Activity Summary',
@@ -204,8 +248,12 @@ class _HistoryScreenState extends State<HistoryScreen>
                   context,
                   title: 'Transfer',
                   icon: Icons.move_up,
-                  color: context.isDarkMode ? AppColors.accent : const Color(0xFF0D9488),
-                  runsCount: records.where((r) => r.operation == 'Transfer').length,
+                  color: context.isDarkMode
+                      ? AppColors.accent
+                      : const Color(0xFF0D9488),
+                  runsCount: records
+                      .where((r) => r.operation == 'Transfer')
+                      .length,
                   filesCount: transferFiles,
                   ratio: transferFiles / maxFiles,
                 ),
@@ -216,7 +264,9 @@ class _HistoryScreenState extends State<HistoryScreen>
                   context,
                   title: 'Copy',
                   icon: Icons.file_copy,
-                  color: context.isDarkMode ? AppColors.info : const Color(0xFF0284C7),
+                  color: context.isDarkMode
+                      ? AppColors.info
+                      : const Color(0xFF0284C7),
                   runsCount: records.where((r) => r.operation == 'Copy').length,
                   filesCount: copyFiles,
                   ratio: copyFiles / maxFiles,
@@ -229,7 +279,9 @@ class _HistoryScreenState extends State<HistoryScreen>
                   title: 'Delete',
                   icon: Icons.delete_forever,
                   color: AppColors.error,
-                  runsCount: records.where((r) => r.operation == 'Delete').length,
+                  runsCount: records
+                      .where((r) => r.operation == 'Delete')
+                      .length,
                   filesCount: deleteFiles,
                   ratio: deleteFiles / maxFiles,
                 ),
@@ -240,8 +292,12 @@ class _HistoryScreenState extends State<HistoryScreen>
                   context,
                   title: 'Count',
                   icon: Icons.analytics,
-                  color: context.isDarkMode ? AppColors.success : const Color(0xFF16A34A),
-                  runsCount: records.where((r) => r.operation == 'Count').length,
+                  color: context.isDarkMode
+                      ? AppColors.success
+                      : const Color(0xFF16A34A),
+                  runsCount: records
+                      .where((r) => r.operation == 'Count')
+                      .length,
                   filesCount: countFiles,
                   ratio: countFiles / maxFiles,
                 ),
@@ -318,10 +374,7 @@ class _HistoryScreenState extends State<HistoryScreen>
               const SizedBox(width: 4),
               Text(
                 'files',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: context.textMuted,
-                ),
+                style: TextStyle(fontSize: 11, color: context.textMuted),
               ),
             ],
           ),
@@ -350,7 +403,11 @@ class _HistoryScreenState extends State<HistoryScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.history_toggle_off, color: context.textMuted, size: 48),
+              Icon(
+                Icons.history_toggle_off,
+                color: context.textMuted,
+                size: 48,
+              ),
               const SizedBox(height: 12),
               Text(
                 'No history records found',
@@ -389,61 +446,101 @@ class _HistoryScreenState extends State<HistoryScreen>
                 DataColumn(
                   label: Text(
                     'Operation',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: context.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 DataColumn(
                   label: Text(
                     'Status',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: context.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 DataColumn(
                   label: Text(
                     'Start Date/Time',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: context.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 DataColumn(
                   label: Text(
                     'End Date/Time',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: context.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 DataColumn(
                   label: Text(
                     'Duration',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: context.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 DataColumn(
                   label: Text(
                     'Source Directory',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: context.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 DataColumn(
                   label: Text(
                     'Target / Dest',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: context.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 DataColumn(
                   label: Text(
                     'Files',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: context.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 DataColumn(
                   label: Text(
                     'Folders',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: context.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 DataColumn(
                   label: Text(
                     'Errors',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: context.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],
@@ -452,8 +549,8 @@ class _HistoryScreenState extends State<HistoryScreen>
                 final durationStr = duration.inHours > 0
                     ? '${duration.inHours}h ${duration.inMinutes.remainder(60)}m'
                     : duration.inMinutes > 0
-                        ? '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s'
-                        : '${duration.inSeconds}s';
+                    ? '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s'
+                    : '${duration.inSeconds}s';
 
                 Color opColor = _getOpColor(record.operation, isDark);
                 IconData opIcon = _getOpIcon(record.operation);
@@ -461,8 +558,8 @@ class _HistoryScreenState extends State<HistoryScreen>
                 Color statusColor = record.status == 'Completed'
                     ? (isDark ? AppColors.success : const Color(0xFF16A34A))
                     : record.status == 'Stopped'
-                        ? (isDark ? AppColors.warning : const Color(0xFFD97706))
-                        : AppColors.error;
+                    ? (isDark ? AppColors.warning : const Color(0xFFD97706))
+                    : AppColors.error;
 
                 return DataRow(
                   cells: [
@@ -485,10 +582,15 @@ class _HistoryScreenState extends State<HistoryScreen>
                     ),
                     DataCell(
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: statusColor.withValues(alpha: 0.1),
-                          border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                          border: Border.all(
+                            color: statusColor.withValues(alpha: 0.5),
+                          ),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -504,19 +606,28 @@ class _HistoryScreenState extends State<HistoryScreen>
                     DataCell(
                       Text(
                         dateFormat.format(record.startTime),
-                        style: TextStyle(fontSize: 12, color: context.textPrimary),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textPrimary,
+                        ),
                       ),
                     ),
                     DataCell(
                       Text(
                         dateFormat.format(record.endTime),
-                        style: TextStyle(fontSize: 12, color: context.textPrimary),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textPrimary,
+                        ),
                       ),
                     ),
                     DataCell(
                       Text(
                         durationStr,
-                        style: TextStyle(fontSize: 12, color: context.textSecondary),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textSecondary,
+                        ),
                       ),
                     ),
                     DataCell(
@@ -524,7 +635,11 @@ class _HistoryScreenState extends State<HistoryScreen>
                         width: 220,
                         child: Text(
                           record.sourcePath ?? '-',
-                          style: TextStyle(fontSize: 12, fontFamily: 'Consolas', color: context.textPrimary),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'Consolas',
+                            color: context.textPrimary,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -535,7 +650,11 @@ class _HistoryScreenState extends State<HistoryScreen>
                         width: 220,
                         child: Text(
                           record.destPath ?? '-',
-                          style: TextStyle(fontSize: 12, fontFamily: 'Consolas', color: context.textPrimary),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'Consolas',
+                            color: context.textPrimary,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -544,13 +663,20 @@ class _HistoryScreenState extends State<HistoryScreen>
                     DataCell(
                       Text(
                         NumberFormat('#,##0').format(record.filesProcessed),
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: context.textPrimary,
+                        ),
                       ),
                     ),
                     DataCell(
                       Text(
                         NumberFormat('#,##0').format(record.foldersProcessed),
-                        style: TextStyle(fontSize: 12, color: context.textSecondary),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textSecondary,
+                        ),
                       ),
                     ),
                     DataCell(
@@ -559,7 +685,9 @@ class _HistoryScreenState extends State<HistoryScreen>
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: record.errors > 0 ? AppColors.error : context.textMuted,
+                          color: record.errors > 0
+                              ? AppColors.error
+                              : context.textMuted,
                         ),
                       ),
                     ),

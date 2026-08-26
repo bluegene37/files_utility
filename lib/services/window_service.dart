@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
+import '../app_info.dart';
 import 'global_db_service.dart';
 import 'local_db_service.dart';
 
@@ -15,7 +16,7 @@ class WindowService {
     if (_initialized || kIsWeb) return;
     try {
       await windowManager.ensureInitialized();
-      
+
       const windowOptions = WindowOptions(
         size: Size(1280, 840),
         minimumSize: Size(980, 680),
@@ -23,7 +24,7 @@ class WindowService {
         backgroundColor: Colors.transparent,
         skipTaskbar: false,
         titleBarStyle: TitleBarStyle.normal,
-        title: 'Files Utility',
+        title: AppInfo.appName,
       );
 
       await windowManager.waitUntilReadyToShow(windowOptions, () async {
@@ -45,7 +46,8 @@ class WindowService {
         orElse: () => GlobalDbService().profiles.first,
       );
 
-      String title = 'Files Utility — $screenName [${currentProfile.name}]';
+      String title =
+          '${AppInfo.appName} — $screenName [${currentProfile.name}]';
       if (status != null && status.isNotEmpty && status != 'Idle') {
         title += ' ($status)';
       }

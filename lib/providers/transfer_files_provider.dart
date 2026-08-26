@@ -88,21 +88,11 @@ class TransferFilesProvider with ChangeNotifier {
   // State
   String? sourcePath;
   String? destPath;
-  String clientName = 'WaterBrothers'; // Default from script
 
   // Date range filter for Transfer
   bool enableDateRange = false;
   DateTime fromDate = DateTime(2025, 1, 1);
   DateTime toDate = DateTime(2025, 1, 31);
-
-  List<String> availableClients = [
-    'WaterBrothers',
-    'FRP',
-    'Chips',
-    'ETS-East',
-    'LPS',
-    'IGPest',
-  ];
 
   bool isProcessing = false;
   List<String> logs = [];
@@ -112,7 +102,7 @@ class TransferFilesProvider with ChangeNotifier {
   String ageFilterUnit = 'Days';
   int ageFilterValue = 30;
   bool excludeSubfolders = false;
-  
+
   // Log interval: how often to report progress (every N files)
   int logInterval = 100;
 
@@ -204,8 +194,7 @@ class TransferFilesProvider with ChangeNotifier {
     final db = LocalDbService();
     sourcePath = db.getString('sourcePath');
     destPath = db.getString('destPath');
-    clientName = db.getString('clientName') ?? 'WaterBrothers';
-    
+
     final fDay = db.getInt('transfer_fromDate_day');
     final fMonth = db.getInt('transfer_fromDate_month');
     final fYear = db.getInt('transfer_fromDate_year');
@@ -218,7 +207,7 @@ class TransferFilesProvider with ChangeNotifier {
     if (tDay != null && tMonth != null && tYear != null) {
       toDate = DateTime(tYear, tMonth, tDay);
     }
-    
+
     enableAgeFilter = db.getBool('transfer_enableAgeFilter') ?? false;
     ageFilterUnit = db.getString('transfer_ageFilterUnit') ?? 'Days';
     ageFilterValue = db.getInt('transfer_ageFilterValue') ?? 30;
@@ -247,7 +236,6 @@ class TransferFilesProvider with ChangeNotifier {
 
     onCompletionAction = db.getString('transfer_onCompletionAction') ?? 'pause';
 
-    _detectClientName();
     notifyListeners();
   }
 
@@ -259,8 +247,7 @@ class TransferFilesProvider with ChangeNotifier {
     final db = LocalDbService();
     if (sourcePath != null) await db.setString('sourcePath', sourcePath!);
     if (destPath != null) await db.setString('destPath', destPath!);
-    await db.setString('clientName', clientName);
-    
+
     await db.setInt('transfer_fromDate_day', fromDate.day);
     await db.setInt('transfer_fromDate_month', fromDate.month);
     await db.setInt('transfer_fromDate_year', fromDate.year);
@@ -268,7 +255,7 @@ class TransferFilesProvider with ChangeNotifier {
     await db.setInt('transfer_toDate_day', toDate.day);
     await db.setInt('transfer_toDate_month', toDate.month);
     await db.setInt('transfer_toDate_year', toDate.year);
-    
+
     await db.setBool('transfer_enableAgeFilter', enableAgeFilter);
     await db.setString('transfer_ageFilterUnit', ageFilterUnit);
     await db.setInt('transfer_ageFilterValue', ageFilterValue);
@@ -294,8 +281,14 @@ class TransferFilesProvider with ChangeNotifier {
     final s = sourcePath?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? 'src';
     final d = destPath?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? 'dst';
     final profileId = LocalDbService().currentProfileId;
-    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'files_utility');
-    return p.join(appDir, 'progress', 'transfer_progress_${s}_${d}_$profileId.json');
+    final appDir =
+        GlobalDbService().appDirPath ??
+        p.join(Directory.systemTemp.path, 'files_utility');
+    return p.join(
+      appDir,
+      'progress',
+      'transfer_progress_${s}_${d}_$profileId.json',
+    );
   }
 
   Future<void> _loadProgress() async {
@@ -313,11 +306,7 @@ class TransferFilesProvider with ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> _saveProgress(
-    String? scannedDir,
-    int fMoved,
-    int errs,
-  ) async {
+  Future<void> _saveProgress(String? scannedDir, int fMoved, int errs) async {
     if (scannedDir != null) lastScannedDir = scannedDir;
     try {
       final file = File(_progressFilePath);
@@ -357,7 +346,6 @@ class TransferFilesProvider with ChangeNotifier {
     if (sourcePath != null) {
       LocalDbService().addRecentDirectory(sourcePath!);
     }
-    _detectClientName();
     _saveSettings();
     _loadProgress();
     notifyListeners();
@@ -372,40 +360,6 @@ class TransferFilesProvider with ChangeNotifier {
     _loadProgress();
     notifyListeners();
   }
-
-  void _detectClientName() {
-    if (sourcePath == null) {
-      clientName = 'Unknown';
-      return;
-    }
-
-    String? detected;
-
-    // Check for "myFlo" prefixed folder in the path
-    List<String> segments = p.split(sourcePath!);
-    for (String segment in segments) {
-      if (segment.toLowerCase().startsWith('myflo') && segment.length > 5) {
-        // Extract client name after "myFlo"
-        detected = segment.substring(5);
-        break;
-      }
-    }
-
-    // Fallback to containment check if no "myFlo" folder found
-    if (detected == null) {
-      for (var client in availableClients) {
-        if (sourcePath!.toLowerCase().contains(client.toLowerCase())) {
-          detected = client;
-          break;
-        }
-      }
-    }
-
-    clientName = detected ?? 'Unknown';
-  }
-
-  // Removed manual setClientName as it's now auto-detected
-  // void setClientName(String name) { ... }
 
   void setFromDate(DateTime date) {
     fromDate = date;
@@ -665,7 +619,9 @@ class TransferFilesProvider with ChangeNotifier {
     // Validate: source and dest must not be the same
     if (p.equals(sourcePath!, destPath!)) {
       _addLog('✗ Error: Source and Destination cannot be the same folder.');
-      _addLog('  ℹ Tip: Choose a different destination, or use a subfolder as the destination.');
+      _addLog(
+        '  ℹ Tip: Choose a different destination, or use a subfolder as the destination.',
+      );
       await _fileLogger.error(
         'Transfer',
         'Source and Destination are the same folder: $sourcePath',
@@ -677,8 +633,12 @@ class TransferFilesProvider with ChangeNotifier {
     final isDestInsideSource = p.isWithin(sourcePath!, destPath!);
     if (isDestInsideSource && !excludeSubfolders) {
       _addLog('⚠ Warning: Destination is inside the Source folder.');
-      _addLog('  ℹ Tip: Enable "Source folder only" in Advanced Settings to avoid');
-      _addLog('    scanning into the destination subfolder, or choose a destination');
+      _addLog(
+        '  ℹ Tip: Enable "Source folder only" in Advanced Settings to avoid',
+      );
+      _addLog(
+        '    scanning into the destination subfolder, or choose a destination',
+      );
       _addLog('    outside the source folder.');
     }
 
@@ -698,10 +658,14 @@ class TransferFilesProvider with ChangeNotifier {
     _addLog('⏳ Starting transfer...');
     _addLog('  Source: $sourcePath');
     _addLog('  Destination: $destPath');
-    _addLog('  Scan mode: ${excludeSubfolders ? "Source folder only (no subfolders)" : "Include subfolders"}');
+    _addLog(
+      '  Scan mode: ${excludeSubfolders ? "Source folder only (no subfolders)" : "Include subfolders"}',
+    );
     if (enableDateRange) {
       final dateFormat = DateFormat('dd/MM/yyyy');
-      _addLog('  Date range: ${dateFormat.format(fromDate)} — ${dateFormat.format(toDate)}');
+      _addLog(
+        '  Date range: ${dateFormat.format(fromDate)} — ${dateFormat.format(toDate)}',
+      );
     } else if (enableAgeFilter) {
       _addLog('  Age filter: Older than $ageFilterValue $ageFilterUnit');
     } else {
@@ -722,9 +686,7 @@ class TransferFilesProvider with ChangeNotifier {
     );
 
     if (lastScannedDir != null) {
-      _addLog(
-        '⏳ Resuming from directory: [$lastScannedDir]',
-      );
+      _addLog('⏳ Resuming from directory: [$lastScannedDir]');
       await _fileLogger.info(
         'Transfer',
         'Resuming from directory: [$lastScannedDir]',
@@ -806,11 +768,7 @@ class TransferFilesProvider with ChangeNotifier {
           }
 
           if (message.saveScannedDir != null) {
-            _saveProgress(
-              message.saveScannedDir!,
-              filesMoved,
-              errors,
-            );
+            _saveProgress(message.saveScannedDir!, filesMoved, errors);
           }
 
           for (final log in message.logs) {
@@ -883,7 +841,9 @@ class TransferFilesProvider with ChangeNotifier {
           errors: sessionErrors,
           status: wasStopped
               ? 'Stopped'
-              : (sessionErrors > 0 && sessionFilesMoved == 0 ? 'Error' : 'Completed'),
+              : (sessionErrors > 0 && sessionFilesMoved == 0
+                    ? 'Error'
+                    : 'Completed'),
           configSummary: 'Source: $sourcePath, Dest: $destPath',
           sourcePath: sourcePath,
           destPath: destPath,
@@ -900,7 +860,9 @@ class TransferFilesProvider with ChangeNotifier {
     } else {
       isProcessing = false;
       isPaused = false;
-      currentStatus = wasStopped ? '⛔ Stopped by user.' : '🏁 Transfer completed.';
+      currentStatus = wasStopped
+          ? '⛔ Stopped by user.'
+          : '🏁 Transfer completed.';
       _completionRescheduleTimer?.cancel();
       _completionRescheduleTimer = null;
       if (!wasStopped) {
@@ -1019,7 +981,12 @@ class TransferFilesProvider with ChangeNotifier {
       }
     });
 
-    Future<void> moveFile(File file, String year, String month) async {
+    Future<void> moveFile(
+      File file,
+      String year,
+      String month, {
+      DateTime? modified,
+    }) async {
       try {
         String relativePath = p.relative(
           file.parent.path,
@@ -1043,21 +1010,55 @@ class TransferFilesProvider with ChangeNotifier {
         try {
           await file.rename(destFilePath);
         } on FileSystemException {
-          // Fallback to copy and delete if moving across partitions or if rename fails
-          await file.copy(destFilePath);
+          // Fallback for moves across drives/network shares: copy to a
+          // temporary name first, verify the size, then swap into place —
+          // an interrupted copy must never leave a partial file at the
+          // final destination, and the source is only deleted after the
+          // copy is verified.
+          final tempPath = '$destFilePath.part';
           try {
-            await file.delete();
-          } catch (delErr) {
-            logBatch.add('⚠ Copied to destination, but could not delete source: ${file.path} ($delErr)');
+            await file.copy(tempPath);
+            final srcLen = await file.length();
+            final dstLen = await File(tempPath).length();
+            if (srcLen != dstLen) {
+              throw FileSystemException(
+                'Incomplete copy ($dstLen of $srcLen bytes)',
+                tempPath,
+              );
+            }
+            if (modified != null) {
+              // Keep the original modified date so age/date filters still
+              // see the right timestamps after the file lands on the NAS.
+              try {
+                await File(tempPath).setLastModified(modified);
+              } catch (_) {}
+            }
+            await File(tempPath).rename(destFilePath);
+            try {
+              await file.delete();
+            } catch (delErr) {
+              logBatch.add(
+                '⚠ Copied to destination, but could not delete source: ${file.path} ($delErr)',
+              );
+            }
+          } catch (copyErr) {
+            try {
+              await File(tempPath).delete();
+            } catch (_) {}
+            rethrow;
           }
         }
 
         filesMoved++;
         if (filesMoved % params.logInterval == 0) {
           if (year.isNotEmpty) {
-            logBatch.add('✓ Moved ${params.logInterval} files (total: $filesMoved) – latest [$month-$year]: ${p.basename(file.path)}');
+            logBatch.add(
+              '✓ Moved ${params.logInterval} files (total: $filesMoved) – latest [$month-$year]: ${p.basename(file.path)}',
+            );
           } else {
-            logBatch.add('✓ Moved ${params.logInterval} files (total: $filesMoved) – latest: ${p.basename(file.path)}');
+            logBatch.add(
+              '✓ Moved ${params.logInterval} files (total: $filesMoved) – latest: ${p.basename(file.path)}',
+            );
           }
           flushProgress('⏳ Moving files ($filesMoved moved)...', force: true);
         }
@@ -1099,18 +1100,22 @@ class TransferFilesProvider with ChangeNotifier {
           final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
           final from = DateTime(fd.year, fd.month, fd.day);
           final to = DateTime(td.year, td.month, td.day);
-          
-          final fileDate = DateTime(modified.year, modified.month, modified.day);
+
+          final fileDate = DateTime(
+            modified.year,
+            modified.month,
+            modified.day,
+          );
           if (fileDate.isBefore(from) || fileDate.isAfter(to)) {
             return;
           }
 
           String yearStr = DateFormat('yyyy').format(modified);
           String monthStr = DateFormat('MMM').format(modified);
-          await moveFile(file, yearStr, monthStr);
+          await moveFile(file, yearStr, monthStr, modified: modified);
         } else {
           // No date range filter: move all files, no year-based organization
-          await moveFile(file, '', '');
+          await moveFile(file, '', '', modified: modified);
         }
       } catch (e) {
         logBatch.add('✗ Error accessing ${file.path}: $e');
@@ -1118,7 +1123,10 @@ class TransferFilesProvider with ChangeNotifier {
       }
     }
 
-    Future<void> processDirectoryTree(Directory currentDir, {required bool recursive}) async {
+    Future<void> processDirectoryTree(
+      Directory currentDir, {
+      required bool recursive,
+    }) async {
       bool skippingDirs = params.lastScannedDir != null;
       final Set<String> visitedDirs = {};
 
@@ -1131,9 +1139,10 @@ class TransferFilesProvider with ChangeNotifier {
 
         Directory dir = dirsToProcess.removeAt(0);
         String dirName = p.basename(dir.path);
-        
+
         // Skip destination directory and any subdirectories inside it
-        if (p.equals(dir.path, params.destPath) || p.isWithin(params.destPath, dir.path)) {
+        if (p.equals(dir.path, params.destPath) ||
+            p.isWithin(params.destPath, dir.path)) {
           logBatch.add('ℹ Skipping destination folder: $dirName');
           flushProgress(null);
           continue;
@@ -1159,21 +1168,22 @@ class TransferFilesProvider with ChangeNotifier {
 
         scanCount++;
         filesSinceLastSave++;
-        
+
         if (filesSinceLastSave >= saveProgressInterval) {
           filesSinceLastSave = 0;
-          flushProgress(
-            '⏳ Scanning: $dirName',
-            scannedDir: dir.path,
-          );
+          flushProgress('⏳ Scanning: $dirName', scannedDir: dir.path);
         } else {
           flushProgress('⏳ Scanning: $dirName');
         }
 
         try {
-          List<FileSystemEntity> entities = await dir.list(recursive: false, followLinks: false).toList();
+          List<FileSystemEntity> entities = await dir
+              .list(recursive: false, followLinks: false)
+              .toList();
           // Sort for consistent processing order
-          entities.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+          entities.sort(
+            (a, b) => p.basename(a.path).compareTo(p.basename(b.path)),
+          );
 
           for (var entity in entities) {
             if (stopRequested) return;
@@ -1201,7 +1211,10 @@ class TransferFilesProvider with ChangeNotifier {
     }
 
     try {
-      await processDirectoryTree(Directory(params.sourcePath), recursive: !params.excludeSubfolders);
+      await processDirectoryTree(
+        Directory(params.sourcePath),
+        recursive: !params.excludeSubfolders,
+      );
 
       // Helpful diagnostics when no files were transferred
       if (filesMoved == params.initialFilesMoved) {
@@ -1209,26 +1222,36 @@ class TransferFilesProvider with ChangeNotifier {
         if (params.enableDateRange) {
           final fd = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
           final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
-          logBatch.add('  ℹ Date filter is active: ${DateFormat('dd/MM/yyyy').format(fd)} – ${DateFormat('dd/MM/yyyy').format(td)}');
-          logBatch.add('  ℹ Check that files have modification dates within this range.');
+          logBatch.add(
+            '  ℹ Date filter is active: ${DateFormat('dd/MM/yyyy').format(fd)} – ${DateFormat('dd/MM/yyyy').format(td)}',
+          );
+          logBatch.add(
+            '  ℹ Check that files have modification dates within this range.',
+          );
         }
         if (params.enableAgeFilter) {
-          logBatch.add('  ℹ Age filter is active. Check that files are older than the configured threshold.');
+          logBatch.add(
+            '  ℹ Age filter is active. Check that files are older than the configured threshold.',
+          );
         }
         if (params.excludeSubfolders) {
-          logBatch.add('  ℹ "Source folder only" is enabled — only files directly in the source folder were checked.');
-          logBatch.add('  ℹ If your files are in subfolders, uncheck this option in Advanced Settings.');
+          logBatch.add(
+            '  ℹ "Source folder only" is enabled — only files directly in the source folder were checked.',
+          );
+          logBatch.add(
+            '  ℹ If your files are in subfolders, uncheck this option in Advanced Settings.',
+          );
         } else {
-          logBatch.add('  ℹ All subfolders were scanned. Verify the source path contains the expected files.');
+          logBatch.add(
+            '  ℹ All subfolders were scanned. Verify the source path contains the expected files.',
+          );
         }
       }
 
       flushProgress('DONE', force: true);
-      params.mainSendPort.send(_TransferProgress(
-        isDone: true,
-        filesMoved: filesMoved,
-        errors: errors,
-      ));
+      params.mainSendPort.send(
+        _TransferProgress(isDone: true, filesMoved: filesMoved, errors: errors),
+      );
     } catch (e) {
       params.mainSendPort.send(
         _TransferProgress(

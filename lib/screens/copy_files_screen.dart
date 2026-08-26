@@ -150,10 +150,11 @@ class CopyFilesScreen extends StatelessWidget {
                                 Row(
                                   children: [
                                     OutlinedButton.icon(
-                                      onPressed: () => _showAdvancedSettingsDialog(
-                                        context,
-                                        provider,
-                                      ),
+                                      onPressed: () =>
+                                          _showAdvancedSettingsDialog(
+                                            context,
+                                            provider,
+                                          ),
                                       icon: const Icon(
                                         Icons.settings,
                                         size: 16,
@@ -161,7 +162,9 @@ class CopyFilesScreen extends StatelessWidget {
                                       ),
                                       label: const Text(
                                         'Advanced Settings',
-                                        style: TextStyle(color: AppColors.accent),
+                                        style: TextStyle(
+                                          color: AppColors.accent,
+                                        ),
                                       ),
                                       style: OutlinedButton.styleFrom(
                                         side: const BorderSide(
@@ -253,7 +256,10 @@ class CopyFilesScreen extends StatelessWidget {
                                       value: 'View',
                                       color: AppColors.accent,
                                       icon: Icons.history,
-                                      onTap: () => showHistoryDialog(context, initialOperation: 'Copy'),
+                                      onTap: () => showHistoryDialog(
+                                        context,
+                                        initialOperation: 'Copy',
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -419,7 +425,13 @@ class CopyFilesScreen extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 4),
-          Icon(Icons.file_copy_rounded, color: context.isDarkMode ? AppColors.info : const Color(0xFF0284C7), size: 22),
+          Icon(
+            Icons.file_copy_rounded,
+            color: context.isDarkMode
+                ? AppColors.info
+                : const Color(0xFF0284C7),
+            size: 22,
+          ),
           const SizedBox(width: 10),
           Text(
             'Copy Files (${currentProfile.name})',
@@ -810,10 +822,7 @@ class CopyFilesScreen extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Divider(
-                              color: context.border,
-                              thickness: 1,
-                            ),
+                            Divider(color: context.border, thickness: 1),
                             const SizedBox(height: 8),
                             // Age filter section
                             Wrap(
@@ -934,10 +943,7 @@ class CopyFilesScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        Divider(
-                          color: context.border,
-                          thickness: 1,
-                        ),
+                        Divider(color: context.border, thickness: 1),
                         const SizedBox(height: 8),
                         // ── Schedule ──
                         _sectionLabel(context, '⏰ Schedule'),
@@ -1047,10 +1053,7 @@ class CopyFilesScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Divider(
-                          color: context.border,
-                          thickness: 1,
-                        ),
+                        Divider(color: context.border, thickness: 1),
                         const SizedBox(height: 8),
                         // ── Completion ──
                         _sectionLabel(context, '✅ Completion'),

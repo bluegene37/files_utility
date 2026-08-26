@@ -4,7 +4,7 @@ import '../services/history_service.dart';
 
 class HistoryProvider with ChangeNotifier {
   final HistoryService _service = HistoryService();
-  
+
   List<RunRecord> _records = [];
   bool _isLoading = true;
 
@@ -13,23 +13,23 @@ class HistoryProvider with ChangeNotifier {
 
   // Aggregate Stats
   int get totalRuns => _records.length;
-  
+
   int get totalFilesTransferred {
     return _records
-      .where((r) => r.operation == 'Transfer')
-      .fold(0, (sum, r) => sum + r.filesProcessed);
+        .where((r) => r.operation == 'Transfer')
+        .fold(0, (sum, r) => sum + r.filesProcessed);
   }
 
   int get totalFilesCopied {
     return _records
-      .where((r) => r.operation == 'Copy')
-      .fold(0, (sum, r) => sum + r.filesProcessed);
+        .where((r) => r.operation == 'Copy')
+        .fold(0, (sum, r) => sum + r.filesProcessed);
   }
 
   int get totalFilesDeleted {
     return _records
-      .where((r) => r.operation == 'Delete')
-      .fold(0, (sum, r) => sum + r.filesProcessed);
+        .where((r) => r.operation == 'Delete')
+        .fold(0, (sum, r) => sum + r.filesProcessed);
   }
 
   int get totalErrors {
@@ -45,7 +45,7 @@ class HistoryProvider with ChangeNotifier {
     notifyListeners();
 
     _records = await _service.loadHistory(allProfiles: allProfiles);
-    
+
     _isLoading = false;
     notifyListeners();
   }

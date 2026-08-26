@@ -7,7 +7,10 @@ import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
 import '../theme/app_theme.dart';
 
-void showHistoryDialog(BuildContext context, {String initialOperation = 'All'}) {
+void showHistoryDialog(
+  BuildContext context, {
+  String initialOperation = 'All',
+}) {
   HistoryProvider? historyProvider;
   try {
     historyProvider = Provider.of<HistoryProvider>(context, listen: false);
@@ -36,10 +39,7 @@ void showHistoryDialog(BuildContext context, {String initialOperation = 'All'}) 
 class HistoryDialog extends StatefulWidget {
   final String initialOperation;
 
-  const HistoryDialog({
-    super.key,
-    this.initialOperation = 'All',
-  });
+  const HistoryDialog({super.key, this.initialOperation = 'All'});
 
   @override
   State<HistoryDialog> createState() => _HistoryDialogState();
@@ -86,7 +86,9 @@ class _HistoryDialogState extends State<HistoryDialog> {
                   if (provider.isLoading) {
                     return Center(
                       child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(context.primaryAccent),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          context.primaryAccent,
+                        ),
                       ),
                     );
                   }
@@ -96,7 +98,12 @@ class _HistoryDialogState extends State<HistoryDialog> {
                   return Column(
                     children: [
                       // Stats Bar
-                      _buildStatsBar(context, provider, filteredRecords, isSpecificScreen),
+                      _buildStatsBar(
+                        context,
+                        provider,
+                        filteredRecords,
+                        isSpecificScreen,
+                      ),
                       Divider(height: 1, color: context.border),
 
                       // History Table
@@ -116,7 +123,11 @@ class _HistoryDialogState extends State<HistoryDialog> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, String profileName, bool isSpecificScreen) {
+  Widget _buildHeader(
+    BuildContext context,
+    String profileName,
+    bool isSpecificScreen,
+  ) {
     final title = isSpecificScreen
         ? '${widget.initialOperation} Run History'
         : 'Run History';
@@ -124,9 +135,7 @@ class _HistoryDialogState extends State<HistoryDialog> {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: context.border, width: 1),
-        ),
+        border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
       child: Row(
         children: [
@@ -143,10 +152,17 @@ class _HistoryDialogState extends State<HistoryDialog> {
           const Spacer(),
           TextButton.icon(
             onPressed: () {
-              final provider = Provider.of<HistoryProvider>(context, listen: false);
+              final provider = Provider.of<HistoryProvider>(
+                context,
+                listen: false,
+              );
               _showClearConfirmation(context, provider);
             },
-            icon: const Icon(Icons.delete_outline, size: 16, color: AppColors.error),
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 16,
+              color: AppColors.error,
+            ),
             label: const Text(
               'Clear History',
               style: TextStyle(color: AppColors.error, fontSize: 13),
@@ -167,11 +183,18 @@ class _HistoryDialogState extends State<HistoryDialog> {
       return allRecords;
     }
     return allRecords
-        .where((r) => r.operation.toLowerCase() == _selectedOperation.toLowerCase())
+        .where(
+          (r) => r.operation.toLowerCase() == _selectedOperation.toLowerCase(),
+        )
         .toList();
   }
 
-  Widget _buildStatsBar(BuildContext context, HistoryProvider provider, List<RunRecord> filtered, bool isSpecificScreen) {
+  Widget _buildStatsBar(
+    BuildContext context,
+    HistoryProvider provider,
+    List<RunRecord> filtered,
+    bool isSpecificScreen,
+  ) {
     final operations = ['All', 'Transfer', 'Copy', 'Delete', 'Count'];
 
     int totalFiles = filtered.fold(0, (sum, r) => sum + r.filesProcessed);
@@ -201,8 +224,12 @@ class _HistoryDialogState extends State<HistoryDialog> {
                   selectedColor: context.primaryAccent.withValues(alpha: 0.2),
                   backgroundColor: context.cardBg,
                   labelStyle: TextStyle(
-                    color: isSelected ? context.primaryAccent : context.textSecondary,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected
+                        ? context.primaryAccent
+                        : context.textSecondary,
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                     fontSize: 12,
                   ),
                   side: BorderSide(
@@ -218,7 +245,10 @@ class _HistoryDialogState extends State<HistoryDialog> {
                 Icon(
                   _getOpIcon(widget.initialOperation),
                   size: 16,
-                  color: _getOpColor(widget.initialOperation, context.isDarkMode),
+                  color: _getOpColor(
+                    widget.initialOperation,
+                    context.isDarkMode,
+                  ),
                 ),
                 const SizedBox(width: 6),
                 Text(
@@ -226,27 +256,55 @@ class _HistoryDialogState extends State<HistoryDialog> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: _getOpColor(widget.initialOperation, context.isDarkMode),
+                    color: _getOpColor(
+                      widget.initialOperation,
+                      context.isDarkMode,
+                    ),
                   ),
                 ),
               ],
             ),
           const Spacer(),
-          _buildSummaryBadge(context, 'Total Runs', filtered.length.toString(), context.isDarkMode ? AppColors.info : const Color(0xFF0284C7)),
+          _buildSummaryBadge(
+            context,
+            'Total Runs',
+            filtered.length.toString(),
+            context.isDarkMode ? AppColors.info : const Color(0xFF0284C7),
+          ),
           const SizedBox(width: 8),
-          _buildSummaryBadge(context, 'Files Processed', NumberFormat('#,##0').format(totalFiles), context.isDarkMode ? AppColors.success : const Color(0xFF16A34A)),
+          _buildSummaryBadge(
+            context,
+            'Files Processed',
+            NumberFormat('#,##0').format(totalFiles),
+            context.isDarkMode ? AppColors.success : const Color(0xFF16A34A),
+          ),
           if (totalFolders > 0) ...[
             const SizedBox(width: 8),
-            _buildSummaryBadge(context, 'Folders', NumberFormat('#,##0').format(totalFolders), context.primaryAccent),
+            _buildSummaryBadge(
+              context,
+              'Folders',
+              NumberFormat('#,##0').format(totalFolders),
+              context.primaryAccent,
+            ),
           ],
           const SizedBox(width: 8),
-          _buildSummaryBadge(context, 'Errors', NumberFormat('#,##0').format(totalErrors), totalErrors > 0 ? AppColors.error : context.textMuted),
+          _buildSummaryBadge(
+            context,
+            'Errors',
+            NumberFormat('#,##0').format(totalErrors),
+            totalErrors > 0 ? AppColors.error : context.textMuted,
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryBadge(BuildContext context, String label, String value, Color color) {
+  Widget _buildSummaryBadge(
+    BuildContext context,
+    String label,
+    String value,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -310,55 +368,91 @@ class _HistoryDialogState extends State<HistoryDialog> {
             DataColumn(
               label: Text(
                 'Status / Op',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: context.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ),
             DataColumn(
               label: Text(
                 'Start Date/Time',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: context.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ),
             DataColumn(
               label: Text(
                 'End Date/Time',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: context.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ),
             DataColumn(
               label: Text(
                 'Duration',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: context.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ),
             DataColumn(
               label: Text(
                 'Source / Target Directory',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: context.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ),
             DataColumn(
               label: Text(
                 'Destination Directory',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: context.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ),
             DataColumn(
               label: Text(
                 'Files',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: context.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ),
             DataColumn(
               label: Text(
                 'Folders',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: context.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ),
             DataColumn(
               label: Text(
                 'Errors',
-                style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: context.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ),
           ],
@@ -367,8 +461,8 @@ class _HistoryDialogState extends State<HistoryDialog> {
             final durationStr = duration.inHours > 0
                 ? '${duration.inHours}h ${duration.inMinutes.remainder(60)}m ${duration.inSeconds.remainder(60)}s'
                 : duration.inMinutes > 0
-                    ? '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s'
-                    : '${duration.inSeconds}s';
+                ? '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s'
+                : '${duration.inSeconds}s';
 
             Color opColor = _getOpColor(record.operation, isDark);
             IconData opIcon = _getOpIcon(record.operation);
@@ -376,8 +470,8 @@ class _HistoryDialogState extends State<HistoryDialog> {
             Color statusColor = record.status == 'Completed'
                 ? (isDark ? AppColors.success : const Color(0xFF16A34A))
                 : record.status == 'Stopped'
-                    ? (isDark ? AppColors.warning : const Color(0xFFD97706))
-                    : AppColors.error;
+                ? (isDark ? AppColors.warning : const Color(0xFFD97706))
+                : AppColors.error;
 
             return DataRow(
               cells: [
@@ -389,10 +483,15 @@ class _HistoryDialogState extends State<HistoryDialog> {
                       Icon(opIcon, color: opColor, size: 16),
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: statusColor.withValues(alpha: 0.1),
-                          border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                          border: Border.all(
+                            color: statusColor.withValues(alpha: 0.5),
+                          ),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -425,7 +524,11 @@ class _HistoryDialogState extends State<HistoryDialog> {
                 DataCell(
                   Text(
                     durationStr,
-                    style: TextStyle(fontSize: 11, color: context.textSecondary, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: context.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 // Source / Target
@@ -434,7 +537,11 @@ class _HistoryDialogState extends State<HistoryDialog> {
                     width: 200,
                     child: Text(
                       record.sourcePath ?? '-',
-                      style: TextStyle(fontSize: 11, fontFamily: 'Consolas', color: context.textPrimary),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontFamily: 'Consolas',
+                        color: context.textPrimary,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -446,7 +553,11 @@ class _HistoryDialogState extends State<HistoryDialog> {
                     width: 200,
                     child: Text(
                       record.destPath ?? '-',
-                      style: TextStyle(fontSize: 11, fontFamily: 'Consolas', color: context.textSecondary),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontFamily: 'Consolas',
+                        color: context.textSecondary,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -456,14 +567,21 @@ class _HistoryDialogState extends State<HistoryDialog> {
                 DataCell(
                   Text(
                     NumberFormat('#,##0').format(record.filesProcessed),
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: context.textPrimary,
+                    ),
                   ),
                 ),
                 // Folders Count
                 DataCell(
                   Text(
                     NumberFormat('#,##0').format(record.foldersProcessed),
-                    style: TextStyle(fontSize: 11, color: context.textSecondary),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: context.textSecondary,
+                    ),
                   ),
                 ),
                 // Errors
@@ -473,7 +591,9 @@ class _HistoryDialogState extends State<HistoryDialog> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
-                      color: record.errors > 0 ? AppColors.error : context.textMuted,
+                      color: record.errors > 0
+                          ? AppColors.error
+                          : context.textMuted,
                     ),
                   ),
                 ),

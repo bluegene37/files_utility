@@ -13,7 +13,9 @@ class ThemeProvider with ChangeNotifier {
 
   Future<void> _loadThemeMode() async {
     try {
-      final savedMode = await AppSqliteService().getGlobalSetting('app_theme_mode');
+      final savedMode = await AppSqliteService().getGlobalSetting(
+        'app_theme_mode',
+      );
       if (savedMode == 'light') {
         _themeMode = ThemeMode.light;
       } else if (savedMode == 'system') {
