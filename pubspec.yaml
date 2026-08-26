@@ -1,6 +1,9 @@
 name: "files_utility"
 description: "Desktop utility for transferring, copying, counting, and cleaning up files between servers, network shares, and NAS locations."
 publish_to: "none"
+# Single source of truth for the app version. When bumping, also update:
+#   - msix_config.msix_version below (four segments, e.g. 1.0.0.0)
+#   - lib/app_info.dart appVersion (shown in UI, window title, log headers)
 version: "1.0.0+1"
 environment:
   sdk: "^3.10.8"
@@ -28,33 +31,42 @@ dev_dependencies:
   inno_bundle: ^0.12.0
   flutter_launcher_icons: ^0.14.4
 
+# Icon source: assets/icon/app_icon.png is the processed (full-bleed) copy of
+# assets/images/app_icon.png. Regenerate icons with:
+#   dart run flutter_launcher_icons
 flutter_launcher_icons:
-  image_path: "assets/images/app_icon.png"
+  image_path: "assets/icon/app_icon.png"
   windows:
     generate: true
-    image_path: "assets/images/app_icon.png"
+    image_path: "assets/icon/app_icon.png"
     icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+  web:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
 flutter:
   uses-material-design: true
   assets:
     - "assets/images/app_icon.png"
 msix_config:
   display_name: "Files Utility"
-  publisher_display_name: "CodeGenexis"
-  identity_name: "FilesUtility"
+  publisher_display_name: "genexis.dev"
+  identity_name: "dev.genexis.filesutility"
+  # Keep in sync with version: above (four segments).
   msix_version: "1.0.0.0"
   logo_path: "windows/runner/resources/app_icon.ico"
   capabilities: "internetClient"
 inno_bundle:
+  # AppId GUID — the installer's upgrade identity. It MUST NEVER change, or
+  # existing installs will not be upgraded in place. Unique to this app.
   id: "45c1dad5-92eb-46d2-b870-e4db4aaeeadd"
   name: "Files Utility"
-  publisher: "CodeGenexis"
+  publisher: "genexis.dev"
   installer_icon: "windows/runner/resources/app_icon.ico"
   admin: "auto"
   languages:
     - "english"
 
-# flutter build windows --release
-# dart run inno_bundle
-# or 
-# dart run inno_bundle:build --release --no-app
+# Build commands: see RELEASING.md

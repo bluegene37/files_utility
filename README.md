@@ -52,34 +52,26 @@ flutter test
 flutter run -d windows   # or -d macos
 ```
 
-## Releasing (Windows)
+## Releasing
 
-Version lives in two places — keep them in sync:
+Files Utility ships for **Windows** (Inno Setup `setup.exe`, optional MSIX) and
+**macOS** (drag-to-`/Applications` DMG). Full details — versioning rules,
+signing status, pre-release checklist — live in [RELEASING.md](RELEASING.md).
 
-1. `pubspec.yaml` → `version:` (and `msix_version` for MSIX)
-2. `lib/app_info.dart` → `AppInfo.appVersion` (shown in the UI and log headers)
-
-Build the app and the Inno Setup installer (requires
-[Inno Setup](https://jrsoftware.org/isinfo.php) installed on the build machine):
+Quick reference:
 
 ```bash
+# Windows (on a Windows machine, Inno Setup 6 installed)
 flutter build windows --release
-dart run inno_bundle:build --release --no-app
+dart run inno_bundle:build --release --no-app   # → build/windows/x64/installer/
+
+# macOS
+./scripts/build_macos_dmg.sh                    # → build/macos/Files Utility-<version>.dmg
 ```
 
-The installer lands in `build/windows/x64/installer/`. Alternatively build an
-MSIX package for store/enterprise distribution:
+Pushing a `v*` tag (e.g. `v1.1.0`) triggers the GitHub Actions release
+workflow: tests run on Windows and macOS runners, both packages are built, and
+the installer + DMG are attached to a GitHub Release.
 
-```bash
-dart run msix:create
-```
-
-Regenerate the Windows app icon after changing `assets/images/app_icon.png`:
-
-```bash
-dart run flutter_launcher_icons
-```
-
-Tagging a release as `v*` (e.g. `v1.1.0`) triggers the GitHub Actions release
-workflow, which builds the Windows app + installer and attaches the installer
-to a GitHub Release.
+Icons are generated from `assets/icon/app_icon.png` with
+`dart run flutter_launcher_icons`.
