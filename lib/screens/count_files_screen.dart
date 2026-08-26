@@ -49,12 +49,12 @@ class CountFilesScreen extends StatelessWidget {
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              const Text(
+                              Text(
                                 'Log Every',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
-                                  color: AppColors.textSecondary,
+                                  color: context.textSecondary,
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -70,14 +70,14 @@ class CountFilesScreen extends StatelessWidget {
                                       vertical: 8,
                                     ),
                                   ),
-                                  dropdownColor: AppColors.bgDark2,
+                                  dropdownColor: context.cardBg,
                                   items: [1, 5, 10, 25, 50, 100].map((int value) {
                                     return DropdownMenuItem<int>(
                                       value: value,
                                       child: Text(
                                         value.toString(),
-                                        style: const TextStyle(
-                                          color: AppColors.textPrimary,
+                                        style: TextStyle(
+                                          color: context.textPrimary,
                                           fontSize: 13,
                                         ),
                                       ),
@@ -93,26 +93,26 @@ class CountFilesScreen extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 6),
-                              const Text(
+                              Text(
                                 'files',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: AppColors.textSecondary,
+                                  color: context.textSecondary,
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              const Icon(
+                              Icon(
                                 Icons.info_outline,
                                 size: 14,
-                                color: AppColors.textMuted,
+                                color: context.textMuted,
                               ),
                               const SizedBox(width: 4),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'Controls how often progress is logged to the console (larger numbers run faster)',
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: AppColors.textMuted,
+                                    color: context.textMuted,
                                     fontStyle: FontStyle.italic,
                                   ),
                                   maxLines: 1,
@@ -179,9 +179,9 @@ class CountFilesScreen extends StatelessWidget {
                         Expanded(
                           child: Text(
                             provider.currentStatus,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
+                              color: context.textPrimary,
                               fontSize: 13,
                             ),
                             maxLines: 1,

@@ -268,7 +268,7 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                       icon: Icon(
                                         Icons.delete_outline,
                                         color: profiles.length <= 1 || _selectedProfileId == null
-                                            ? AppColors.textMuted
+                                            ? context.textMuted
                                             : AppColors.error,
                                       ),
                                       style: IconButton.styleFrom(
@@ -279,7 +279,7 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                           borderRadius: BorderRadius.circular(10),
                                           side: BorderSide(
                                             color: profiles.length <= 1 || _selectedProfileId == null
-                                                ? AppColors.cardBorder
+                                                ? context.border
                                                 : AppColors.error.withValues(alpha: 0.3),
                                           ),
                                         ),
@@ -289,14 +289,14 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                 ],
                               ),
                               const SizedBox(height: 24),
-                              const Row(
+                              Row(
                                 children: [
-                                  Expanded(child: Divider(color: AppColors.cardBorder)),
+                                  Expanded(child: Divider(color: context.border)),
                                   Padding(
-                                    padding: EdgeInsets.symmetric(horizontal: 12),
-                                    child: Text('OR', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    child: Text('OR', style: TextStyle(color: context.textMuted, fontSize: 12)),
                                   ),
-                                  Expanded(child: Divider(color: AppColors.cardBorder)),
+                                  Expanded(child: Divider(color: context.border)),
                                 ],
                               ),
                               const SizedBox(height: 24),

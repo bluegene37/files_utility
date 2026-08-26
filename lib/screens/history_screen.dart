@@ -584,7 +584,7 @@ class _HistoryScreenState extends State<HistoryScreen>
       case 'Count':
         return isDark ? AppColors.success : const Color(0xFF16A34A);
       default:
-        return AppColors.textMuted;
+        return isDark ? AppColors.textMuted : AppColors.lightTextMuted;
     }
   }
 

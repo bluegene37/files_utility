@@ -190,6 +190,14 @@ class AppTheme {
         color: AppColors.cardBorder,
         thickness: 1,
       ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: AppColors.bgDark2,
+        textStyle: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: AppColors.cardBorder),
+        ),
+      ),
       toggleButtonsTheme: ToggleButtonsThemeData(
         selectedColor: AppColors.accent,
         color: AppColors.textSecondary,
@@ -321,6 +329,14 @@ class AppTheme {
       dividerTheme: const DividerThemeData(
         color: AppColors.lightCardBorder,
         thickness: 1,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: AppColors.lightSurface,
+        textStyle: const TextStyle(color: AppColors.lightTextPrimary, fontSize: 13),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: AppColors.lightCardBorder),
+        ),
       ),
       toggleButtonsTheme: ToggleButtonsThemeData(
         selectedColor: AppColors.lightAccent,

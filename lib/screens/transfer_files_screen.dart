@@ -101,12 +101,12 @@ class TransferFilesScreen extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 16),
-                                    const Text(
+                                    Text(
                                       'Log Every',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                        color: context.textSecondary,
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -122,7 +122,7 @@ class TransferFilesScreen extends StatelessWidget {
                                             vertical: 8,
                                           ),
                                         ),
-                                        dropdownColor: AppColors.bgDark2,
+                                        dropdownColor: context.cardBg,
                                         items: [1, 5, 10, 25, 50, 100].map((
                                           int value,
                                         ) {
@@ -130,8 +130,8 @@ class TransferFilesScreen extends StatelessWidget {
                                             value: value,
                                             child: Text(
                                               value.toString(),
-                                              style: const TextStyle(
-                                                color: AppColors.textPrimary,
+                                              style: TextStyle(
+                                                color: context.textPrimary,
                                                 fontSize: 13,
                                               ),
                                             ),
@@ -147,26 +147,26 @@ class TransferFilesScreen extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 6),
-                                    const Text(
+                                    Text(
                                       'files',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                        color: context.textSecondary,
                                       ),
                                     ),
                                      const SizedBox(width: 12),
-                                     const Icon(
+                                     Icon(
                                        Icons.info_outline,
                                        size: 14,
-                                       color: AppColors.textMuted,
+                                       color: context.textMuted,
                                      ),
                                      const SizedBox(width: 4),
-                                     const Expanded(
+                                     Expanded(
                                        child: Text(
                                          'Controls how often progress is logged to the console',
                                          style: TextStyle(
                                            fontSize: 11,
-                                           color: AppColors.textMuted,
+                                           color: context.textMuted,
                                            fontStyle: FontStyle.italic,
                                          ),
                                          maxLines: 1,
@@ -260,9 +260,9 @@ class TransferFilesScreen extends StatelessWidget {
                         Expanded(
                           child: Text(
                             provider.currentStatus,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
+                              color: context.textPrimary,
                               fontSize: 13,
                             ),
                             maxLines: 1,
@@ -327,28 +327,28 @@ class TransferFilesScreen extends StatelessWidget {
         child: InputDecorator(
           decoration: InputDecoration(
             labelText: label,
-            suffixIcon: const Icon(
+            suffixIcon: Icon(
               Icons.calendar_today,
               size: 16,
-              color: AppColors.textMuted,
+              color: context.textMuted,
             ),
           ),
           child: Text(
             dateFormat.format(date),
-            style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+            style: TextStyle(color: context.textPrimary, fontSize: 13),
           ),
         ),
       ),
     );
   }
 
-  Widget _sectionLabel(String text) {
+  Widget _sectionLabel(BuildContext context, String text) {
     return Text(
       text,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w600,
-        color: AppColors.textMuted,
+        color: context.textMuted,
         letterSpacing: 0.5,
       ),
     );
@@ -422,7 +422,7 @@ class TransferFilesScreen extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         // ── Scan Options ──
-                        _sectionLabel('📁 Scan Options'),
+                        _sectionLabel(context, '📁 Scan Options'),
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -442,12 +442,12 @@ class TransferFilesScreen extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 6),
-                            const Text(
+                            Text(
                               'Source folder only',
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13,
-                                color: AppColors.textSecondary,
+                                color: context.textSecondary,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -456,9 +456,9 @@ class TransferFilesScreen extends StatelessWidget {
                                 provider.excludeSubfolders
                                     ? 'Only files directly in the source folder will be scanned'
                                     : 'All files including subfolders will be scanned',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11,
-                                  color: AppColors.textMuted,
+                                  color: context.textMuted,
                                   fontStyle: FontStyle.italic,
                                 ),
                               ),
@@ -466,13 +466,13 @@ class TransferFilesScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        const Divider(
-                          color: AppColors.cardBorder,
+                        Divider(
+                          color: context.border,
                           thickness: 1,
                         ),
                         const SizedBox(height: 8),
                         // ── File Date Filter ──
-                        _sectionLabel('📅 File Date Filter'),
+                        _sectionLabel(context, '📅 File Date Filter'),
                         const SizedBox(height: 8),
                         Wrap(
                           crossAxisAlignment: WrapCrossAlignment.center,
@@ -499,12 +499,12 @@ class TransferFilesScreen extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 6),
-                                const Text(
+                                Text(
                                   'Date Range',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 13,
-                                    color: AppColors.textSecondary,
+                                    color: context.textSecondary,
                                   ),
                                 ),
                               ],
@@ -540,8 +540,8 @@ class TransferFilesScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        const Divider(
-                          color: AppColors.cardBorder,
+                        Divider(
+                          color: context.border,
                           thickness: 1,
                         ),
                         const SizedBox(height: 8),
@@ -570,12 +570,12 @@ class TransferFilesScreen extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 6),
-                                const Text(
+                                Text(
                                   'Older than',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 13,
-                                    color: AppColors.textSecondary,
+                                    color: context.textSecondary,
                                   ),
                                 ),
                               ],
@@ -592,15 +592,15 @@ class TransferFilesScreen extends StatelessWidget {
                                     vertical: 8,
                                   ),
                                 ),
-                                dropdownColor: AppColors.bgDark2,
+                                dropdownColor: context.cardBg,
                                 items: List.generate(31, (index) => index + 1)
                                     .map((int value) {
                                       return DropdownMenuItem<int>(
                                         value: value,
                                         child: Text(
                                           value.toString(),
-                                          style: const TextStyle(
-                                            color: AppColors.textPrimary,
+                                          style: TextStyle(
+                                            color: context.textPrimary,
                                             fontSize: 13,
                                           ),
                                         ),
@@ -630,7 +630,7 @@ class TransferFilesScreen extends StatelessWidget {
                                     vertical: 8,
                                   ),
                                 ),
-                                dropdownColor: AppColors.bgDark2,
+                                dropdownColor: context.cardBg,
                                 items: ['Days', 'Months', 'Years'].map((
                                   String value,
                                 ) {
@@ -638,8 +638,8 @@ class TransferFilesScreen extends StatelessWidget {
                                     value: value,
                                     child: Text(
                                       value,
-                                      style: const TextStyle(
-                                        color: AppColors.textPrimary,
+                                      style: TextStyle(
+                                        color: context.textPrimary,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -659,13 +659,13 @@ class TransferFilesScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        const Divider(
-                          color: AppColors.cardBorder,
+                        Divider(
+                          color: context.border,
                           thickness: 1,
                         ),
                         const SizedBox(height: 8),
                         // ── Schedule ──
-                        _sectionLabel('⏰ Schedule'),
+                        _sectionLabel(context, '⏰ Schedule'),
                         const SizedBox(height: 8),
                         // Run Time row
                         IntrinsicHeight(
@@ -687,12 +687,12 @@ class TransferFilesScreen extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 6),
-                              const Text(
+                              Text(
                                 'Run Time',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
-                                  color: AppColors.textSecondary,
+                                  color: context.textSecondary,
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -768,23 +768,23 @@ class TransferFilesScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        const Divider(
-                          color: AppColors.cardBorder,
+                        Divider(
+                          color: context.border,
                           thickness: 1,
                         ),
                         const SizedBox(height: 8),
                         // ── Completion ──
-                        _sectionLabel('✅ Completion'),
+                        _sectionLabel(context, '✅ Completion'),
                         const SizedBox(height: 8),
                         // When Complete row
                         Row(
                           children: [
-                            const Text(
+                            Text(
                               'When Complete',
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13,
-                                color: AppColors.textSecondary,
+                                color: context.textSecondary,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -842,9 +842,9 @@ class TransferFilesScreen extends StatelessWidget {
                                 provider.onCompletionAction == 'pause'
                                     ? 'Will re-run at the next start time'
                                     : 'Will stop after completion',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: AppColors.textMuted,
+                                  color: context.textMuted,
                                   fontStyle: FontStyle.italic,
                                 ),
                               ),

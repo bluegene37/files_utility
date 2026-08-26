@@ -71,12 +71,12 @@ class CopyFilesScreen extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 6),
-                                    const Text(
+                                    Text(
                                       'Multiple Directories',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                        color: context.textSecondary,
                                       ),
                                     ),
                                   ],
@@ -111,14 +111,14 @@ class CopyFilesScreen extends StatelessWidget {
                                       Icon(
                                         Icons.folder_copy,
                                         size: 18,
-                                        color: AppColors.textMuted,
+                                        color: context.textMuted,
                                       ),
                                       const SizedBox(width: 6),
                                       Text(
                                         '${provider.directoryPairs.length} pair${provider.directoryPairs.length == 1 ? '' : 's'} configured',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 13,
-                                          color: AppColors.textSecondary,
+                                          color: context.textSecondary,
                                         ),
                                       ),
                                       const SizedBox(width: 12),
@@ -175,12 +175,12 @@ class CopyFilesScreen extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 16),
-                                    const Text(
+                                    Text(
                                       'Log Every',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                        color: context.textSecondary,
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -196,7 +196,7 @@ class CopyFilesScreen extends StatelessWidget {
                                             vertical: 8,
                                           ),
                                         ),
-                                        dropdownColor: AppColors.bgDark2,
+                                        dropdownColor: context.cardBg,
                                         items: [1, 5, 10, 25, 50, 100].map((
                                           int value,
                                         ) {
@@ -204,8 +204,8 @@ class CopyFilesScreen extends StatelessWidget {
                                             value: value,
                                             child: Text(
                                               value.toString(),
-                                              style: const TextStyle(
-                                                color: AppColors.textPrimary,
+                                              style: TextStyle(
+                                                color: context.textPrimary,
                                                 fontSize: 13,
                                               ),
                                             ),
@@ -221,26 +221,26 @@ class CopyFilesScreen extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 6),
-                                    const Text(
+                                    Text(
                                       'files',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                        color: context.textSecondary,
                                       ),
                                     ),
                                     const SizedBox(width: 12),
-                                    const Icon(
+                                    Icon(
                                       Icons.info_outline,
                                       size: 14,
-                                      color: AppColors.textMuted,
+                                      color: context.textMuted,
                                     ),
                                     const SizedBox(width: 4),
-                                    const Expanded(
+                                    Expanded(
                                       child: Text(
                                         'Controls how often progress is logged to the console',
                                         style: TextStyle(
                                           fontSize: 11,
-                                          color: AppColors.textMuted,
+                                          color: context.textMuted,
                                           fontStyle: FontStyle.italic,
                                         ),
                                         maxLines: 1,
@@ -348,9 +348,9 @@ class CopyFilesScreen extends StatelessWidget {
                         Expanded(
                           child: Text(
                             provider.currentStatus,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
+                              color: context.textPrimary,
                               fontSize: 13,
                             ),
                             maxLines: 1,
@@ -377,7 +377,7 @@ class CopyFilesScreen extends StatelessWidget {
                         StatBadge(
                           title: 'Skipped',
                           value: provider.filesSkipped.toString(),
-                          color: AppColors.textMuted,
+                          color: AppColors.warning,
                           icon: Icons.skip_next,
                         ),
                         const SizedBox(width: 6),
@@ -385,11 +385,11 @@ class CopyFilesScreen extends StatelessWidget {
                           title: 'Errors',
                           value: provider.errors.toString(),
                           color: AppColors.error,
-                          icon: Icons.error,
+                          icon: Icons.error_outline,
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
 
                     // Logs
                     Expanded(child: LogConsole(logs: provider.logs)),
@@ -464,28 +464,28 @@ class CopyFilesScreen extends StatelessWidget {
         child: InputDecorator(
           decoration: InputDecoration(
             labelText: label,
-            suffixIcon: const Icon(
+            suffixIcon: Icon(
               Icons.calendar_today,
               size: 16,
-              color: AppColors.textMuted,
+              color: context.textMuted,
             ),
           ),
           child: Text(
             dateFormat.format(date),
-            style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+            style: TextStyle(color: context.textPrimary, fontSize: 13),
           ),
         ),
       ),
     );
   }
 
-  Widget _sectionLabel(String text) {
+  Widget _sectionLabel(BuildContext context, String text) {
     return Text(
       text,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w600,
-        color: AppColors.textMuted,
+        color: context.textMuted,
         letterSpacing: 0.5,
       ),
     );
@@ -542,18 +542,18 @@ class CopyFilesScreen extends StatelessWidget {
                           children: [
                             Text(
                               'Pair ${i + 1}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
-                                color: AppColors.textMuted,
+                                color: context.textMuted,
                               ),
                             ),
                             const SizedBox(width: 12),
-                            const Text(
+                            Text(
                               'Run Order:',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: AppColors.textSecondary,
+                                color: context.textSecondary,
                               ),
                             ),
                             const SizedBox(width: 4),
@@ -563,10 +563,10 @@ class CopyFilesScreen extends StatelessWidget {
                               child: DropdownButton<int>(
                                 value: provider.directoryPairs[i].runOrder,
                                 isDense: true,
-                                dropdownColor: AppColors.bgDark2,
+                                dropdownColor: context.cardBg,
                                 underline: Container(
                                   height: 1,
-                                  color: AppColors.cardBorder,
+                                  color: context.border,
                                 ),
                                 items: List.generate(10, (n) => n + 1)
                                     .map(
@@ -574,9 +574,9 @@ class CopyFilesScreen extends StatelessWidget {
                                         value: v,
                                         child: Text(
                                           '$v',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 13,
-                                            color: AppColors.textPrimary,
+                                            color: context.textPrimary,
                                           ),
                                         ),
                                       ),
@@ -680,7 +680,7 @@ class CopyFilesScreen extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         // ── File Date Filter ──
-                        _sectionLabel('📅 File Date Filter'),
+                        _sectionLabel(context, '📅 File Date Filter'),
                         const SizedBox(height: 8),
                         // Date range and Age filter
                         Column(
@@ -712,12 +712,12 @@ class CopyFilesScreen extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 6),
-                                    const Text(
+                                    Text(
                                       'Date Range',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                        color: context.textSecondary,
                                       ),
                                     ),
                                   ],
@@ -769,11 +769,11 @@ class CopyFilesScreen extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 4),
-                                    const Text(
+                                    Text(
                                       'Today',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                        color: context.textSecondary,
                                       ),
                                     ),
                                   ],
@@ -798,11 +798,11 @@ class CopyFilesScreen extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 4),
-                                    const Text(
+                                    Text(
                                       'Yesterday',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                        color: context.textSecondary,
                                       ),
                                     ),
                                   ],
@@ -810,8 +810,8 @@ class CopyFilesScreen extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            const Divider(
-                              color: AppColors.cardBorder,
+                            Divider(
+                              color: context.border,
                               thickness: 1,
                             ),
                             const SizedBox(height: 8),
@@ -841,12 +841,12 @@ class CopyFilesScreen extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 6),
-                                    const Text(
+                                    Text(
                                       'Older than',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                        color: context.textSecondary,
                                       ),
                                     ),
                                   ],
@@ -863,7 +863,7 @@ class CopyFilesScreen extends StatelessWidget {
                                         vertical: 8,
                                       ),
                                     ),
-                                    dropdownColor: AppColors.bgDark2,
+                                    dropdownColor: context.cardBg,
                                     items:
                                         List.generate(
                                           31,
@@ -873,8 +873,8 @@ class CopyFilesScreen extends StatelessWidget {
                                             value: value,
                                             child: Text(
                                               value.toString(),
-                                              style: const TextStyle(
-                                                color: AppColors.textPrimary,
+                                              style: TextStyle(
+                                                color: context.textPrimary,
                                                 fontSize: 13,
                                               ),
                                             ),
@@ -903,7 +903,7 @@ class CopyFilesScreen extends StatelessWidget {
                                         vertical: 8,
                                       ),
                                     ),
-                                    dropdownColor: AppColors.bgDark2,
+                                    dropdownColor: context.cardBg,
                                     items: ['Days', 'Months', 'Years'].map((
                                       String value,
                                     ) {
@@ -911,8 +911,8 @@ class CopyFilesScreen extends StatelessWidget {
                                         value: value,
                                         child: Text(
                                           value,
-                                          style: const TextStyle(
-                                            color: AppColors.textPrimary,
+                                          style: TextStyle(
+                                            color: context.textPrimary,
                                             fontSize: 13,
                                           ),
                                         ),
@@ -934,13 +934,13 @@ class CopyFilesScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        const Divider(
-                          color: AppColors.cardBorder,
+                        Divider(
+                          color: context.border,
                           thickness: 1,
                         ),
                         const SizedBox(height: 8),
                         // ── Schedule ──
-                        _sectionLabel('⏰ Schedule'),
+                        _sectionLabel(context, '⏰ Schedule'),
                         const SizedBox(height: 8),
                         // Run time
                         IntrinsicHeight(
@@ -962,12 +962,12 @@ class CopyFilesScreen extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 6),
-                              const Text(
+                              Text(
                                 'Run Time',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
-                                  color: AppColors.textSecondary,
+                                  color: context.textSecondary,
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -1047,23 +1047,23 @@ class CopyFilesScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        const Divider(
-                          color: AppColors.cardBorder,
+                        Divider(
+                          color: context.border,
                           thickness: 1,
                         ),
                         const SizedBox(height: 8),
                         // ── Completion ──
-                        _sectionLabel('✅ Completion'),
+                        _sectionLabel(context, '✅ Completion'),
                         const SizedBox(height: 8),
                         // Completion action
                         Row(
                           children: [
-                            const Text(
+                            Text(
                               'When Complete',
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13,
-                                color: AppColors.textSecondary,
+                                color: context.textSecondary,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -1121,9 +1121,9 @@ class CopyFilesScreen extends StatelessWidget {
                                 provider.onCompletionAction == 'pause'
                                     ? 'Will re-run at the next start time'
                                     : 'Will stop after completion',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: AppColors.textMuted,
+                                  color: context.textMuted,
                                   fontStyle: FontStyle.italic,
                                 ),
                               ),

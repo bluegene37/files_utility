@@ -78,12 +78,12 @@ class DeleteFilesScreen extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 16),
-                              const Text(
+                              Text(
                                 'Log Every',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
-                                  color: AppColors.textSecondary,
+                                  color: context.textSecondary,
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -99,7 +99,7 @@ class DeleteFilesScreen extends StatelessWidget {
                                       vertical: 8,
                                     ),
                                   ),
-                                  dropdownColor: AppColors.bgDark2,
+                                  dropdownColor: context.cardBg,
                                   items: [1, 5, 10, 25, 50, 100].map((
                                     int value,
                                   ) {
@@ -107,8 +107,8 @@ class DeleteFilesScreen extends StatelessWidget {
                                       value: value,
                                       child: Text(
                                         value.toString(),
-                                        style: const TextStyle(
-                                          color: AppColors.textPrimary,
+                                        style: TextStyle(
+                                          color: context.textPrimary,
                                           fontSize: 13,
                                         ),
                                       ),
@@ -124,26 +124,26 @@ class DeleteFilesScreen extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 6),
-                              const Text(
+                              Text(
                                 'files',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: AppColors.textSecondary,
+                                  color: context.textSecondary,
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              const Icon(
+                              Icon(
                                 Icons.info_outline,
                                 size: 14,
-                                color: AppColors.textMuted,
+                                color: context.textMuted,
                               ),
                               const SizedBox(width: 4),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'Controls how often progress is logged to the console',
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: AppColors.textMuted,
+                                    color: context.textMuted,
                                     fontStyle: FontStyle.italic,
                                   ),
                                   maxLines: 1,
@@ -217,9 +217,9 @@ class DeleteFilesScreen extends StatelessWidget {
                         Expanded(
                           child: Text(
                             provider.currentStatus,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
+                              color: context.textPrimary,
                               fontSize: 13,
                             ),
                             maxLines: 1,
@@ -258,13 +258,13 @@ class DeleteFilesScreen extends StatelessWidget {
     );
   }
 
-  Widget _sectionLabel(String text) {
+  Widget _sectionLabel(BuildContext context, String text) {
     return Text(
       text,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w600,
-        color: AppColors.textMuted,
+        color: context.textMuted,
         letterSpacing: 0.5,
       ),
     );
@@ -325,23 +325,23 @@ class DeleteFilesScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Are you sure you want to delete EVERYTHING inside:',
-              style: TextStyle(color: AppColors.textSecondary),
+              style: TextStyle(color: context.textSecondary),
             ),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: AppColors.bgDark1,
+                color: context.containerBg,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.cardBorder),
+                border: Border.all(color: context.border),
               ),
               child: Text(
                 provider.targetPath ?? '',
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+                  color: context.textPrimary,
                   fontFamily: 'Consolas',
                   fontSize: 13,
                 ),
@@ -350,9 +350,9 @@ class DeleteFilesScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Filter: Files up to Year ${provider.selectedYear} matching months: ${provider.validMonths.join(', ')}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontStyle: FontStyle.italic,
-                color: AppColors.textMuted,
+                color: context.textMuted,
                 fontSize: 13,
               ),
             ),
@@ -435,7 +435,7 @@ class DeleteFilesScreen extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         // ── File Date Filter ──
-                        _sectionLabel('📅 File Date Filter'),
+                        _sectionLabel(context, '📅 File Date Filter'),
                         const SizedBox(height: 8),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -447,14 +447,14 @@ class DeleteFilesScreen extends StatelessWidget {
                                 decoration: const InputDecoration(
                                   labelText: 'Year',
                                 ),
-                                dropdownColor: AppColors.bgDark2,
+                                dropdownColor: context.cardBg,
                                 items: provider.availableYears.map((int value) {
                                   return DropdownMenuItem<int>(
                                     value: value,
                                     child: Text(
                                       value.toString(),
-                                      style: const TextStyle(
-                                        color: AppColors.textPrimary,
+                                      style: TextStyle(
+                                        color: context.textPrimary,
                                       ),
                                     ),
                                   );
@@ -469,11 +469,11 @@ class DeleteFilesScreen extends StatelessWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'Months:',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w600,
-                                      color: AppColors.textSecondary,
+                                      color: context.textSecondary,
                                       fontSize: 13,
                                     ),
                                   ),
