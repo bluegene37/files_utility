@@ -59,6 +59,22 @@ class AppSqliteService {
               PRIMARY KEY (profile_id, key)
             )
           ''');
+
+          // App-wide global settings table (e.g. theme mode)
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS global_settings (
+              key TEXT PRIMARY KEY,
+              value TEXT
+            )
+          ''');
+        },
+        onOpen: (db) async {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS global_settings (
+              key TEXT PRIMARY KEY,
+              value TEXT
+            )
+          ''');
         },
       );
 
@@ -237,6 +253,30 @@ class AppSqliteService {
       'profile_configs',
       where: 'profile_id = ? AND key = ?',
       whereArgs: [profileId, key],
+    );
+  }
+
+  // --- Global Settings Operations ---
+
+  Future<String?> getGlobalSetting(String key) async {
+    final db = await database;
+    final rows = await db.query(
+      'global_settings',
+      where: 'key = ?',
+      whereArgs: [key],
+    );
+    if (rows.isNotEmpty) {
+      return rows.first['value'] as String?;
+    }
+    return null;
+  }
+
+  Future<void> setGlobalSetting(String key, String value) async {
+    final db = await database;
+    await db.insert(
+      'global_settings',
+      {'key': key, 'value': value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 }

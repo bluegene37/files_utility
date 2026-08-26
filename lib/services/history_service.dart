@@ -15,12 +15,12 @@ class HistoryService {
   bool _isInitializing = false;
 
   static String get _baseDirectory {
-    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'file_transfer');
+    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'files_utility');
     return p.join(appDir, 'database');
   }
 
   static String get _legacyLogDirectory {
-    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'file_transfer');
+    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'files_utility');
     return p.join(appDir, 'logs');
   }
 

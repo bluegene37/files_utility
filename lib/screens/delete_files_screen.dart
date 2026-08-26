@@ -349,7 +349,7 @@ class DeleteFilesScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Filter: Year ${provider.selectedYear}, Months: ${provider.validMonths.join(', ')}',
+              'Filter: Files up to Year ${provider.selectedYear} matching months: ${provider.validMonths.join(', ')}',
               style: const TextStyle(
                 fontStyle: FontStyle.italic,
                 color: AppColors.textMuted,

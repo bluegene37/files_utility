@@ -170,14 +170,14 @@ class CopyFilesProvider with ChangeNotifier {
   final NumberFormat _numFmt = NumberFormat('#,##0');
 
   static String get _progressDir {
-    final appDir = GlobalDbService().appDirPath ?? r'C:\temp\file transfer';
-    return '$appDir\\progress';
+    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'files_utility');
+    return p.join(appDir, 'progress');
   }
 
   /// Returns the progress file path for a given pair index.
   static String _progressFilePath(int pairIndex) {
     final profileId = LocalDbService().currentProfileId;
-    return '$_progressDir\\copy_progress_pair${pairIndex}_$profileId.json';
+    return p.join(_progressDir, 'copy_progress_pair${pairIndex}_$profileId.json');
   }
 
   /// Loads progress data from a progress file.
@@ -231,7 +231,7 @@ class CopyFilesProvider with ChangeNotifier {
     }
   }
 
-  /// Deletes the progress file for a pair (called on successful completion).
+  /// Deletes the progress file (called when pair completes).
   static void _deleteProgressFile(String filePath) {
     try {
       final file = File(filePath);
@@ -319,10 +319,16 @@ class CopyFilesProvider with ChangeNotifier {
 
   CopyFilesProvider() {
     _loadSettings();
+    LocalDbService().addListener(_onProfileChanged);
+  }
+
+  void _onProfileChanged() {
+    reloadSettings();
   }
 
   @override
   void dispose() {
+    LocalDbService().removeListener(_onProfileChanged);
     _scheduleTimer?.cancel();
     _completionRescheduleTimer?.cancel();
     for (final worker in _activeWorkers) {
@@ -330,6 +336,7 @@ class CopyFilesProvider with ChangeNotifier {
       worker.subscription.cancel();
       worker.receivePort.close();
     }
+    _activeWorkers.clear();
     super.dispose();
   }
 
@@ -421,6 +428,10 @@ class CopyFilesProvider with ChangeNotifier {
     onCompletionAction = db.getString('copy_onCompletionAction') ?? 'pause';
 
     notifyListeners();
+  }
+
+  Future<void> reloadSettings() async {
+    await _loadSettings();
   }
 
   Future<void> _saveSettings() async {
@@ -967,8 +978,21 @@ class CopyFilesProvider with ChangeNotifier {
     Set<String> createdDirs,
     List<_CopyTask> batch,
     Set<String> completedDirs,
-    Map<String, String> lastProcessedFiles,
-  ) async {
+    Map<String, String> lastProcessedFiles, [
+    Set<String>? visitedCanonicalPaths,
+  ]) async {
+    final visited = visitedCanonicalPaths ?? <String>{};
+    String canonicalPath;
+    try {
+      canonicalPath = await dir.resolveSymbolicLinks();
+    } catch (_) {
+      canonicalPath = p.canonicalize(dir.path);
+    }
+    if (visited.contains(canonicalPath)) {
+      return; // Symlink loop protection
+    }
+    visited.add(canonicalPath);
+
     // ── Resume: skip directories that were fully processed in a prior run ──
     final String relPath = p.relative(dir.path, from: params.sourcePath);
     if (completedDirs.contains(relPath)) {
@@ -977,7 +1001,7 @@ class CopyFilesProvider with ChangeNotifier {
     }
     List<FileSystemEntity> entities;
     try {
-      entities = await dir.list(followLinks: true).toList();
+      entities = await dir.list(followLinks: false).toList();
     } catch (e) {
       counts.errors++;
       params.sendPort.send(
@@ -1034,7 +1058,24 @@ class CopyFilesProvider with ChangeNotifier {
             batch,
             completedDirs,
             lastProcessedFiles,
+            visited,
           );
+        } else if (entity is Link) {
+          try {
+            final targetType = await FileSystemEntity.type(entity.path);
+            if (targetType == FileSystemEntityType.directory) {
+              await _walkAndCopy(
+                Directory(entity.path),
+                params,
+                counts,
+                createdDirs,
+                batch,
+                completedDirs,
+                lastProcessedFiles,
+                visited,
+              );
+            }
+          } catch (_) {}
         }
       }
       return;
@@ -1199,7 +1240,24 @@ class CopyFilesProvider with ChangeNotifier {
           batch,
           completedDirs,
           lastProcessedFiles,
+          visited,
         );
+      } else if (entity is Link) {
+        try {
+          final targetType = await FileSystemEntity.type(entity.path);
+          if (targetType == FileSystemEntityType.directory) {
+            await _walkAndCopy(
+              Directory(entity.path),
+              params,
+              counts,
+              createdDirs,
+              batch,
+              completedDirs,
+              lastProcessedFiles,
+              visited,
+            );
+          }
+        } catch (_) {}
       }
     }
 
@@ -1250,39 +1308,31 @@ class CopyFilesProvider with ChangeNotifier {
     }
 
     try {
-      final sourceDir = Directory(params.sourcePath);
-      if (!sourceDir.existsSync()) {
-        params.sendPort.send(
-          _IsolateProgress(
-            errorMessage: '✗ Error: Source directory does not exist.',
-            done: true,
-            errors: 1,
-          ),
-        );
-        return;
-      }
-
       if (isResuming) {
         params.sendPort.send(
           _IsolateProgress(
-            logMessage:
-                '⏩ Resuming — ${completedDirs.length} directories already completed, skipping...',
-            status: '⏩ Resuming from last position...',
+            status:
+                '▶ Resuming copy (${completedDirs.length} folders already completed)...',
+            filesCopied: counts.filesCopied,
+            filesSkipped: counts.filesSkipped,
+            filesAlreadyExist: counts.filesAlreadyExist,
+            errors: counts.errors,
           ),
         );
       }
 
       await _walkAndCopy(
-        sourceDir,
+        Directory(params.sourcePath),
         params,
         counts,
         createdDirs,
         batch,
         completedDirs,
         lastProcessedFiles,
+        {},
       );
 
-      // Process remaining tasks in the final batch
+      // Flush any remaining batched files
       if (batch.isNotEmpty) {
         await _processBatch(batch, params, counts);
         batch.clear();
@@ -1348,6 +1398,9 @@ class CopyFilesProvider with ChangeNotifier {
   }
 
   Future<void> startProcessing() async {
+    // Re-entrancy protection
+    if (isProcessing) return;
+
     // Auto-update quick date filters to the current day before starting
     _applyQuickDateFilter();
 

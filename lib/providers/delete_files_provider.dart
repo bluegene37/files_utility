@@ -59,6 +59,7 @@ class DeleteFilesProvider with ChangeNotifier {
   bool _stopRequested = false;
   Timer? _refreshTimer;
   Isolate? _workerIsolate;
+  ReceivePort? _receivePort;
 
   int selectedYear = 2025;
   List<String> validMonths = ['Jan'];
@@ -90,13 +91,26 @@ class DeleteFilesProvider with ChangeNotifier {
 
   DeleteFilesProvider() {
     _loadSettings();
+    LocalDbService().addListener(_onProfileChanged);
+  }
+
+  void _onProfileChanged() {
+    reloadSettings();
   }
 
   @override
   void dispose() {
+    LocalDbService().removeListener(_onProfileChanged);
     _refreshTimer?.cancel();
-    _workerIsolate?.kill(priority: Isolate.immediate);
+    _stopIsolate();
     super.dispose();
+  }
+
+  void _stopIsolate() {
+    _workerIsolate?.kill(priority: Isolate.immediate);
+    _workerIsolate = null;
+    _receivePort?.close();
+    _receivePort = null;
   }
 
   Future<void> _loadSettings() async {
@@ -109,6 +123,10 @@ class DeleteFilesProvider with ChangeNotifier {
       validMonths = savedMonths;
     }
     notifyListeners();
+  }
+
+  Future<void> reloadSettings() async {
+    await _loadSettings();
   }
 
   Future<void> _saveSettings() async {
@@ -160,7 +178,6 @@ class DeleteFilesProvider with ChangeNotifier {
     final timestamp = DateFormat('HH:mm:ss').format(DateTime.now());
     logs.insert(0, '[$timestamp] $message');
     if (logs.length > 1000) logs.removeLast();
-    // notifyListeners();
   }
 
   Future<void> pickTarget() async {
@@ -187,8 +204,7 @@ class DeleteFilesProvider with ChangeNotifier {
     if (!isProcessing) return;
     _stopRequested = true;
     currentStatus = '⛔ Stopping...';
-    _workerIsolate?.kill(priority: Isolate.immediate);
-    _workerIsolate = null;
+    _stopIsolate();
     _finishRun(wasStopped: true);
     notifyListeners();
   }
@@ -216,6 +232,9 @@ class DeleteFilesProvider with ChangeNotifier {
   }
 
   Future<void> deleteFiles() async {
+    // Re-entrancy protection
+    if (isProcessing) return;
+
     if (targetPath == null) {
       _addLog('✗ Error: No target directory selected.');
       await _fileLogger.error('Delete', 'No target directory selected.');
@@ -237,7 +256,7 @@ class DeleteFilesProvider with ChangeNotifier {
 
     _addLog('⏳ Starting deletion...');
     _addLog('  Target: $targetPath');
-    _addLog('  Filter: Year $selectedYear, Months ${validMonths.join(', ')}');
+    _addLog('  Filter: Files up to Year $selectedYear, Months ${validMonths.join(', ')}');
 
     await _fileLogger.logRunStart(
       operation: 'Delete',
@@ -257,7 +276,8 @@ class DeleteFilesProvider with ChangeNotifier {
         return;
       }
 
-      final receivePort = ReceivePort();
+      _receivePort?.close();
+      _receivePort = ReceivePort();
       
       _workerIsolate = await Isolate.spawn(
         _isolateWorker,
@@ -266,11 +286,11 @@ class DeleteFilesProvider with ChangeNotifier {
           selectedYear: selectedYear,
           validMonths: validMonths,
           logInterval: logInterval,
-          sendPort: receivePort.sendPort,
+          sendPort: _receivePort!.sendPort,
         ),
       );
 
-      receivePort.listen((message) {
+      _receivePort!.listen((message) {
         if (message is _DeleteProgress) {
           deletedCount = message.deleted;
           errorCount = message.errors;
@@ -281,8 +301,6 @@ class DeleteFilesProvider with ChangeNotifier {
           
           for (final log in message.logs) {
             _addLog(log);
-            // Optionally send errors to FileLogger if marked specifically, 
-            // but for simplicity we rely on the isolate's text logs for now.
             if (log.startsWith('✗')) {
               _fileLogger.error('Delete', log);
             }
@@ -294,8 +312,7 @@ class DeleteFilesProvider with ChangeNotifier {
           }
 
           if (message.isDone) {
-            receivePort.close();
-            _workerIsolate = null;
+            _stopIsolate();
             if (!_stopRequested) {
               _finishRun(wasStopped: false);
             }
@@ -306,6 +323,7 @@ class DeleteFilesProvider with ChangeNotifier {
       _addLog('✗ Critical Error: $e');
       _log.severe('Critical error during deletion', e, stack);
       await _fileLogger.error('Delete', 'Critical Error: $e\n$stack');
+      _stopIsolate();
       _finishRun(wasStopped: false);
     }
   }
@@ -329,6 +347,7 @@ class DeleteFilesProvider with ChangeNotifier {
       wasStopped: wasStopped,
     );
 
+    try {
       await HistoryService().saveRecord(RunRecord(
         id: runId,
         operation: 'Delete',
@@ -343,6 +362,7 @@ class DeleteFilesProvider with ChangeNotifier {
             'Target: $targetPath, Filter: Year $selectedYear, Months: ${validMonths.join(", ")}',
         sourcePath: targetPath,
       ));
+    } catch (_) {}
 
     isProcessing = false;
     currentStatus = 'Idle';
@@ -355,6 +375,7 @@ class DeleteFilesProvider with ChangeNotifier {
     int errorCount = 0;
     List<String> logBatch = [];
     int scanCount = 0;
+    final Set<String> visitedPaths = {};
 
     void sendProgress(String? status, {bool force = false}) {
       if (force || status != null || logBatch.isNotEmpty || scanCount % 10 == 0) {
@@ -368,7 +389,7 @@ class DeleteFilesProvider with ChangeNotifier {
       }
     }
 
-    Future<bool> isEmpty(Directory dir) async {
+    Future<bool> isDirEmpty(Directory dir) async {
       try {
         return await dir.list().isEmpty;
       } catch (e) {
@@ -412,20 +433,42 @@ class DeleteFilesProvider with ChangeNotifier {
     }
 
     Future<void> processDirectory(Directory dir) async {
+      String canonicalPath;
       try {
-        await for (final entity in dir.list(recursive: false, followLinks: true)) {
+        canonicalPath = await dir.resolveSymbolicLinks();
+      } catch (_) {
+        canonicalPath = p.canonicalize(dir.path);
+      }
+
+      if (visitedPaths.contains(canonicalPath)) {
+        return; // Prevent cyclic symlink loops
+      }
+      visitedPaths.add(canonicalPath);
+
+      try {
+        await for (final entity in dir.list(recursive: false, followLinks: false)) {
           scanCount++;
           if (entity is File) {
             await checkAndDeleteFile(entity);
           } else if (entity is Directory) {
             sendProgress('⏳ Scanning: ${p.basename(entity.path)}');
             await processDirectory(entity);
+          } else if (entity is Link) {
+            try {
+              final targetType = await FileSystemEntity.type(entity.path);
+              if (targetType == FileSystemEntityType.directory) {
+                sendProgress('⏳ Scanning: ${p.basename(entity.path)}');
+                await processDirectory(Directory(entity.path));
+              } else if (targetType == FileSystemEntityType.file) {
+                await checkAndDeleteFile(File(entity.path));
+              }
+            } catch (_) {}
           }
           sendProgress(null);
         }
 
         if (dir.path != params.targetPath) {
-          if (await isEmpty(dir)) {
+          if (await isDirEmpty(dir)) {
             try {
               await dir.delete();
               logBatch.add('✓ Deleted empty folder: ${p.basename(dir.path)}');
@@ -439,6 +482,7 @@ class DeleteFilesProvider with ChangeNotifier {
         errorCount++;
       }
     }
+
     try {
       await processDirectory(Directory(params.targetPath));
       sendProgress('DONE', force: true);

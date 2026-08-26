@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'global_db_service.dart';
 import 'local_db_service.dart';
@@ -14,6 +15,22 @@ class WindowService {
     if (_initialized || kIsWeb) return;
     try {
       await windowManager.ensureInitialized();
+      
+      const windowOptions = WindowOptions(
+        size: Size(1280, 840),
+        minimumSize: Size(980, 680),
+        center: true,
+        backgroundColor: Colors.transparent,
+        skipTaskbar: false,
+        titleBarStyle: TitleBarStyle.normal,
+        title: 'Files Utility',
+      );
+
+      await windowManager.waitUntilReadyToShow(windowOptions, () async {
+        await windowManager.show();
+        await windowManager.focus();
+      });
+
       _initialized = true;
     } catch (_) {}
   }

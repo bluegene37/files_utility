@@ -14,7 +14,7 @@ class FileLogger {
   FileLogger._internal();
 
   static String get _logDirectory {
-    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'file_transfer');
+    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'files_utility');
     return p.join(appDir, 'logs');
   }
   static const int _bufferFlushSize = 50;

@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
 import '../services/history_service.dart';
+import '../providers/transfer_files_provider.dart';
+import '../providers/copy_files_provider.dart';
+import '../providers/delete_files_provider.dart';
+import '../providers/count_files_provider.dart';
+import '../providers/history_provider.dart';
 import '../main.dart'; // To access MainAppWrapper
 
 class ProfileSelectionScreen extends StatefulWidget {
@@ -44,6 +50,12 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
     HistoryService().init(profileId);
 
     if (mounted) {
+      context.read<TransferFilesProvider>().reloadSettings();
+      context.read<CopyFilesProvider>().reloadSettings();
+      context.read<DeleteFilesProvider>().reloadSettings();
+      context.read<CountFilesProvider>().reloadSettings();
+      context.read<HistoryProvider>().refreshHistory();
+
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const MainAppWrapper()),
       );

@@ -57,16 +57,30 @@ class CountFilesProvider with ChangeNotifier {
   bool _stopRequested = false;
   Timer? _refreshTimer;
   Isolate? _workerIsolate;
+  ReceivePort? _receivePort;
 
   CountFilesProvider() {
     _loadSettings();
+    LocalDbService().addListener(_onProfileChanged);
+  }
+
+  void _onProfileChanged() {
+    reloadSettings();
   }
 
   @override
   void dispose() {
+    LocalDbService().removeListener(_onProfileChanged);
     _refreshTimer?.cancel();
-    _workerIsolate?.kill(priority: Isolate.immediate);
+    _stopIsolate();
     super.dispose();
+  }
+
+  void _stopIsolate() {
+    _workerIsolate?.kill(priority: Isolate.immediate);
+    _workerIsolate = null;
+    _receivePort?.close();
+    _receivePort = null;
   }
 
   void _addLog(String message) {
@@ -80,6 +94,10 @@ class CountFilesProvider with ChangeNotifier {
     targetPath = db.getString('count_targetPath');
     logInterval = db.getInt('count_logInterval') ?? 100;
     notifyListeners();
+  }
+
+  Future<void> reloadSettings() async {
+    await _loadSettings();
   }
 
   Future<void> _saveSettings() async {
@@ -120,8 +138,7 @@ class CountFilesProvider with ChangeNotifier {
     if (!isCounting) return;
     _stopRequested = true;
     currentStatus = '⛔ Stopping...';
-    _workerIsolate?.kill(priority: Isolate.immediate);
-    _workerIsolate = null;
+    _stopIsolate();
     _finishRun(wasStopped: true);
     notifyListeners();
   }
@@ -163,6 +180,8 @@ class CountFilesProvider with ChangeNotifier {
   }
 
   Future<void> startCounting() async {
+    if (isCounting) return;
+
     if (targetPath == null) {
       _addLog('✗ Error: No target directory selected.');
       return;
@@ -195,18 +214,19 @@ class CountFilesProvider with ChangeNotifier {
         return;
       }
 
-      final receivePort = ReceivePort();
+      _receivePort?.close();
+      _receivePort = ReceivePort();
       
       _workerIsolate = await Isolate.spawn(
         _isolateWorker, 
         _CountParams(
           targetPath: targetPath!,
           logInterval: logInterval,
-          sendPort: receivePort.sendPort,
+          sendPort: _receivePort!.sendPort,
         ),
       );
 
-      receivePort.listen((message) {
+      _receivePort!.listen((message) {
         if (message is _CountProgress) {
           totalFiles = message.files;
           totalFolders = message.folders;
@@ -226,8 +246,7 @@ class CountFilesProvider with ChangeNotifier {
           }
 
           if (message.isDone) {
-            receivePort.close();
-            _workerIsolate = null;
+            _stopIsolate();
             if (!_stopRequested) {
               _finishRun(wasStopped: false);
             }
@@ -237,6 +256,7 @@ class CountFilesProvider with ChangeNotifier {
     } catch (e) {
       _addLog('✗ Critical Error: $e');
       await _fileLogger.error('Count', 'Critical Error: $e');
+      _stopIsolate();
       _finishRun(wasStopped: false);
     }
   }
@@ -297,6 +317,7 @@ class CountFilesProvider with ChangeNotifier {
     int folders = 0;
     int errors = 0;
     List<String> logBatch = [];
+    final Set<String> visitedPaths = {};
 
     void sendProgress(String? currentScanPath, {bool force = false}) {
       if (force || logBatch.isNotEmpty || files % 100 == 0 || folders % 10 == 0) {
@@ -312,8 +333,20 @@ class CountFilesProvider with ChangeNotifier {
     }
 
     Future<void> countDir(Directory dir) async {
+      String canonicalPath;
       try {
-        await for (final entity in dir.list(recursive: false, followLinks: true)) {
+        canonicalPath = await dir.resolveSymbolicLinks();
+      } catch (_) {
+        canonicalPath = p.canonicalize(dir.path);
+      }
+
+      if (visitedPaths.contains(canonicalPath)) {
+        return; // Prevent cyclic symlink recursion loops
+      }
+      visitedPaths.add(canonicalPath);
+
+      try {
+        await for (final entity in dir.list(recursive: false, followLinks: false)) {
           if (entity is File) {
             files++;
             if (params.logInterval == 1) {
@@ -328,6 +361,18 @@ class CountFilesProvider with ChangeNotifier {
             folders++;
             sendProgress(entity.path);
             await countDir(entity);
+          } else if (entity is Link) {
+            try {
+              final targetType = await FileSystemEntity.type(entity.path);
+              if (targetType == FileSystemEntityType.directory) {
+                folders++;
+                sendProgress(entity.path);
+                await countDir(Directory(entity.path));
+              } else if (targetType == FileSystemEntityType.file) {
+                files++;
+                sendProgress(entity.path);
+              }
+            } catch (_) {}
           }
         }
       } catch (e) {

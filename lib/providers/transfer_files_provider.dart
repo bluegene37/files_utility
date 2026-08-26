@@ -149,6 +149,7 @@ class TransferFilesProvider with ChangeNotifier {
 
   bool _stopRequested = false;
   Timer? _refreshTimer;
+  Timer? _isolateKillTimer;
 
   // Pause/Schedule State
   bool isPaused = false;
@@ -162,13 +163,20 @@ class TransferFilesProvider with ChangeNotifier {
 
   TransferFilesProvider() {
     _loadSettings();
+    LocalDbService().addListener(_onProfileChanged);
+  }
+
+  void _onProfileChanged() {
+    reloadSettings();
   }
 
   @override
   void dispose() {
+    LocalDbService().removeListener(_onProfileChanged);
     _refreshTimer?.cancel();
     _scheduleTimer?.cancel();
     _completionRescheduleTimer?.cancel();
+    _isolateKillTimer?.cancel();
     _workerIsolate?.kill(priority: Isolate.immediate);
     super.dispose();
   }
@@ -190,7 +198,6 @@ class TransferFilesProvider with ChangeNotifier {
     final timestamp = DateFormat('HH:mm:ss').format(DateTime.now());
     logs.insert(0, '[$timestamp] $message');
     if (logs.length > 1000) logs.removeLast();
-    // notifyListeners(); // Throttled
   }
 
   Future<void> _loadSettings() async {
@@ -244,6 +251,10 @@ class TransferFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> reloadSettings() async {
+    await _loadSettings();
+  }
+
   Future<void> _saveSettings() async {
     final db = LocalDbService();
     if (sourcePath != null) await db.setString('sourcePath', sourcePath!);
@@ -283,8 +294,8 @@ class TransferFilesProvider with ChangeNotifier {
     final s = sourcePath?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? 'src';
     final d = destPath?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? 'dst';
     final profileId = LocalDbService().currentProfileId;
-    final appDir = GlobalDbService().appDirPath ?? r'C:\temp\file transfer';
-    return '$appDir\\progress\\transfer_progress_${s}_${d}_$profileId.json';
+    final appDir = GlobalDbService().appDirPath ?? p.join(Directory.systemTemp.path, 'files_utility');
+    return p.join(appDir, 'progress', 'transfer_progress_${s}_${d}_$profileId.json');
   }
 
   Future<void> _loadProgress() async {
@@ -590,6 +601,7 @@ class TransferFilesProvider with ChangeNotifier {
     _scheduleTimer = null;
     _completionRescheduleTimer?.cancel();
     _completionRescheduleTimer = null;
+    _isolateKillTimer?.cancel();
 
     _saveProgress(lastScannedDir, filesMoved, errors);
 
@@ -606,8 +618,8 @@ class TransferFilesProvider with ChangeNotifier {
 
     _workerControlPort?.send(_TransferControl(stop: true));
 
-    // Fallback kill if isolate is completely stuck
-    Future.delayed(const Duration(seconds: 2), () {
+    // Cancellable fallback kill if isolate is completely stuck
+    _isolateKillTimer = Timer(const Duration(seconds: 2), () {
       if (_workerIsolate != null) {
         _workerIsolate?.kill(priority: Isolate.immediate);
         _workerIsolate = null;
@@ -635,6 +647,12 @@ class TransferFilesProvider with ChangeNotifier {
   }
 
   Future<void> startProcessing() async {
+    // Re-entrancy protection
+    if (isProcessing) return;
+
+    _isolateKillTimer?.cancel();
+    _isolateKillTimer = null;
+
     if (sourcePath == null || destPath == null) {
       _addLog('✗ Error: Source or Destination not selected.');
       await _fileLogger.error(
@@ -1021,8 +1039,18 @@ class TransferFilesProvider with ChangeNotifier {
           createdDirs.add(destDir);
         }
 
-        await file.copy(destFilePath);
-        await file.delete();
+        // Try fast atomic rename first
+        try {
+          await file.rename(destFilePath);
+        } on FileSystemException {
+          // Fallback to copy and delete if moving across partitions or if rename fails
+          await file.copy(destFilePath);
+          try {
+            await file.delete();
+          } catch (delErr) {
+            logBatch.add('⚠ Copied to destination, but could not delete source: ${file.path} ($delErr)');
+          }
+        }
 
         filesMoved++;
         if (filesMoved % params.logInterval == 0) {
@@ -1092,6 +1120,7 @@ class TransferFilesProvider with ChangeNotifier {
 
     Future<void> processDirectoryTree(Directory currentDir, {required bool recursive}) async {
       bool skippingDirs = params.lastScannedDir != null;
+      final Set<String> visitedDirs = {};
 
       // To process BFS, we'll use a queue of directories to process
       List<Directory> dirsToProcess = [currentDir];
@@ -1110,30 +1139,21 @@ class TransferFilesProvider with ChangeNotifier {
           continue;
         }
 
+        String canonicalPath;
+        try {
+          canonicalPath = await dir.resolveSymbolicLinks();
+        } catch (_) {
+          canonicalPath = p.canonicalize(dir.path);
+        }
+
+        if (visitedDirs.contains(canonicalPath)) {
+          continue; // Avoid cyclic symlink loops
+        }
+        visitedDirs.add(canonicalPath);
+
         if (skippingDirs && params.lastScannedDir != null) {
           if (p.equals(dir.path, params.lastScannedDir!)) {
             skippingDirs = false;
-          } else if (!p.isWithin(dir.path, params.lastScannedDir!)) {
-            // We only skip if this directory is not an ancestor of the last scanned dir
-            // If it is an ancestor, we still need to process it to find the last scanned dir inside it
-            // Actually, for simplicity and since we only save on directories, if we just skipped to the exact dir,
-            // we'd miss files in the ancestor. But we are saving the *current* dir as lastScannedDir.
-            // Let's just do a simple skip if we haven't hit the exact match yet.
-            // Wait, if lastScannedDir is a deep subfolder, we MUST visit its ancestors to find it.
-            // So if `dir` is an ancestor of `lastScannedDir`, we should NOT skip it, we just don't process its files yet?
-            // This is getting complex for a simple resume. Let's simplify: 
-            // We just sort entities. If skipping, we skip until we see the lastScannedDir.
-            // Actually, because files are MOVED, we can just rescan. It will be very fast if files are already gone.
-            // But if files were skipped (e.g. date filter), they are still there.
-            // Let's implement a simpler skip: if skippingDirs is true, we check if dir.path == lastScannedDir.
-            // If so, we turn off skippingDirs. If not, we still continue processing because it's fast anyway,
-            // or we just rely on the fast file stat checks. The overhead of checking files is minimal.
-            // Let's just use it for logging / checkpointing.
-            if (p.equals(dir.path, params.lastScannedDir!)) {
-              skippingDirs = false;
-            } else {
-               // Just continue processing. The performance hit of re-checking is minimal.
-            }
           }
         }
 
@@ -1151,7 +1171,7 @@ class TransferFilesProvider with ChangeNotifier {
         }
 
         try {
-          List<FileSystemEntity> entities = await dir.list(recursive: false).toList();
+          List<FileSystemEntity> entities = await dir.list(recursive: false, followLinks: false).toList();
           // Sort for consistent processing order
           entities.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
 
@@ -1162,8 +1182,16 @@ class TransferFilesProvider with ChangeNotifier {
             if (entity is File) {
               await checkAndMoveFile(entity);
             } else if (entity is Directory && recursive) {
-              // Add to queue for BFS processing
               dirsToProcess.add(entity);
+            } else if (entity is Link) {
+              try {
+                final targetType = await FileSystemEntity.type(entity.path);
+                if (targetType == FileSystemEntityType.directory && recursive) {
+                  dirsToProcess.add(Directory(entity.path));
+                } else if (targetType == FileSystemEntityType.file) {
+                  await checkAndMoveFile(File(entity.path));
+                }
+              } catch (_) {}
             }
           }
         } catch (e) {
