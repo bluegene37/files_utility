@@ -2,75 +2,96 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  windows:
-    name: Windows installer
+  build-windows:
+    name: Build Windows Installer
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - run: flutter pub get
+      - name: Install Dependencies
+        run: flutter pub get
 
-      - run: flutter analyze --fatal-infos
+      - name: Run Static Analysis
+        run: flutter analyze --fatal-infos
 
-      - run: flutter test
+      - name: Run Test Suite
+        run: flutter test
 
-      - run: flutter build windows --release
+      - name: Build Windows Release
+        run: flutter build windows --release
 
-      # Inno Setup (ISCC) is preinstalled on the windows-latest runner image.
-      - run: dart run inno_bundle:build --release --no-app
+      - name: Package Inno Setup Installer
+        # Inno Setup (ISCC) is preinstalled on windows-latest runners
+        run: dart run inno_bundle:build --release --no-app
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Windows Installer Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: windows-installer
           path: build/windows/x64/installer/**/*.exe
           if-no-files-found: error
 
-  macos:
-    name: macOS DMG
+  build-macos:
+    name: Build macOS DMG
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - run: flutter pub get
+      - name: Install Dependencies
+        run: flutter pub get
 
-      - run: flutter test
+      - name: Run Test Suite
+        run: flutter test
 
-      - run: ./scripts/build_macos_dmg.sh
+      - name: Package macOS DMG
+        run: |
+          chmod +x scripts/build_macos_dmg.sh
+          ./scripts/build_macos_dmg.sh
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload macOS DMG Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
           path: build/macos/*.dmg
           if-no-files-found: error
 
-  release:
+  publish-release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: [windows, macos]
+    needs: [build-windows, build-macos]
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download Built Artifacts
+        uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
-      - name: Attach artifacts to GitHub Release
+      - name: Attach Artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/**
           generate_release_notes: true
+          draft: false
+          prerelease: false

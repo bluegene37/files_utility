@@ -3,6 +3,8 @@
 *.log
 *.pyc
 *.swp
+*.bak
+*~
 .DS_Store
 .atom/
 .build/
@@ -11,35 +13,68 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+Thumbs.db
+ehthumbs.db
 
-# IntelliJ related
+# IntelliJ & IDE related
 *.iml
 *.ipr
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VS Code related
+.vscode/
 
-# Flutter/Dart/Pub related
+# Flutter / Dart / Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
 .flutter-plugins-dependencies
+.flutter-plugins
+.packages
 .pub-cache/
 .pub/
 /build/
+/dist/
 /coverage/
+coverage/
+*.lcov
+lcov.info
 
-# Symbolication related
+# macOS / Xcode ephemeral and user state
+DerivedData/
+xcuserdata/
+*.moved-aside
+*.pbxuser
+*.perspectivev3
+*.mode1v3
+*.mode2v3
+macos/Flutter/ephemeral/
+macos/Pods/
+
+# Windows / Visual Studio ephemeral and user state
+.vs/
+*.suo
+*.user
+*.userosv
+*.sln.docstates
+windows/flutter/ephemeral/
+
+# Symbolication and obfuscation maps
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+# Secrets, private certificates and keys (prevention)
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.key
+*.pem
+*.cert
+*.cer
+*.crt
+*.mobileprovision
+*.provisionprofile
+.env*
+!.env.example

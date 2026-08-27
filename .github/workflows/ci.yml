@@ -4,45 +4,88 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality:
-    name: Analyze & test
+    name: Static Analysis & Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - run: flutter pub get
+      - name: Install Dependencies
+        run: flutter pub get
 
-      - run: flutter analyze --fatal-infos
+      - name: Check Formatting
+        run: dart format --output=none --set-exit-if-changed lib test
 
-      - run: dart format --output=none --set-exit-if-changed lib test
+      - name: Run Static Analysis
+        run: flutter analyze --fatal-infos
 
-      - run: flutter test
+      - name: Run Unit & Widget Tests
+        run: flutter test --coverage
 
   build-windows:
-    name: Windows release build
+    name: Windows Build Verification
     runs-on: windows-latest
     needs: quality
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - run: flutter pub get
+      - name: Install Dependencies
+        run: flutter pub get
 
-      - run: flutter build windows --release
+      - name: Build Windows Release
+        run: flutter build windows --release
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: windows-release
+          name: windows-release-binaries
           path: build/windows/x64/runner/Release/
-          retention-days: 14
+          retention-days: 7
+
+  build-macos:
+    name: macOS Build Verification
+    runs-on: macos-latest
+    needs: quality
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build macOS Release
+        run: flutter build macos --release
+
+      - name: Upload macOS App Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-app
+          path: build/macos/Build/Products/Release/*.app
+          retention-days: 7
