@@ -99,6 +99,33 @@ Pushing a tag matching `v*` (or manually executing the `workflow_dispatch` on Gi
 
 ---
 
+## 🔄 In-App Update Checker
+
+The app self-reports new versions via `lib/services/update/` (see
+`UpdateService`). On launch it queries
+`https://api.github.com/repos/bluegene37/files_utility/releases/latest`
+(throttled to one network call per 24 hours) and compares the release tag
+against `AppInfo.appVersion`.
+
+**Release contract the updater depends on — keep these true:**
+
+1. Release tags must be semver (`v1.2.3`); a non-version tag on the latest
+   release disables update prompts until it is fixed.
+2. Asset naming per platform:
+   - **Windows**: the Inno installer must keep its `-Installer.exe` suffix
+     (default `inno_bundle` naming). It is downloaded and executed with
+     `/SILENT /CLOSEAPPLICATIONS`, then the app relaunches itself.
+   - **macOS**: a `.dmg` asset; the updater opens the release page in the
+     browser (silent in-place update requires signing/notarization first).
+   - **Linux**: a `.deb` (preferred) or `.tar.gz`; opens the release page.
+3. `AppInfo.appVersion` must match `version:` in `pubspec.yaml` — an
+   out-of-date constant makes the app re-offer the version it already runs.
+
+Updater state (last check time, cached release, skipped version) lives in
+`shared_preferences`, never in the per-profile config database.
+
+---
+
 ## 💻 Manual / Local Packaging
 
 ### Windows Installer (Inno Setup)

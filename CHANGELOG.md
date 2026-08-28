@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **In-App Update Checker**: On launch the app checks GitHub Releases (throttled to once per 24h) and offers new versions in an update dialog, with a manual "Check for updates" button on the dashboard. Windows downloads the Inno installer and silently upgrades in place before relaunching; macOS and Linux open the release download page. Users can defer ("Later") or permanently skip a version.
+
 ## [1.0.0] - 2026-08-27
 
 ### Added

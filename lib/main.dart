@@ -12,6 +12,7 @@ import 'providers/copy_files_provider.dart';
 import 'providers/count_files_provider.dart';
 import 'providers/history_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/update_provider.dart';
 import 'services/global_db_service.dart';
 import 'theme/app_theme.dart';
 import 'services/window_service.dart';
@@ -40,6 +41,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => DeleteFilesProvider()),
         ChangeNotifierProvider(create: (_) => CopyFilesProvider()),
         ChangeNotifierProvider(create: (_) => CountFilesProvider()),
+        ChangeNotifierProvider(create: (_) => UpdateProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
