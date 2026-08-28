@@ -608,7 +608,7 @@ class _HistoryDialogState extends State<HistoryDialog> {
   Color _getOpColor(String operation, bool isDark) {
     switch (operation) {
       case 'Transfer':
-        return isDark ? AppColors.accent : const Color(0xFF0D9488);
+        return isDark ? AppColors.accent : AppColors.lightAccent;
       case 'Copy':
         return isDark ? AppColors.info : const Color(0xFF0284C7);
       case 'Delete':

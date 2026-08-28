@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/app_sqlite_service.dart';
 
 class ThemeProvider with ChangeNotifier {
-  ThemeMode _themeMode = ThemeMode.dark;
+  ThemeMode _themeMode = ThemeMode.light;
 
   ThemeMode get themeMode => _themeMode;
   bool get isDarkMode => _themeMode == ThemeMode.dark;
@@ -16,12 +16,12 @@ class ThemeProvider with ChangeNotifier {
       final savedMode = await AppSqliteService().getGlobalSetting(
         'app_theme_mode',
       );
-      if (savedMode == 'light') {
-        _themeMode = ThemeMode.light;
+      if (savedMode == 'dark') {
+        _themeMode = ThemeMode.dark;
       } else if (savedMode == 'system') {
         _themeMode = ThemeMode.system;
       } else {
-        _themeMode = ThemeMode.dark;
+        _themeMode = ThemeMode.light;
       }
       notifyListeners();
     } catch (_) {}

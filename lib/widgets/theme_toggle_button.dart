@@ -26,7 +26,7 @@ class ThemeToggleButton extends StatelessWidget {
             tooltip: isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme',
             icon: Icon(
               isDark ? Icons.wb_sunny_rounded : Icons.nightlight_round,
-              color: isDark ? Colors.amber : const Color(0xFF0D9488),
+              color: isDark ? Colors.amber : AppColors.lightAccent,
               size: 20,
             ),
             onPressed: () => themeProvider.toggleTheme(),

@@ -250,7 +250,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                   icon: Icons.move_up,
                   color: context.isDarkMode
                       ? AppColors.accent
-                      : const Color(0xFF0D9488),
+                      : AppColors.lightAccent,
                   runsCount: records
                       .where((r) => r.operation == 'Transfer')
                       .length,
@@ -704,7 +704,7 @@ class _HistoryScreenState extends State<HistoryScreen>
   Color _getOpColor(String operation, bool isDark) {
     switch (operation) {
       case 'Transfer':
-        return isDark ? AppColors.accent : const Color(0xFF0D9488);
+        return isDark ? AppColors.accent : AppColors.lightAccent;
       case 'Copy':
         return isDark ? AppColors.info : const Color(0xFF0284C7);
       case 'Delete':

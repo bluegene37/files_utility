@@ -28,29 +28,29 @@ extension ThemeContextExtension on BuildContext {
 class AppColors {
   AppColors._();
 
-  // Coffee Dark Backgrounds (Espresso Roast)
-  static const Color bgDark1 = Color(0xFF161413); // Deep dark espresso
-  static const Color bgDark2 = Color(0xFF1E1A17); // Dark roast coffee
-  static const Color bgDark3 = Color(0xFF26211E); // Warm coffee blend
-  static const Color bgDark4 = Color(0xFF302A26);
+  // Coffee Dark Backgrounds (Lighter Mocha Roast)
+  static const Color bgDark1 = Color(0xFF2E2721); // Warm mocha
+  static const Color bgDark2 = Color(0xFF383028); // Milk chocolate
+  static const Color bgDark3 = Color(0xFF423931); // Warm coffee blend
+  static const Color bgDark4 = Color(0xFF4C433A);
 
   // Surface & card (Dark)
-  static const Color surface = Color(0xFF221E1B);
-  static const Color surfaceLight = Color(0xFF2C2622);
-  static const Color cardBorder = Color(0xFF3D3530);
+  static const Color surface = Color(0xFF3A322B);
+  static const Color surfaceLight = Color(0xFF453C34);
+  static const Color cardBorder = Color(0xFF5C5044);
 
-  // Coffee Light (Warm Cream & Paper from genexis.dev)
+  // Coffee Light (Warm Cream & Paper, synced to genexis.dev)
   static const Color lightBg1 = Color(
     0xFFF2EDE3,
   ); // Warm cream cotton paper (--paper)
   static const Color lightBg2 = Color(
-    0xFFEAE3D5,
+    0xFFE7E0D0,
   ); // Soft warm latte (--paper-deep)
-  static const Color lightBg3 = Color(0xFFE0D7C5); // Recessed warm paper
+  static const Color lightBg3 = Color(0xFFDED6C4); // Recessed warm paper (--paper-recess)
   static const Color lightSurface = Color(
     0xFFFAF7F0,
   ); // Paper raised (--paper-raised)
-  static const Color lightCardBorder = Color(0xFFD8D0BF); // Hairline border
+  static const Color lightCardBorder = Color(0xFFCECAC2); // Hairline border (--hairline on paper)
 
   // Accent (Terracotta Roast / Coffee Crema)
   static const Color accent = Color(
@@ -61,6 +61,9 @@ class AppColors {
   static const Color lightAccent = Color(
     0xFFB4402C,
   ); // Warm terracotta lead (--lead from genexis.dev)
+  static const Color lightAccentDeep = Color(
+    0xFF8E3122,
+  ); // Pressed terracotta (--lead-deep from genexis.dev)
 
   // Semantic
   static const Color success = Color(0xFF529A72); // Muted sage roast green
@@ -71,14 +74,14 @@ class AppColors {
   // Text (Dark)
   static const Color textPrimary = Color(0xFFFAF7F0); // Warm cream
   static const Color textSecondary = Color(0xFFD5CCB8); // Warm oat
-  static const Color textMuted = Color(0xFF8E8478); // Coffee muted
+  static const Color textMuted = Color(0xFF9C9184); // Coffee muted
 
   // Text (Light - from genexis.dev)
   static const Color lightTextPrimary = Color(0xFF16161A); // Deep ink
   static const Color lightTextSecondary = Color(
     0xFF5A564E,
   ); // Soft ink / roasted bean
-  static const Color lightTextMuted = Color(0xFF7D776C); // Graphite
+  static const Color lightTextMuted = Color(0xFF66625A); // Graphite (--graphite)
 
   // Log console colors
   static const Color logSuccess = Color(0xFF68C28A);
@@ -256,7 +259,7 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.lightBg1,
       colorScheme: const ColorScheme.light(
         primary: AppColors.lightAccent,
-        secondary: AppColors.accentMuted,
+        secondary: AppColors.lightAccentDeep,
         surface: AppColors.lightSurface,
         error: AppColors.error,
         onPrimary: Colors.white,
@@ -443,7 +446,7 @@ class AppDecorations {
       borderRadius: BorderRadius.circular(16),
       border: Border.all(
         color:
-            (glowColor ?? (isDark ? AppColors.accent : const Color(0xFF0D9488)))
+            (glowColor ?? (isDark ? AppColors.accent : AppColors.lightAccent))
                 .withValues(alpha: isDark ? 0.15 : 0.3),
         width: 1,
       ),
@@ -464,11 +467,11 @@ class AppDecorations {
     final isDark =
         context == null || Theme.of(context).brightness == Brightness.dark;
     return BoxDecoration(
-      color: isDark ? const Color(0xFF16162A) : AppColors.lightSurface,
+      color: isDark ? AppColors.bgDark2 : AppColors.lightSurface,
       borderRadius: BorderRadius.circular(16),
       border: Border.all(
         color:
-            (glowColor ?? (isDark ? AppColors.accent : const Color(0xFF0D9488)))
+            (glowColor ?? (isDark ? AppColors.accent : AppColors.lightAccent))
                 .withValues(alpha: isDark ? 0.3 : 0.4),
         width: 1.5,
       ),
@@ -487,12 +490,12 @@ class AppDecorations {
     final isDark =
         context == null || Theme.of(context).brightness == Brightness.dark;
     return BoxDecoration(
-      color: isDark ? const Color(0xFF0A0A18) : const Color(0xFF0F172A),
+      color: isDark ? const Color(0xFF241E19) : const Color(0xFF2B2B2E),
       borderRadius: BorderRadius.circular(12),
       border: Border.all(
         color: isDark
             ? AppColors.cardBorder.withValues(alpha: 0.6)
-            : const Color(0xFF334155),
+            : const Color(0xFF4A453D),
       ),
     );
   }
