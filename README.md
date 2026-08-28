@@ -11,7 +11,7 @@
 [![Flutter](https://img.shields.io/badge/Flutter-%E2%89%A53.10.8-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-%E2%89%A53.0.0-0175C2?logo=dart&logoColor=white)](https://dart.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Web-blue)](#-installation--download-matrix)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Web-blue)](#-installation--download-matrix)
 
 </div>
 
@@ -66,6 +66,8 @@ Precompiled release packages are published on the [GitHub Releases](https://gith
 | **Windows** | Inno Setup Installer | `files_utility-setup.exe` | Standard Windows wizard installer with desktop shortcut & uninstaller support. |
 | **Windows (Enterprise)** | MSIX Bundle | `files_utility.msix` | Windows package format for enterprise deployment. |
 | **macOS** | Apple Disk Image | `Files Utility-<version>.dmg` | Drag-to-`/Applications` image compatible with macOS 11+ (Apple Silicon & Intel). |
+| **Linux (Debian/Ubuntu)** | Debian Package | `files-utility_<version>_amd64.deb` | Installs to `/usr/lib/files_utility` with a launcher entry. Requires `libgtk-3-0` and `libsqlite3-0`. |
+| **Linux (portable)** | Compressed Bundle | `files_utility-<version>-linux-x64.tar.gz` | Extract anywhere and run `./files_utility`. |
 | **Web** | PWA / Static Bundle | `build/web/` | Can be served over any static web host. |
 
 > [!NOTE]
@@ -98,6 +100,7 @@ Files Utility stores all configurations, databases, checkpoints, and logs under 
 - [Dart SDK](https://dart.dev/get-dart) (`^3.0.0`)
 - **macOS**: Xcode & Command Line Tools (`xcode-select --install`)
 - **Windows**: Visual Studio 2022 (with "Desktop development with C++" workload) and [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`)
+- **Linux**: GTK3 development headers and Ninja (`sudo apt-get install ninja-build libgtk-3-dev`)
 
 ### Quick Start
 
@@ -156,6 +159,13 @@ Full release policies, versioning rules, and signing details are documented in [
   ```bash
   ./scripts/build_macos_dmg.sh
   # Output: build/macos/Files Utility-<version>.dmg
+  ```
+
+- **Linux Packages (tar.gz + .deb)**:
+  ```bash
+  ./scripts/build_linux_packages.sh
+  # Output: dist/files_utility-<version>-linux-x64.tar.gz
+  #         dist/files-utility_<version>_amd64.deb
   ```
 
 - **Update App Icons**:

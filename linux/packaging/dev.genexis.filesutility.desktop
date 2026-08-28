@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Files Utility
+Comment=Move, copy, count, and clean up files across network shares and NAS
+Exec=files_utility
+Icon=dev.genexis.filesutility
+Terminal=false
+Categories=Utility;FileTools;
+StartupWMClass=files_utility
