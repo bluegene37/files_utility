@@ -7,6 +7,7 @@ import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
 import '../widgets/history_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
+import '../widgets/help_shortcut_wrapper.dart';
 import '../services/window_service.dart';
 
 class TransferFilesScreen extends StatelessWidget {
@@ -20,7 +21,9 @@ class TransferFilesScreen extends StatelessWidget {
       status: provider.isProcessing ? provider.currentStatus : null,
     );
 
-    return Scaffold(
+    return HelpShortcutWrapper(
+      topicId: 'transfer_files',
+      child: Scaffold(
       body: Container(
         decoration: AppDecorations.gradientBackground(context),
         child: Column(
@@ -301,8 +304,9 @@ class TransferFilesScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildDatePicker(
     BuildContext context, {
@@ -390,6 +394,8 @@ class TransferFilesScreen extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          const HelpManualButton(topicId: 'transfer_files'),
+          const SizedBox(width: 4),
           const ThemeToggleButton(),
         ],
       ),

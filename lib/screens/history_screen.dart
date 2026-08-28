@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../models/run_record.dart';
 import '../services/window_service.dart';
 import '../widgets/theme_toggle_button.dart';
+import '../widgets/help_shortcut_wrapper.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -52,7 +53,9 @@ class _HistoryScreenState extends State<HistoryScreen>
       orElse: () => GlobalDbService().profiles.first,
     );
 
-    return Scaffold(
+    return HelpShortcutWrapper(
+      topicId: 'advanced_features',
+      child: Scaffold(
       body: Container(
         decoration: AppDecorations.gradientBackground(context),
         child: Column(
@@ -129,8 +132,9 @@ class _HistoryScreenState extends State<HistoryScreen>
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildAppBar(BuildContext context, String profileName) {
     return Container(
@@ -171,7 +175,9 @@ class _HistoryScreenState extends State<HistoryScreen>
               style: TextStyle(color: AppColors.error),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
+          const HelpManualButton(topicId: 'advanced_features'),
+          const SizedBox(width: 4),
           const ThemeToggleButton(),
         ],
       ),

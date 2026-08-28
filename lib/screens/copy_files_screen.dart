@@ -7,6 +7,7 @@ import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
 import '../widgets/history_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
+import '../widgets/help_shortcut_wrapper.dart';
 import '../services/window_service.dart';
 
 class CopyFilesScreen extends StatelessWidget {
@@ -20,7 +21,9 @@ class CopyFilesScreen extends StatelessWidget {
       status: provider.isProcessing ? provider.currentStatus : null,
     );
 
-    return Scaffold(
+    return HelpShortcutWrapper(
+      topicId: 'copy_files',
+      child: Scaffold(
       body: Container(
         decoration: AppDecorations.gradientBackground(context),
         child: Column(
@@ -406,8 +409,9 @@ class CopyFilesScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildAppBar(BuildContext context) {
     final currentProfileId = LocalDbService().currentProfileId;
@@ -442,6 +446,8 @@ class CopyFilesScreen extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          const HelpManualButton(topicId: 'copy_files'),
+          const SizedBox(width: 4),
           const ThemeToggleButton(),
         ],
       ),

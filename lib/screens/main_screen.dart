@@ -9,6 +9,7 @@ import '../models/run_record.dart';
 import '../widgets/theme_toggle_button.dart';
 import '../widgets/update_check_button.dart';
 import '../widgets/update_gate.dart';
+import '../widgets/help_shortcut_wrapper.dart';
 import 'transfer_files_screen.dart';
 import 'delete_files_screen.dart';
 import 'copy_files_screen.dart';
@@ -33,8 +34,10 @@ class _MainScreenState extends State<MainScreen> {
       orElse: () => GlobalDbService().profiles.first,
     );
 
-    return UpdateGate(
-      child: Scaffold(
+    return HelpShortcutWrapper(
+      topicId: 'getting_started',
+      child: UpdateGate(
+        child: Scaffold(
         body: Container(
           decoration: AppDecorations.gradientBackground(context),
           child: SafeArea(
@@ -109,8 +112,9 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildHeaderAndProfile(BuildContext context, dynamic currentProfile) {
     return Row(
@@ -196,7 +200,9 @@ class _MainScreenState extends State<MainScreen> {
             ],
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
+        const HelpManualButton(topicId: 'getting_started'),
+        const SizedBox(width: 4),
         const UpdateCheckButton(),
         // Theme Switcher Button on the FAR RIGHT side
         const ThemeToggleButton(),

@@ -6,6 +6,7 @@ import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
 import '../widgets/history_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
+import '../widgets/help_shortcut_wrapper.dart';
 import '../services/window_service.dart';
 
 class DeleteFilesScreen extends StatelessWidget {
@@ -19,7 +20,9 @@ class DeleteFilesScreen extends StatelessWidget {
       status: provider.isProcessing ? provider.currentStatus : null,
     );
 
-    return Scaffold(
+    return HelpShortcutWrapper(
+      topicId: 'delete_files',
+      child: Scaffold(
       body: Container(
         decoration: AppDecorations.gradientBackground(context),
         child: Column(
@@ -258,8 +261,9 @@ class DeleteFilesScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _sectionLabel(BuildContext context, String text) {
     return Text(
@@ -304,6 +308,8 @@ class DeleteFilesScreen extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          const HelpManualButton(topicId: 'delete_files'),
+          const SizedBox(width: 4),
           const ThemeToggleButton(),
         ],
       ),

@@ -6,6 +6,7 @@ import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
 import '../widgets/history_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
+import '../widgets/help_shortcut_wrapper.dart';
 import '../services/window_service.dart';
 
 class CountFilesScreen extends StatelessWidget {
@@ -19,7 +20,9 @@ class CountFilesScreen extends StatelessWidget {
       status: provider.isCounting ? provider.currentStatus : null,
     );
 
-    return Scaffold(
+    return HelpShortcutWrapper(
+      topicId: 'count_files',
+      child: Scaffold(
       body: Container(
         decoration: AppDecorations.gradientBackground(context),
         child: Column(
@@ -238,8 +241,9 @@ class CountFilesScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildAppBar(BuildContext context) {
     final currentProfileId = LocalDbService().currentProfileId;
@@ -274,6 +278,8 @@ class CountFilesScreen extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          const HelpManualButton(topicId: 'count_files'),
+          const SizedBox(width: 4),
           const ThemeToggleButton(),
         ],
       ),
