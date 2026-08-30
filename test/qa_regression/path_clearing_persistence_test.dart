@@ -85,26 +85,29 @@ void main() {
     );
   });
 
-  test('Transfer source and destination stay cleared across a reload', () async {
-    final provider = TransferFilesProvider();
-    provider.setSourcePath('/tmp/qa_transfer_src');
-    provider.setDestPath('/tmp/qa_transfer_dst');
-    await _settle();
+  test(
+    'Transfer source and destination stay cleared across a reload',
+    () async {
+      final provider = TransferFilesProvider();
+      provider.setSourcePath('/tmp/qa_transfer_src');
+      provider.setDestPath('/tmp/qa_transfer_dst');
+      await _settle();
 
-    provider.setSourcePath('');
-    provider.setDestPath('');
-    await _settle();
+      provider.setSourcePath('');
+      provider.setDestPath('');
+      await _settle();
 
-    await provider.reloadSettings();
-    expect(
-      provider.sourcePath,
-      isNull,
-      reason: 'cleared Transfer source came back from the database',
-    );
-    expect(
-      provider.destPath,
-      isNull,
-      reason: 'cleared Transfer destination came back from the database',
-    );
-  });
+      await provider.reloadSettings();
+      expect(
+        provider.sourcePath,
+        isNull,
+        reason: 'cleared Transfer source came back from the database',
+      );
+      expect(
+        provider.destPath,
+        isNull,
+        reason: 'cleared Transfer destination came back from the database',
+      );
+    },
+  );
 }
