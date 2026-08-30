@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import '../services/file_logger.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
+import '../services/path_safety.dart';
 import '../models/run_record.dart';
 import '../services/global_db_service.dart';
 
@@ -442,12 +443,8 @@ class CopyFilesProvider with ChangeNotifier {
 
   Future<void> _saveSettings() async {
     final db = LocalDbService();
-    if (sourcePath != null) {
-      await db.setString('copy_sourcePath', sourcePath!);
-    }
-    if (destPath != null) {
-      await db.setString('copy_destPath', destPath!);
-    }
+    await db.setOrRemoveString('copy_sourcePath', sourcePath);
+    await db.setOrRemoveString('copy_destPath', destPath);
     await db.setInt('copy_fromDate_day', fromDate.day);
     await db.setInt('copy_fromDate_month', fromDate.month);
     await db.setInt('copy_fromDate_year', fromDate.year);
@@ -1086,6 +1083,9 @@ class CopyFilesProvider with ChangeNotifier {
           );
         } else if (entity is Link) {
           try {
+            if (!await resolvesWithinRoot(params.sourcePath, entity.path)) {
+              continue;
+            }
             final targetType = await FileSystemEntity.type(entity.path);
             if (targetType == FileSystemEntityType.directory) {
               await _walkAndCopy(
@@ -1270,6 +1270,9 @@ class CopyFilesProvider with ChangeNotifier {
         );
       } else if (entity is Link) {
         try {
+          if (!await resolvesWithinRoot(params.sourcePath, entity.path)) {
+            continue;
+          }
           final targetType = await FileSystemEntity.type(entity.path);
           if (targetType == FileSystemEntityType.directory) {
             await _walkAndCopy(

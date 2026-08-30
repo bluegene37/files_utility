@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import '../services/file_logger.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
+import '../services/path_safety.dart';
 import '../models/run_record.dart';
 import '../services/global_db_service.dart';
 
@@ -214,7 +215,10 @@ class TransferFilesProvider with ChangeNotifier {
     enableDateRange = db.getBool('transfer_enableDateRange') ?? false;
     excludeSubfolders = db.getBool('transfer_excludeSubfolders') ?? false;
     logInterval = db.getInt('transfer_logInterval') ?? 100;
-    _loadProgress();
+    // Awaited: the resume marker and the moved/error counts must be in place
+    // before the UI is notified, otherwise a run started immediately after
+    // launch reads a null marker and loses its resume point.
+    await _loadProgress();
 
     // Load time window settings
     enableTimeWindow = db.getBool('transfer_enableTimeWindow') ?? false;
@@ -245,8 +249,8 @@ class TransferFilesProvider with ChangeNotifier {
 
   Future<void> _saveSettings() async {
     final db = LocalDbService();
-    if (sourcePath != null) await db.setString('sourcePath', sourcePath!);
-    if (destPath != null) await db.setString('destPath', destPath!);
+    await db.setOrRemoveString('sourcePath', sourcePath);
+    await db.setOrRemoveString('destPath', destPath);
 
     await db.setInt('transfer_fromDate_day', fromDate.day);
     await db.setInt('transfer_fromDate_month', fromDate.month);
@@ -304,6 +308,7 @@ class TransferFilesProvider with ChangeNotifier {
         errors = data['errors'] ?? 0;
       }
     } catch (_) {}
+    notifyListeners();
   }
 
   Future<void> _saveProgress(String? scannedDir, int fMoved, int errs) async {
@@ -1006,6 +1011,18 @@ class TransferFilesProvider with ChangeNotifier {
           createdDirs.add(destDir);
         }
 
+        // Never move a file onto one that already exists. A move overwrites
+        // the destination and then deletes the source, so the file that was
+        // already there is gone with no copy left anywhere. Flag the clash
+        // and leave both files untouched for the user to resolve.
+        if (await File(destFilePath).exists()) {
+          logBatch.add(
+            '⚠ Skipped ${p.basename(file.path)}: a file with that name already exists at the destination',
+          );
+          errors++;
+          return;
+        }
+
         // Try fast atomic rename first
         try {
           await file.rename(destFilePath);
@@ -1195,6 +1212,15 @@ class TransferFilesProvider with ChangeNotifier {
               dirsToProcess.add(entity);
             } else if (entity is Link) {
               try {
+                if (!await resolvesWithinRoot(
+                  params.sourcePath,
+                  entity.path,
+                )) {
+                  logBatch.add(
+                    'ℹ Skipped link pointing outside the source: ${p.basename(entity.path)}',
+                  );
+                  continue;
+                }
                 final targetType = await FileSystemEntity.type(entity.path);
                 if (targetType == FileSystemEntityType.directory && recursive) {
                   dirsToProcess.add(Directory(entity.path));

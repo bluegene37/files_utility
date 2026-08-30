@@ -8,6 +8,7 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import '../services/file_logger.dart';
 import '../services/local_db_service.dart';
+import '../services/path_safety.dart';
 import '../services/history_service.dart';
 import '../models/run_record.dart';
 
@@ -131,9 +132,7 @@ class DeleteFilesProvider with ChangeNotifier {
 
   Future<void> _saveSettings() async {
     final db = LocalDbService();
-    if (targetPath != null) {
-      await db.setString('delete_targetPath', targetPath!);
-    }
+    await db.setOrRemoveString('delete_targetPath', targetPath);
     await db.setInt('delete_selectedYear', selectedYear);
     await db.setInt('delete_logInterval', logInterval);
     await db.setStringList('delete_validMonths', validMonths);
@@ -477,6 +476,13 @@ class DeleteFilesProvider with ChangeNotifier {
             await processDirectory(entity);
           } else if (entity is Link) {
             try {
+              if (!await resolvesWithinRoot(params.targetPath, entity.path)) {
+                logBatch.add(
+                  'ℹ Skipped link pointing outside the target: ${p.basename(entity.path)}',
+                );
+                sendProgress(null);
+                continue;
+              }
               final targetType = await FileSystemEntity.type(entity.path);
               if (targetType == FileSystemEntityType.directory) {
                 sendProgress('⏳ Scanning: ${p.basename(entity.path)}');

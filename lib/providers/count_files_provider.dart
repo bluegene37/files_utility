@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../services/file_logger.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
+import '../services/path_safety.dart';
 import '../models/run_record.dart';
 
 class _CountProgress {
@@ -102,9 +103,7 @@ class CountFilesProvider with ChangeNotifier {
 
   Future<void> _saveSettings() async {
     final db = LocalDbService();
-    if (targetPath != null) {
-      await db.setString('count_targetPath', targetPath!);
-    }
+    await db.setOrRemoveString('count_targetPath', targetPath);
     await db.setInt('count_logInterval', logInterval);
   }
 
@@ -378,6 +377,9 @@ class CountFilesProvider with ChangeNotifier {
             await countDir(entity);
           } else if (entity is Link) {
             try {
+              if (!await resolvesWithinRoot(params.targetPath, entity.path)) {
+                continue;
+              }
               final targetType = await FileSystemEntity.type(entity.path);
               if (targetType == FileSystemEntityType.directory) {
                 folders++;
