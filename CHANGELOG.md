@@ -7,8 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-30
+
 ### Added
+- **Linux Platform Support**: GTK desktop target with `.tar.gz` and `.deb` packaging (`scripts/build_linux_packages.sh`) and a `.desktop` entry, wired into the CI and release workflows.
 - **In-App Update Checker**: On launch the app checks GitHub Releases (throttled to once per 24h) and offers new versions in an update dialog, with a manual "Check for updates" button on the dashboard. Windows downloads the Inno installer and silently upgrades in place before relaunching; macOS and Linux open the release download page. Users can defer ("Later") or permanently skip a version.
+- **In-App User Manual**: Searchable manual dialog covering every operation, reachable from a help button on each screen and from the `F1` shortcut, with contextual keyboard shortcuts throughout the app.
+
+### Changed
+- Refreshed the theme colour palettes and made light mode the default.
+
+### Fixed
+- **Delete/Copy/Transfer/Count no longer escape the folder you selected.** The file walkers list with `followLinks: false` but then re-followed symbolic links by hand, with no check that the target stayed inside the chosen root. A symlink inside a Delete target could cause files *outside* it to be deleted. All five link-handling sites now resolve the real path and skip anything that falls outside the root, failing closed when a path cannot be resolved.
+- **Transfer no longer overwrites an existing destination file.** A move wrote straight over the destination and then deleted the source, leaving no copy of the file that was already there. Name clashes are now skipped, logged, and counted so they surface in the run summary.
+- **Cleared path fields stay cleared.** Source/Destination/Target were only persisted when non-null, so a field you cleared silently came back from the database on the next profile switch or app start — including the Delete target.
+- **Transfer resume state is loaded before the UI reports it**, so a run started immediately after launch no longer reads a null resume marker and loses its resume point.
 
 ## [1.0.0] - 2026-08-27
 
@@ -34,5 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Complete offline design: zero external network dependencies, zero telemetry, and local-only data persistence in `Documents/FilesUtility/`.
 
-[Unreleased]: https://github.com/bluegene37/files_utility/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/bluegene37/files_utility/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/bluegene37/files_utility/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/bluegene37/files_utility/releases/tag/v1.0.0
