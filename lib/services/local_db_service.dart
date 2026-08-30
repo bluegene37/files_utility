@@ -63,6 +63,19 @@ class LocalDbService {
     await AppSqliteService().setProfileConfigValue(_profileId, key, value);
   }
 
+  /// Stores [value], or clears [key] entirely when [value] is null.
+  ///
+  /// Writing only when non-null leaves a stale value behind, so a field the
+  /// user deliberately cleared silently comes back on the next profile
+  /// switch or app start.
+  Future<void> setOrRemoveString(String key, String? value) async {
+    if (value == null) {
+      await remove(key);
+    } else {
+      await setString(key, value);
+    }
+  }
+
   int? getInt(String key) => _config[key] as int?;
 
   Future<void> setInt(String key, int value) async {
