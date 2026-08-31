@@ -84,8 +84,13 @@ class UpdateService {
     if (!force && withinWindow) {
       final cached = prefs.getString(_cachedReleaseKey);
       if (cached == null) return const UpdateCheckResult(UpdateStatus.upToDate);
-      releaseJson = jsonDecode(cached) as Map<String, dynamic>;
-    } else {
+      releaseJson = _decodeCachedRelease(cached);
+    }
+
+    // No usable cache (absent, truncated, or not a release object): fall
+    // through to the network. Returning early instead would keep the bad
+    // cache for the rest of the throttle window and hide a real update.
+    if (releaseJson == null) {
       try {
         releaseJson = await _fetchRelease(latestReleaseUrl);
       } catch (e, stack) {
@@ -114,6 +119,23 @@ class UpdateService {
       return UpdateCheckResult(UpdateStatus.skipped, info: info);
     }
     return UpdateCheckResult(UpdateStatus.available, info: info);
+  }
+
+  /// Decodes a cached release payload, returning null when it is unusable.
+  ///
+  /// A truncated or non-object value must not escape as an exception:
+  /// `UpdateProvider.checkSilently` does not catch, and `UpdateGate` calls it
+  /// without awaiting, so a throw here becomes an unhandled async error and
+  /// the startup update check silently stops working.
+  Map<String, dynamic>? _decodeCachedRelease(String cached) {
+    try {
+      final decoded = jsonDecode(cached);
+      if (decoded is Map<String, dynamic>) return decoded;
+      _log.warning('Cached release is not a JSON object; refetching');
+    } on FormatException catch (e) {
+      _log.warning('Cached release JSON is corrupt; refetching', e);
+    }
+    return null;
   }
 
   /// Records that the user does not want to hear about [version] again.
