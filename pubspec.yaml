@@ -3,8 +3,11 @@ description: "Desktop utility for transferring, copying, counting, and cleaning 
 publish_to: "none"
 # Single source of truth for the app version. When bumping, also update:
 #   - msix_config.msix_version below (four segments, e.g. 1.0.0.0)
-#   - lib/app_info.dart appVersion (shown in UI, window title, log headers)
-version: "1.1.0+2"
+#   - lib/app_info.dart appVersion (shown in UI, compared against the release
+#     tag by UpdateService — drift here makes the updater loop forever)
+# test/update/version_consistency_test.dart fails if any of the three drift,
+# and the release workflow runs it before packaging.
+version: "1.1.2+3"
 environment:
   sdk: "^3.10.8"
 dependencies:
@@ -55,7 +58,7 @@ msix_config:
   publisher_display_name: "genexis.dev"
   identity_name: "dev.genexis.filesutility"
   # Keep in sync with version: above (four segments).
-  msix_version: "1.1.0.0"
+  msix_version: "1.1.2.0"
   logo_path: "windows/runner/resources/app_icon.ico"
   capabilities: "internetClient"
 inno_bundle:
