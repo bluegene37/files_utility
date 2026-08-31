@@ -168,12 +168,26 @@ continues unsigned — a release is never blocked by a missing certificate.
 
 ## 💻 Manual / Local Packaging
 
-### Windows Installer (Inno Setup)
-*Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed locally.*
-```bash
-flutter build windows --release
-dart run inno_bundle:build --release --no-app
-# Output location: build/windows/x64/installer/
+### Windows Installer & Portable Bundle (Automated Script)
+*Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed locally (if packaging the installer).*
+```powershell
+# Standard unsigned build (creates installer & portable zip in dist/):
+.\scripts\build_windows_installer.ps1
+
+# Build and sign with a PFX certificate:
+.\scripts\build_windows_installer.ps1 -CertPath "C:\path\to\cert.pfx" -CertPassword "YourPassword"
+
+# Build and test signing with an automated self-signed certificate:
+.\scripts\build_windows_installer.ps1 -CreateSelfSigned
+
+# Package existing build without recompiling Flutter:
+.\scripts\build_windows_installer.ps1 -SkipBuild
+```
+
+### Self-Signed Certificate Generation (For Testing)
+Generate a test code-signing certificate (`.pfx` and `.cer`) and base64 credentials for GitHub Secrets:
+```powershell
+.\scripts\generate_self_signed_cert.ps1
 ```
 
 ### Windows MSIX Bundle

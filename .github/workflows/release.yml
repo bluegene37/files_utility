@@ -32,94 +32,21 @@ jobs:
       - name: Run Test Suite
         run: flutter test
 
-      - name: Build Windows Release
-        run: flutter build windows --release
-
-      # ── Authenticode signing ──────────────────────────────────────────
-      # Entirely optional: with no WINDOWS_CERT_BASE64 secret set, these
-      # steps skip and the release still publishes an unsigned installer
-      # exactly as before. Add the secret and the installer gets signed,
-      # which is what clears the SmartScreen "Unknown publisher" warning.
-      - name: Detect Signing Certificate
-        id: signing
-        shell: bash
-        env:
-          CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
-        run: |
-          if [ -n "$CERT_BASE64" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "Signing certificate present - the installer will be signed."
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::No WINDOWS_CERT_BASE64 secret set - publishing an UNSIGNED installer. Users will see a SmartScreen 'Unknown publisher' warning on first install."
-          fi
-
-      - name: Import Signing Certificate
-        if: steps.signing.outputs.enabled == 'true'
+      - name: Package Windows Installer & Bundle
         shell: pwsh
         env:
-          CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
-          [IO.File]::WriteAllBytes(
-            "$env:RUNNER_TEMP\cert.pfx",
-            [Convert]::FromBase64String($env:CERT_BASE64)
-          )
+          ./scripts/build_windows_installer.ps1
 
-      - name: Sign Application Executable
-        if: steps.signing.outputs.enabled == 'true'
-        shell: pwsh
-        env:
-          CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-        run: |
-          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
-            Sort-Object FullName -Descending | Select-Object -First 1
-          if (-not $signtool) { throw "signtool.exe not found on this runner" }
-          $exes = Get-ChildItem -Path "build\windows\x64\runner\Release" -Filter *.exe
-          if (-not $exes) { throw "no application .exe found to sign" }
-          foreach ($exe in $exes) {
-            & $signtool.FullName sign `
-              /f "$env:RUNNER_TEMP\cert.pfx" /p "$env:CERT_PASSWORD" `
-              /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
-              $exe.FullName
-            if ($LASTEXITCODE -ne 0) { throw "signing $($exe.Name) failed" }
-          }
-
-      - name: Package Inno Setup Installer
-        # Inno Setup (ISCC) is preinstalled on windows-latest runners
-        run: dart run inno_bundle:build --release --no-app
-
-      # Signed last as well as first: Inno wraps the signed application in a
-      # fresh installer executable, and it is that outer .exe SmartScreen
-      # inspects when a user downloads it.
-      - name: Sign Installer
-        if: steps.signing.outputs.enabled == 'true'
-        shell: pwsh
-        env:
-          CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-        run: |
-          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
-            Sort-Object FullName -Descending | Select-Object -First 1
-          if (-not $signtool) { throw "signtool.exe not found on this runner" }
-          $installers = Get-ChildItem -Path "build\windows\x64\installer" -Recurse -Filter *.exe
-          if (-not $installers) { throw "no installer .exe found to sign" }
-          foreach ($exe in $installers) {
-            & $signtool.FullName sign `
-              /f "$env:RUNNER_TEMP\cert.pfx" /p "$env:CERT_PASSWORD" `
-              /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
-              $exe.FullName
-            if ($LASTEXITCODE -ne 0) { throw "signing $($exe.Name) failed" }
-          }
-
-      - name: Remove Signing Certificate
-        if: always()
-        shell: pwsh
-        run: Remove-Item "$env:RUNNER_TEMP\cert.pfx" -ErrorAction SilentlyContinue
-
-      - name: Upload Windows Installer Artifact
+      - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer
-          path: build/windows/x64/installer/**/*.exe
+          name: windows-packages
+          path: |
+            dist/*.exe
+            dist/*.zip
           if-no-files-found: error
 
   build-macos:
