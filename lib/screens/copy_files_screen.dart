@@ -24,394 +24,403 @@ class CopyFilesScreen extends StatelessWidget {
     return HelpShortcutWrapper(
       topicId: 'copy_files',
       child: Scaffold(
-      body: Container(
-        decoration: AppDecorations.gradientBackground(context),
-        child: Column(
-          children: [
-            // App Bar
-            _buildAppBar(context),
+        body: Container(
+          decoration: AppDecorations.gradientBackground(context),
+          child: Column(
+            children: [
+              // App Bar
+              _buildAppBar(context),
 
-            // Content
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    // Config Section
-                    Flexible(
-                      flex: 0,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.height * 0.45,
-                        ),
-                        child: SingleChildScrollView(
-                          child: Container(
-                            decoration: AppDecorations.glassCard(
-                              context: context,
-                              glowColor: AppColors.info,
-                            ),
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Multiple Directories toggle
-                                Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: Checkbox(
-                                        value: provider.useMultipleDirectories,
-                                        onChanged: provider.isProcessing
-                                            ? null
-                                            : (val) => provider
-                                                  .setUseMultipleDirectories(
-                                                    val ?? false,
-                                                  ),
-                                        visualDensity: VisualDensity.compact,
-                                        materialTapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Multiple Directories',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13,
-                                        color: context.textSecondary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                if (!provider.useMultipleDirectories) ...[
-                                  PathRow(
-                                    label: 'Source',
-                                    path: provider.sourcePath,
-                                    onPick: provider.isProcessing
-                                        ? null
-                                        : provider.pickSource,
-                                    onChanged: provider.isProcessing
-                                        ? null
-                                        : provider.setSourcePath,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  PathRow(
-                                    label: 'Destination',
-                                    path: provider.destPath,
-                                    onPick: provider.isProcessing
-                                        ? null
-                                        : provider.pickDest,
-                                    onChanged: provider.isProcessing
-                                        ? null
-                                        : provider.setDestPath,
-                                  ),
-                                ] else ...[
-                                  // Multi-pair mode
+              // Content
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      // Config Section
+                      Flexible(
+                        flex: 0,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight:
+                                MediaQuery.of(context).size.height * 0.45,
+                          ),
+                          child: SingleChildScrollView(
+                            child: Container(
+                              decoration: AppDecorations.glassCard(
+                                context: context,
+                                glowColor: AppColors.info,
+                              ),
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Multiple Directories toggle
                                   Row(
                                     children: [
-                                      Icon(
-                                        Icons.folder_copy,
-                                        size: 18,
-                                        color: context.textMuted,
+                                      SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: Checkbox(
+                                          value:
+                                              provider.useMultipleDirectories,
+                                          onChanged: provider.isProcessing
+                                              ? null
+                                              : (val) => provider
+                                                    .setUseMultipleDirectories(
+                                                      val ?? false,
+                                                    ),
+                                          visualDensity: VisualDensity.compact,
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
                                       ),
                                       const SizedBox(width: 6),
                                       Text(
-                                        '${provider.directoryPairs.length} pair${provider.directoryPairs.length == 1 ? '' : 's'} configured',
+                                        'Multiple Directories',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                          color: context.textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (!provider.useMultipleDirectories) ...[
+                                    PathRow(
+                                      label: 'Source',
+                                      path: provider.sourcePath,
+                                      onPick: provider.isProcessing
+                                          ? null
+                                          : provider.pickSource,
+                                      onChanged: provider.isProcessing
+                                          ? null
+                                          : provider.setSourcePath,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    PathRow(
+                                      label: 'Destination',
+                                      path: provider.destPath,
+                                      onPick: provider.isProcessing
+                                          ? null
+                                          : provider.pickDest,
+                                      onChanged: provider.isProcessing
+                                          ? null
+                                          : provider.setDestPath,
+                                    ),
+                                  ] else ...[
+                                    // Multi-pair mode
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.folder_copy,
+                                          size: 18,
+                                          color: context.textMuted,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '${provider.directoryPairs.length} pair${provider.directoryPairs.length == 1 ? '' : 's'} configured',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: context.textSecondary,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        ElevatedButton.icon(
+                                          onPressed: provider.isProcessing
+                                              ? null
+                                              : () => _showDirectoryPairsDialog(
+                                                  context,
+                                                  provider,
+                                                ),
+                                          icon: const Icon(
+                                            Icons.edit,
+                                            size: 16,
+                                          ),
+                                          label: const Text(
+                                            'Edit Pairs',
+                                            style: TextStyle(fontSize: 13),
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 8,
+                                            ),
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                  const SizedBox(height: 8),
+                                  // Advanced Settings & Log Interval on the same line
+                                  Row(
+                                    children: [
+                                      OutlinedButton.icon(
+                                        onPressed: () =>
+                                            _showAdvancedSettingsDialog(
+                                              context,
+                                              provider,
+                                            ),
+                                        icon: const Icon(
+                                          Icons.settings,
+                                          size: 16,
+                                          color: AppColors.accent,
+                                        ),
+                                        label: const Text(
+                                          'Advanced Settings',
+                                          style: TextStyle(
+                                            color: AppColors.accent,
+                                          ),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          side: const BorderSide(
+                                            color: AppColors.cardBorder,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 8,
+                                          ),
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Text(
+                                        'Log Every',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                          color: context.textSecondary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      SizedBox(
+                                        width: 80,
+                                        child: DropdownButtonFormField<int>(
+                                          isExpanded: true,
+                                          initialValue: provider.logInterval,
+                                          decoration: const InputDecoration(
+                                            isDense: true,
+                                            contentPadding:
+                                                EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 8,
+                                                ),
+                                          ),
+                                          dropdownColor: context.cardBg,
+                                          items: [1, 5, 10, 25, 50, 100].map((
+                                            int value,
+                                          ) {
+                                            return DropdownMenuItem<int>(
+                                              value: value,
+                                              child: Text(
+                                                value.toString(),
+                                                style: TextStyle(
+                                                  color: context.textPrimary,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            );
+                                          }).toList(),
+                                          onChanged: provider.isProcessing
+                                              ? null
+                                              : (val) {
+                                                  if (val != null) {
+                                                    provider.setLogInterval(
+                                                      val,
+                                                    );
+                                                  }
+                                                },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'files',
                                         style: TextStyle(
                                           fontSize: 13,
                                           color: context.textSecondary,
                                         ),
                                       ),
                                       const SizedBox(width: 12),
-                                      ElevatedButton.icon(
-                                        onPressed: provider.isProcessing
-                                            ? null
-                                            : () => _showDirectoryPairsDialog(
-                                                context,
-                                                provider,
-                                              ),
-                                        icon: const Icon(Icons.edit, size: 16),
-                                        label: const Text(
-                                          'Edit Pairs',
-                                          style: TextStyle(fontSize: 13),
-                                        ),
-                                        style: ElevatedButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 8,
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 14,
+                                        color: context.textMuted,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          'Controls how often progress is logged to the console',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: context.textMuted,
+                                            fontStyle: FontStyle.italic,
                                           ),
-                                          visualDensity: VisualDensity.compact,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      StatBadge(
+                                        title: 'History',
+                                        value: 'View',
+                                        color: AppColors.accent,
+                                        icon: Icons.history,
+                                        onTap: () => showHistoryDialog(
+                                          context,
+                                          initialOperation: 'Copy',
                                         ),
                                       ),
                                     ],
                                   ),
                                 ],
-                                const SizedBox(height: 8),
-                                // Advanced Settings & Log Interval on the same line
-                                Row(
-                                  children: [
-                                    OutlinedButton.icon(
-                                      onPressed: () =>
-                                          _showAdvancedSettingsDialog(
-                                            context,
-                                            provider,
-                                          ),
-                                      icon: const Icon(
-                                        Icons.settings,
-                                        size: 16,
-                                        color: AppColors.accent,
-                                      ),
-                                      label: const Text(
-                                        'Advanced Settings',
-                                        style: TextStyle(
-                                          color: AppColors.accent,
-                                        ),
-                                      ),
-                                      style: OutlinedButton.styleFrom(
-                                        side: const BorderSide(
-                                          color: AppColors.cardBorder,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 8,
-                                        ),
-                                        visualDensity: VisualDensity.compact,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Text(
-                                      'Log Every',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13,
-                                        color: context.textSecondary,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    SizedBox(
-                                      width: 80,
-                                      child: DropdownButtonFormField<int>(
-                                        isExpanded: true,
-                                        initialValue: provider.logInterval,
-                                        decoration: const InputDecoration(
-                                          isDense: true,
-                                          contentPadding: EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 8,
-                                          ),
-                                        ),
-                                        dropdownColor: context.cardBg,
-                                        items: [1, 5, 10, 25, 50, 100].map((
-                                          int value,
-                                        ) {
-                                          return DropdownMenuItem<int>(
-                                            value: value,
-                                            child: Text(
-                                              value.toString(),
-                                              style: TextStyle(
-                                                color: context.textPrimary,
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                          );
-                                        }).toList(),
-                                        onChanged: provider.isProcessing
-                                            ? null
-                                            : (val) {
-                                                if (val != null) {
-                                                  provider.setLogInterval(val);
-                                                }
-                                              },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'files',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: context.textSecondary,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Icon(
-                                      Icons.info_outline,
-                                      size: 14,
-                                      color: context.textMuted,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Expanded(
-                                      child: Text(
-                                        'Controls how often progress is logged to the console',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: context.textMuted,
-                                          fontStyle: FontStyle.italic,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    StatBadge(
-                                      title: 'History',
-                                      value: 'View',
-                                      color: AppColors.accent,
-                                      icon: Icons.history,
-                                      onTap: () => showHistoryDialog(
-                                        context,
-                                        initialOperation: 'Copy',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
+                      const SizedBox(height: 10),
 
-                    // Actions, Status, and Stats
-                    Row(
-                      children: [
-                        if (!provider.isProcessing) ...[
-                          ElevatedButton.icon(
-                            onPressed: provider.useMultipleDirectories
-                                ? (provider.directoryPairs.any(
-                                        (p) =>
-                                            p.sourcePath != null &&
-                                            p.destPath != null,
-                                      )
-                                      ? provider.startProcessing
-                                      : null)
-                                : (provider.sourcePath != null &&
-                                      provider.destPath != null)
-                                ? provider.startProcessing
-                                : null,
-                            icon: const Icon(Icons.copy),
-                            label: Text(
-                              provider.hasSavedProgress
-                                  ? 'Resume Copying'
-                                  : 'Start Copying',
+                      // Actions, Status, and Stats
+                      Row(
+                        children: [
+                          if (!provider.isProcessing) ...[
+                            ElevatedButton.icon(
+                              onPressed: provider.useMultipleDirectories
+                                  ? (provider.directoryPairs.any(
+                                          (p) =>
+                                              p.sourcePath != null &&
+                                              p.destPath != null,
+                                        )
+                                        ? provider.startProcessing
+                                        : null)
+                                  : (provider.sourcePath != null &&
+                                        provider.destPath != null)
+                                  ? provider.startProcessing
+                                  : null,
+                              icon: const Icon(Icons.copy),
+                              label: Text(
+                                provider.hasSavedProgress
+                                    ? 'Resume Copying'
+                                    : 'Start Copying',
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Clear Progress?'),
+                                    content: const Text(
+                                      'This will clear saved resume progress. The next run will scan all directories from scratch.',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          provider.clearProgress();
+                                          Navigator.pop(ctx);
+                                        },
+                                        child: const Text('Clear'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.refresh, size: 18),
+                              label: const Text('Clear Progress'),
+                            ),
+                          ] else
+                            ElevatedButton.icon(
+                              onPressed: provider.stop,
+                              icon: const Icon(Icons.stop),
+                              label: const Text('Stop'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.error,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          const SizedBox(width: 16),
+
+                          // Progress indicator
+                          if (provider.isProcessing && !provider.isPaused)
+                            Container(
+                              width: 14,
+                              height: 14,
+                              margin: const EdgeInsets.only(right: 8),
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  AppColors.info,
+                                ),
+                              ),
+                            ),
+
+                          // Status
+                          Expanded(
+                            child: Text(
+                              provider.currentStatus,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: context.textPrimary,
+                                fontSize: 13,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              showDialog(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text('Clear Progress?'),
-                                  content: const Text(
-                                    'This will clear saved resume progress. The next run will scan all directories from scratch.',
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(ctx),
-                                      child: const Text('Cancel'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        provider.clearProgress();
-                                        Navigator.pop(ctx);
-                                      },
-                                      child: const Text('Clear'),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.refresh, size: 18),
-                            label: const Text('Clear Progress'),
-                          ),
-                        ] else
-                          ElevatedButton.icon(
-                            onPressed: provider.stop,
-                            icon: const Icon(Icons.stop),
-                            label: const Text('Stop'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.error,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        const SizedBox(width: 16),
 
-                        // Progress indicator
-                        if (provider.isProcessing && !provider.isPaused)
-                          Container(
-                            width: 14,
-                            height: 14,
-                            margin: const EdgeInsets.only(right: 8),
-                            child: const CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                AppColors.info,
-                              ),
-                            ),
+                          // Stats
+                          StatBadge(
+                            title: 'Copied',
+                            value: provider.filesCopied.toString(),
+                            color: AppColors.info,
+                            icon: Icons.file_copy,
                           ),
-
-                        // Status
-                        Expanded(
-                          child: Text(
-                            provider.currentStatus,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: context.textPrimary,
-                              fontSize: 13,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          const SizedBox(width: 6),
+                          StatBadge(
+                            title: 'Exist',
+                            value: provider.filesAlreadyExist.toString(),
+                            color: AppColors.accent,
+                            icon: Icons.check_circle_outline,
                           ),
-                        ),
-                        const SizedBox(width: 8),
+                          const SizedBox(width: 6),
+                          StatBadge(
+                            title: 'Skipped',
+                            value: provider.filesSkipped.toString(),
+                            color: AppColors.warning,
+                            icon: Icons.skip_next,
+                          ),
+                          const SizedBox(width: 6),
+                          StatBadge(
+                            title: 'Errors',
+                            value: provider.errors.toString(),
+                            color: AppColors.error,
+                            icon: Icons.error_outline,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
 
-                        // Stats
-                        StatBadge(
-                          title: 'Copied',
-                          value: provider.filesCopied.toString(),
-                          color: AppColors.info,
-                          icon: Icons.file_copy,
-                        ),
-                        const SizedBox(width: 6),
-                        StatBadge(
-                          title: 'Exist',
-                          value: provider.filesAlreadyExist.toString(),
-                          color: AppColors.accent,
-                          icon: Icons.check_circle_outline,
-                        ),
-                        const SizedBox(width: 6),
-                        StatBadge(
-                          title: 'Skipped',
-                          value: provider.filesSkipped.toString(),
-                          color: AppColors.warning,
-                          icon: Icons.skip_next,
-                        ),
-                        const SizedBox(width: 6),
-                        StatBadge(
-                          title: 'Errors',
-                          value: provider.errors.toString(),
-                          color: AppColors.error,
-                          icon: Icons.error_outline,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Logs
-                    Expanded(child: LogConsole(logs: provider.logs)),
-                  ],
+                      // Logs
+                      Expanded(child: LogConsole(logs: provider.logs)),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildAppBar(BuildContext context) {
     final currentProfileId = LocalDbService().currentProfileId;

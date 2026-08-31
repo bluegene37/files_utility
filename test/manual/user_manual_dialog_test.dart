@@ -5,15 +5,23 @@ import 'package:files_utility/theme/app_theme.dart';
 import 'package:files_utility/views/dialogs/user_manual_dialog.dart';
 import 'package:files_utility/widgets/help_shortcut_wrapper.dart';
 
-Widget _buildTestWrapper({String? initialTopicId, Brightness brightness = Brightness.dark}) {
+Widget _buildTestWrapper({
+  String? initialTopicId,
+  Brightness brightness = Brightness.dark,
+}) {
   return MaterialApp(
-    theme: brightness == Brightness.dark ? AppTheme.darkTheme : AppTheme.lightTheme,
+    theme: brightness == Brightness.dark
+        ? AppTheme.darkTheme
+        : AppTheme.lightTheme,
     home: Scaffold(
       body: Builder(
         builder: (context) {
           return Center(
             child: ElevatedButton(
-              onPressed: () => UserManualDialog.show(context, initialTopicId: initialTopicId),
+              onPressed: () => UserManualDialog.show(
+                context,
+                initialTopicId: initialTopicId,
+              ),
               child: const Text('Open Manual'),
             ),
           );
@@ -25,7 +33,9 @@ Widget _buildTestWrapper({String? initialTopicId, Brightness brightness = Bright
 
 void main() {
   group('UserManualDialog Widget Tests', () {
-    testWidgets('Opens UserManualDialog and displays default topic', (tester) async {
+    testWidgets('Opens UserManualDialog and displays default topic', (
+      tester,
+    ) async {
       await tester.binding.setSurfaceSize(const Size(1200, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -36,7 +46,10 @@ void main() {
       expect(find.byType(UserManualDialog), findsOneWidget);
       expect(find.text('User Manual & Knowledge Base'), findsOneWidget);
       expect(find.text('Getting Started & Overview'), findsWidgets);
-      expect(find.text('Application Architecture & Philosophy'), findsOneWidget);
+      expect(
+        find.text('Application Architecture & Philosophy'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('Deep links to initialTopicId when provided', (tester) async {
@@ -52,7 +65,9 @@ void main() {
       expect(find.text('Multi-Directory Setup & Run Order'), findsOneWidget);
     });
 
-    testWidgets('Topic category switching updates the detail panel', (tester) async {
+    testWidgets('Topic category switching updates the detail panel', (
+      tester,
+    ) async {
       await tester.binding.setSurfaceSize(const Size(1200, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -90,31 +105,36 @@ void main() {
       expect(find.text('Delete Files'), findsNothing);
     });
 
-    testWidgets('Empty search results display friendly empty state and clear button', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1200, 800));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+    testWidgets(
+      'Empty search results display friendly empty state and clear button',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1200, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      await tester.pumpWidget(_buildTestWrapper());
-      await tester.tap(find.text('Open Manual'));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(_buildTestWrapper());
+        await tester.tap(find.text('Open Manual'));
+        await tester.pumpAndSettle();
 
-      final searchField = find.byType(TextField);
-      await tester.enterText(searchField, 'nonexistentquery12345');
-      await tester.pumpAndSettle();
+        final searchField = find.byType(TextField);
+        await tester.enterText(searchField, 'nonexistentquery12345');
+        await tester.pumpAndSettle();
 
-      expect(find.text('No matching topics'), findsOneWidget);
-      final clearBtn = find.text('Clear Search');
-      expect(clearBtn, findsOneWidget);
+        expect(find.text('No matching topics'), findsOneWidget);
+        final clearBtn = find.text('Clear Search');
+        expect(clearBtn, findsOneWidget);
 
-      await tester.tap(clearBtn);
-      await tester.pumpAndSettle();
+        await tester.tap(clearBtn);
+        await tester.pumpAndSettle();
 
-      // All topics restored
-      expect(find.text('Getting Started & Overview'), findsWidgets);
-      expect(find.text('Transfer Files'), findsWidgets);
-    });
+        // All topics restored
+        expect(find.text('Getting Started & Overview'), findsWidgets);
+        expect(find.text('Transfer Files'), findsWidgets);
+      },
+    );
 
-    testWidgets('Footer shortcuts button jumps to Keyboard Shortcuts topic', (tester) async {
+    testWidgets('Footer shortcuts button jumps to Keyboard Shortcuts topic', (
+      tester,
+    ) async {
       await tester.binding.setSurfaceSize(const Size(1200, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -163,7 +183,9 @@ void main() {
   });
 
   group('Help Shortcut & Button Integration Tests', () {
-    testWidgets('HelpManualButton opens UserManualDialog with specific topic', (tester) async {
+    testWidgets('HelpManualButton opens UserManualDialog with specific topic', (
+      tester,
+    ) async {
       await tester.binding.setSurfaceSize(const Size(1200, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -172,9 +194,7 @@ void main() {
           theme: AppTheme.darkTheme,
           home: Scaffold(
             appBar: AppBar(
-              actions: const [
-                HelpManualButton(topicId: 'transfer_files'),
-              ],
+              actions: const [HelpManualButton(topicId: 'transfer_files')],
             ),
             body: const Text('Sample Body'),
           ),
@@ -191,7 +211,9 @@ void main() {
       expect(find.text('Overview & Safe Moving Mechanics'), findsOneWidget);
     });
 
-    testWidgets('HelpShortcutWrapper triggers dialog on F1 key press', (tester) async {
+    testWidgets('HelpShortcutWrapper triggers dialog on F1 key press', (
+      tester,
+    ) async {
       await tester.binding.setSurfaceSize(const Size(1200, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -200,9 +222,7 @@ void main() {
           theme: AppTheme.darkTheme,
           home: const HelpShortcutWrapper(
             topicId: 'delete_files',
-            child: Scaffold(
-              body: Center(child: Text('Protected Screen')),
-            ),
+            child: Scaffold(body: Center(child: Text('Protected Screen'))),
           ),
         ),
       );

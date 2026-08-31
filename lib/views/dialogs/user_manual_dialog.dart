@@ -12,10 +12,7 @@ import 'user_manual_data.dart';
 class UserManualDialog extends StatefulWidget {
   final String? initialTopicId;
 
-  const UserManualDialog({
-    super.key,
-    this.initialTopicId,
-  });
+  const UserManualDialog({super.key, this.initialTopicId});
 
   /// Displays the User Manual dialog with optional deep linking to [initialTopicId].
   static Future<void> show(BuildContext context, {String? initialTopicId}) {
@@ -135,11 +132,7 @@ class _UserManualDialogState extends State<UserManualDialog> {
 
                     // Detail Panel (Right)
                     Expanded(
-                      child: _buildDetailPanel(
-                        context,
-                        selectedTopic,
-                        isDark,
-                      ),
+                      child: _buildDetailPanel(context, selectedTopic, isDark),
                     ),
                   ],
                 ),
@@ -232,10 +225,7 @@ class _UserManualDialogState extends State<UserManualDialog> {
                 const SizedBox(height: 2),
                 Text(
                   'Offline-first documentation, feature guides, and shortcut cheat sheets',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: context.textMuted,
-                  ),
+                  style: TextStyle(fontSize: 11, color: context.textMuted),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -355,10 +345,7 @@ class _UserManualDialogState extends State<UserManualDialog> {
           Text(
             'Try searching with different keywords like "transfer", "copy", or "shortcuts".',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 11,
-              color: context.textMuted,
-            ),
+            style: TextStyle(fontSize: 11, color: context.textMuted),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
@@ -791,10 +778,7 @@ class _UserManualDialogState extends State<UserManualDialog> {
                   ),
                   child: Text(
                     tag,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: context.textMuted,
-                    ),
+                    style: TextStyle(fontSize: 10, color: context.textMuted),
                   ),
                 );
               }).toList(),
@@ -840,10 +824,7 @@ class _UserManualDialogState extends State<UserManualDialog> {
             const SizedBox(width: 4),
             Text(
               description,
-              style: TextStyle(
-                fontSize: 12,
-                color: context.textSecondary,
-              ),
+              style: TextStyle(fontSize: 12, color: context.textSecondary),
             ),
           ],
         ],
@@ -851,15 +832,17 @@ class _UserManualDialogState extends State<UserManualDialog> {
     );
   }
 
-  Widget _buildSingleKbdBadge(BuildContext context, String keyText, bool isDark) {
+  Widget _buildSingleKbdBadge(
+    BuildContext context,
+    String keyText,
+    bool isDark,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF241E19) : const Color(0xFFEFECE5),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: context.border.withValues(alpha: 0.7),
-        ),
+        border: Border.all(color: context.border.withValues(alpha: 0.7)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.08),
@@ -871,11 +854,7 @@ class _UserManualDialogState extends State<UserManualDialog> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.keyboard_outlined,
-            size: 12,
-            color: context.primaryAccent,
-          ),
+          Icon(Icons.keyboard_outlined, size: 12, color: context.primaryAccent),
           const SizedBox(width: 5),
           Text(
             keyText,

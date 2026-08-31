@@ -24,289 +24,293 @@ class TransferFilesScreen extends StatelessWidget {
     return HelpShortcutWrapper(
       topicId: 'transfer_files',
       child: Scaffold(
-      body: Container(
-        decoration: AppDecorations.gradientBackground(context),
-        child: Column(
-          children: [
-            // App Bar
-            _buildAppBar(context),
+        body: Container(
+          decoration: AppDecorations.gradientBackground(context),
+          child: Column(
+            children: [
+              // App Bar
+              _buildAppBar(context),
 
-            // Content
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.0,
-                  vertical: 8.0,
-                ),
-                child: Column(
-                  children: [
-                    // Config Section
-                    Flexible(
-                      flex: 0,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.height * 0.45,
-                        ),
-                        child: SingleChildScrollView(
-                          child: Container(
-                            decoration: AppDecorations.glassCard(
-                              context: context,
-                              glowColor: AppColors.accent,
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16.0,
-                              vertical: 12.0,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                PathRow(
-                                  label: 'Source',
-                                  path: provider.sourcePath,
-                                  onPick: provider.pickSource,
-                                  onChanged: provider.setSourcePath,
-                                ),
-                                const SizedBox(height: 8),
-                                PathRow(
-                                  label: 'Destination',
-                                  path: provider.destPath,
-                                  onPick: provider.pickDest,
-                                  onChanged: provider.setDestPath,
-                                ),
-                                const SizedBox(height: 8),
-                                // Advanced Settings & Log Interval on the same line
-                                Row(
-                                  children: [
-                                    OutlinedButton.icon(
-                                      onPressed: () =>
-                                          _showAdvancedSettingsDialog(
-                                            context,
-                                            provider,
-                                          ),
-                                      icon: const Icon(
-                                        Icons.settings,
-                                        size: 16,
-                                        color: AppColors.accent,
-                                      ),
-                                      label: const Text(
-                                        'Advanced Settings',
-                                        style: TextStyle(
+              // Content
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 8.0,
+                  ),
+                  child: Column(
+                    children: [
+                      // Config Section
+                      Flexible(
+                        flex: 0,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight:
+                                MediaQuery.of(context).size.height * 0.45,
+                          ),
+                          child: SingleChildScrollView(
+                            child: Container(
+                              decoration: AppDecorations.glassCard(
+                                context: context,
+                                glowColor: AppColors.accent,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16.0,
+                                vertical: 12.0,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  PathRow(
+                                    label: 'Source',
+                                    path: provider.sourcePath,
+                                    onPick: provider.pickSource,
+                                    onChanged: provider.setSourcePath,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  PathRow(
+                                    label: 'Destination',
+                                    path: provider.destPath,
+                                    onPick: provider.pickDest,
+                                    onChanged: provider.setDestPath,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  // Advanced Settings & Log Interval on the same line
+                                  Row(
+                                    children: [
+                                      OutlinedButton.icon(
+                                        onPressed: () =>
+                                            _showAdvancedSettingsDialog(
+                                              context,
+                                              provider,
+                                            ),
+                                        icon: const Icon(
+                                          Icons.settings,
+                                          size: 16,
                                           color: AppColors.accent,
                                         ),
-                                      ),
-                                      style: OutlinedButton.styleFrom(
-                                        side: const BorderSide(
-                                          color: AppColors.cardBorder,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 8,
-                                        ),
-                                        visualDensity: VisualDensity.compact,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Text(
-                                      'Log Every',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13,
-                                        color: context.textSecondary,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    SizedBox(
-                                      width: 80,
-                                      child: DropdownButtonFormField<int>(
-                                        isExpanded: true,
-                                        initialValue: provider.logInterval,
-                                        decoration: const InputDecoration(
-                                          isDense: true,
-                                          contentPadding: EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 8,
+                                        label: const Text(
+                                          'Advanced Settings',
+                                          style: TextStyle(
+                                            color: AppColors.accent,
                                           ),
                                         ),
-                                        dropdownColor: context.cardBg,
-                                        items: [1, 5, 10, 25, 50, 100].map((
-                                          int value,
-                                        ) {
-                                          return DropdownMenuItem<int>(
-                                            value: value,
-                                            child: Text(
-                                              value.toString(),
-                                              style: TextStyle(
-                                                color: context.textPrimary,
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                          );
-                                        }).toList(),
-                                        onChanged: provider.isProcessing
-                                            ? null
-                                            : (val) {
-                                                if (val != null) {
-                                                  provider.setLogInterval(val);
-                                                }
-                                              },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'files',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: context.textSecondary,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Icon(
-                                      Icons.info_outline,
-                                      size: 14,
-                                      color: context.textMuted,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Expanded(
-                                      child: Text(
-                                        'Controls how often progress is logged to the console',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: context.textMuted,
-                                          fontStyle: FontStyle.italic,
+                                        style: OutlinedButton.styleFrom(
+                                          side: const BorderSide(
+                                            color: AppColors.cardBorder,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 8,
+                                          ),
+                                          visualDensity: VisualDensity.compact,
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    StatBadge(
-                                      title: 'History',
-                                      value: 'View',
-                                      color: AppColors.accent,
-                                      icon: Icons.history,
-                                      onTap: () => showHistoryDialog(
-                                        context,
-                                        initialOperation: 'Transfer',
+                                      const SizedBox(width: 16),
+                                      Text(
+                                        'Log Every',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                          color: context.textSecondary,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                      const SizedBox(width: 8),
+                                      SizedBox(
+                                        width: 80,
+                                        child: DropdownButtonFormField<int>(
+                                          isExpanded: true,
+                                          initialValue: provider.logInterval,
+                                          decoration: const InputDecoration(
+                                            isDense: true,
+                                            contentPadding:
+                                                EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 8,
+                                                ),
+                                          ),
+                                          dropdownColor: context.cardBg,
+                                          items: [1, 5, 10, 25, 50, 100].map((
+                                            int value,
+                                          ) {
+                                            return DropdownMenuItem<int>(
+                                              value: value,
+                                              child: Text(
+                                                value.toString(),
+                                                style: TextStyle(
+                                                  color: context.textPrimary,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            );
+                                          }).toList(),
+                                          onChanged: provider.isProcessing
+                                              ? null
+                                              : (val) {
+                                                  if (val != null) {
+                                                    provider.setLogInterval(
+                                                      val,
+                                                    );
+                                                  }
+                                                },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'files',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: context.textSecondary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 14,
+                                        color: context.textMuted,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          'Controls how often progress is logged to the console',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: context.textMuted,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      StatBadge(
+                                        title: 'History',
+                                        value: 'View',
+                                        color: AppColors.accent,
+                                        icon: Icons.history,
+                                        onTap: () => showHistoryDialog(
+                                          context,
+                                          initialOperation: 'Transfer',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
+                      const SizedBox(height: 8),
 
-                    // Actions, Status, and Stats
-                    Row(
-                      children: [
-                        if (!provider.isProcessing) ...[
-                          ElevatedButton.icon(
-                            onPressed:
-                                (provider.sourcePath != null &&
-                                    provider.destPath != null)
-                                ? provider.startProcessing
-                                : null,
-                            icon: const Icon(Icons.play_arrow, size: 18),
-                            label: const Text('Start'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              showDialog(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text('Clear Progress?'),
-                                  content: const Text(
-                                    'This will reset the resume checkpoint. Are you sure?',
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(ctx),
-                                      child: const Text('Cancel'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        provider.clearProgress();
-                                        Navigator.pop(ctx);
-                                      },
-                                      child: const Text('Clear'),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.refresh, size: 18),
-                            label: const Text('Clear Progress'),
-                          ),
-                        ] else
-                          ElevatedButton.icon(
-                            onPressed: provider.stop,
-                            icon: const Icon(Icons.stop, size: 18),
-                            label: const Text('Stop'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.error,
-                              foregroundColor: Colors.white,
+                      // Actions, Status, and Stats
+                      Row(
+                        children: [
+                          if (!provider.isProcessing) ...[
+                            ElevatedButton.icon(
+                              onPressed:
+                                  (provider.sourcePath != null &&
+                                      provider.destPath != null)
+                                  ? provider.startProcessing
+                                  : null,
+                              icon: const Icon(Icons.play_arrow, size: 18),
+                              label: const Text('Start'),
                             ),
-                          ),
-                        const SizedBox(width: 16),
-                        // Status
-                        if (provider.isProcessing && !provider.isPaused)
-                          Container(
-                            width: 14,
-                            height: 14,
-                            margin: const EdgeInsets.only(right: 8),
-                            child: const CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                AppColors.accent,
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Clear Progress?'),
+                                    content: const Text(
+                                      'This will reset the resume checkpoint. Are you sure?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          provider.clearProgress();
+                                          Navigator.pop(ctx);
+                                        },
+                                        child: const Text('Clear'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.refresh, size: 18),
+                              label: const Text('Clear Progress'),
+                            ),
+                          ] else
+                            ElevatedButton.icon(
+                              onPressed: provider.stop,
+                              icon: const Icon(Icons.stop, size: 18),
+                              label: const Text('Stop'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.error,
+                                foregroundColor: Colors.white,
                               ),
                             ),
-                          ),
-                        Expanded(
-                          child: Text(
-                            provider.currentStatus,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: context.textPrimary,
-                              fontSize: 13,
+                          const SizedBox(width: 16),
+                          // Status
+                          if (provider.isProcessing && !provider.isPaused)
+                            Container(
+                              width: 14,
+                              height: 14,
+                              margin: const EdgeInsets.only(right: 8),
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  AppColors.accent,
+                                ),
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          Expanded(
+                            child: Text(
+                              provider.currentStatus,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: context.textPrimary,
+                                fontSize: 13,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        StatBadge(
-                          title: 'Moved',
-                          value: provider.filesMoved.toString(),
-                          color: AppColors.success,
-                          icon: Icons.check_circle,
-                        ),
-                        const SizedBox(width: 8),
-                        StatBadge(
-                          title: 'Errors',
-                          value: provider.errors.toString(),
-                          color: AppColors.error,
-                          icon: Icons.error,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
+                          const SizedBox(width: 8),
+                          StatBadge(
+                            title: 'Moved',
+                            value: provider.filesMoved.toString(),
+                            color: AppColors.success,
+                            icon: Icons.check_circle,
+                          ),
+                          const SizedBox(width: 8),
+                          StatBadge(
+                            title: 'Errors',
+                            value: provider.errors.toString(),
+                            color: AppColors.error,
+                            icon: Icons.error,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
 
-                    // Logs
-                    Expanded(child: LogConsole(logs: provider.logs)),
-                  ],
+                      // Logs
+                      Expanded(child: LogConsole(logs: provider.logs)),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildDatePicker(
     BuildContext context, {

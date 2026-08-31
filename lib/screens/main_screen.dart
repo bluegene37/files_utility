@@ -38,83 +38,88 @@ class _MainScreenState extends State<MainScreen> {
       topicId: 'getting_started',
       child: UpdateGate(
         child: Scaffold(
-        body: Container(
-          decoration: AppDecorations.gradientBackground(context),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header & Active Profile Row
-                  _buildHeaderAndProfile(context, currentProfile),
+          body: Container(
+            decoration: AppDecorations.gradientBackground(context),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header & Active Profile Row
+                    _buildHeaderAndProfile(context, currentProfile),
 
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                  // 4 Action Buttons in a Single Line
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _DashboardCard(
-                          icon: Icons.move_to_inbox_rounded,
-                          title: 'Transfer Files',
-                          subtitle: 'Move files by date & filters',
-                          accentColor: context.primaryAccent,
-                          onTap: () =>
-                              _navigateTo(context, const TransferFilesScreen()),
+                    // 4 Action Buttons in a Single Line
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _DashboardCard(
+                            icon: Icons.move_to_inbox_rounded,
+                            title: 'Transfer Files',
+                            subtitle: 'Move files by date & filters',
+                            accentColor: context.primaryAccent,
+                            onTap: () => _navigateTo(
+                              context,
+                              const TransferFilesScreen(),
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _DashboardCard(
-                          icon: Icons.file_copy_rounded,
-                          title: 'Copy Files',
-                          subtitle: 'Mirror directories with date range',
-                          accentColor: context.isDarkMode
-                              ? const Color(0xFFE2A06E)
-                              : const Color(0xFFA0582C),
-                          onTap: () =>
-                              _navigateTo(context, const CopyFilesScreen()),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _DashboardCard(
+                            icon: Icons.file_copy_rounded,
+                            title: 'Copy Files',
+                            subtitle: 'Mirror directories with date range',
+                            accentColor: context.isDarkMode
+                                ? const Color(0xFFE2A06E)
+                                : const Color(0xFFA0582C),
+                            onTap: () =>
+                                _navigateTo(context, const CopyFilesScreen()),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _DashboardCard(
-                          icon: Icons.delete_forever_rounded,
-                          title: 'Delete Files',
-                          subtitle: 'Remove files matching criteria',
-                          accentColor: AppColors.error,
-                          onTap: () =>
-                              _navigateTo(context, const DeleteFilesScreen()),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _DashboardCard(
+                            icon: Icons.delete_forever_rounded,
+                            title: 'Delete Files',
+                            subtitle: 'Remove files matching criteria',
+                            accentColor: AppColors.error,
+                            onTap: () =>
+                                _navigateTo(context, const DeleteFilesScreen()),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _DashboardCard(
-                          icon: Icons.analytics_rounded,
-                          title: 'Count Files',
-                          subtitle: 'Audit file & folder totals',
-                          accentColor: AppColors.success,
-                          onTap: () =>
-                              _navigateTo(context, const CountFilesScreen()),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _DashboardCard(
+                            icon: Icons.analytics_rounded,
+                            title: 'Count Files',
+                            subtitle: 'Audit file & folder totals',
+                            accentColor: AppColors.success,
+                            onTap: () =>
+                                _navigateTo(context, const CountFilesScreen()),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
 
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                  // Expanded History Dashboard at the Bottom
-                  Expanded(child: _buildHistoryDashboard(context)),
-                ],
+                    // Expanded History Dashboard at the Bottom
+                    Expanded(child: _buildHistoryDashboard(context)),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildHeaderAndProfile(BuildContext context, dynamic currentProfile) {
     return Row(

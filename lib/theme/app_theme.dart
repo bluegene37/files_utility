@@ -46,11 +46,15 @@ class AppColors {
   static const Color lightBg2 = Color(
     0xFFE7E0D0,
   ); // Soft warm latte (--paper-deep)
-  static const Color lightBg3 = Color(0xFFDED6C4); // Recessed warm paper (--paper-recess)
+  static const Color lightBg3 = Color(
+    0xFFDED6C4,
+  ); // Recessed warm paper (--paper-recess)
   static const Color lightSurface = Color(
     0xFFFAF7F0,
   ); // Paper raised (--paper-raised)
-  static const Color lightCardBorder = Color(0xFFCECAC2); // Hairline border (--hairline on paper)
+  static const Color lightCardBorder = Color(
+    0xFFCECAC2,
+  ); // Hairline border (--hairline on paper)
 
   // Accent (Terracotta Roast / Coffee Crema)
   static const Color accent = Color(
@@ -81,7 +85,9 @@ class AppColors {
   static const Color lightTextSecondary = Color(
     0xFF5A564E,
   ); // Soft ink / roasted bean
-  static const Color lightTextMuted = Color(0xFF66625A); // Graphite (--graphite)
+  static const Color lightTextMuted = Color(
+    0xFF66625A,
+  ); // Graphite (--graphite)
 
   // Log console colors
   static const Color logSuccess = Color(0xFF68C28A);

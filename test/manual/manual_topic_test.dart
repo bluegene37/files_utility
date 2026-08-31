@@ -34,37 +34,40 @@ void main() {
   });
 
   group('ManualTopic Unit Tests', () {
-    test('ManualTopic matches on title, subtitle, badge, keywords and sections', () {
-      const topic = ManualTopic(
-        id: 'test_topic',
-        title: 'File Transfers',
-        subtitle: 'Move files across drives',
-        icon: Icons.folder,
-        badge: 'Core',
-        keywords: ['transfer', 'move', 'payload'],
-        sections: [
-          ManualSection(
-            title: 'Section One',
-            description: 'Explaining resume checkpoints.',
-            steps: ['Step 1'],
-            tip: 'Tip text',
-            shortcuts: ['F1'],
-            tags: ['checkpoint'],
-          ),
-        ],
-      );
+    test(
+      'ManualTopic matches on title, subtitle, badge, keywords and sections',
+      () {
+        const topic = ManualTopic(
+          id: 'test_topic',
+          title: 'File Transfers',
+          subtitle: 'Move files across drives',
+          icon: Icons.folder,
+          badge: 'Core',
+          keywords: ['transfer', 'move', 'payload'],
+          sections: [
+            ManualSection(
+              title: 'Section One',
+              description: 'Explaining resume checkpoints.',
+              steps: ['Step 1'],
+              tip: 'Tip text',
+              shortcuts: ['F1'],
+              tags: ['checkpoint'],
+            ),
+          ],
+        );
 
-      expect(topic.matches('test_topic'), isTrue);
-      expect(topic.matches('file transfers'), isTrue);
-      expect(topic.matches('drives'), isTrue);
-      expect(topic.matches('core'), isTrue);
-      expect(topic.matches('payload'), isTrue);
-      expect(topic.matches('checkpoints'), isTrue);
-      expect(topic.matches('step 1'), isTrue);
-      expect(topic.matches('f1'), isTrue);
-      expect(topic.matches('unrelatedxyz'), isFalse);
-      expect(topic.matches(''), isTrue);
-    });
+        expect(topic.matches('test_topic'), isTrue);
+        expect(topic.matches('file transfers'), isTrue);
+        expect(topic.matches('drives'), isTrue);
+        expect(topic.matches('core'), isTrue);
+        expect(topic.matches('payload'), isTrue);
+        expect(topic.matches('checkpoints'), isTrue);
+        expect(topic.matches('step 1'), isTrue);
+        expect(topic.matches('f1'), isTrue);
+        expect(topic.matches('unrelatedxyz'), isFalse);
+        expect(topic.matches(''), isTrue);
+      },
+    );
   });
 
   group('UserManualData Repository Tests', () {
@@ -99,7 +102,9 @@ void main() {
 
     test('Search filters topics correctly across all data', () {
       final query = 'resume';
-      final matching = UserManualData.topics.where((t) => t.matches(query)).toList();
+      final matching = UserManualData.topics
+          .where((t) => t.matches(query))
+          .toList();
       expect(matching.isNotEmpty, isTrue);
       expect(matching.any((t) => t.id == 'transfer_files'), isTrue);
     });

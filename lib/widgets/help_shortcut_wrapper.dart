@@ -9,11 +9,7 @@ class HelpShortcutWrapper extends StatelessWidget {
   final String? topicId;
   final Widget child;
 
-  const HelpShortcutWrapper({
-    super.key,
-    this.topicId,
-    required this.child,
-  });
+  const HelpShortcutWrapper({super.key, this.topicId, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -28,17 +24,22 @@ class HelpShortcutWrapper extends StatelessWidget {
         const SingleActivator(LogicalKeyboardKey.slash, control: true): () {
           UserManualDialog.show(context, initialTopicId: topicId);
         },
-        const SingleActivator(LogicalKeyboardKey.slash, meta: true, shift: true): () {
+        const SingleActivator(
+          LogicalKeyboardKey.slash,
+          meta: true,
+          shift: true,
+        ): () {
           UserManualDialog.show(context, initialTopicId: topicId);
         },
-        const SingleActivator(LogicalKeyboardKey.slash, control: true, shift: true): () {
+        const SingleActivator(
+          LogicalKeyboardKey.slash,
+          control: true,
+          shift: true,
+        ): () {
           UserManualDialog.show(context, initialTopicId: topicId);
         },
       },
-      child: Focus(
-        autofocus: true,
-        child: child,
-      ),
+      child: Focus(autofocus: true, child: child),
     );
   }
 }
@@ -47,10 +48,7 @@ class HelpShortcutWrapper extends StatelessWidget {
 class HelpManualButton extends StatelessWidget {
   final String? topicId;
 
-  const HelpManualButton({
-    super.key,
-    this.topicId,
-  });
+  const HelpManualButton({super.key, this.topicId});
 
   @override
   Widget build(BuildContext context) {

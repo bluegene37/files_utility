@@ -1212,10 +1212,7 @@ class TransferFilesProvider with ChangeNotifier {
               dirsToProcess.add(entity);
             } else if (entity is Link) {
               try {
-                if (!await resolvesWithinRoot(
-                  params.sourcePath,
-                  entity.path,
-                )) {
+                if (!await resolvesWithinRoot(params.sourcePath, entity.path)) {
                   logBatch.add(
                     'ℹ Skipped link pointing outside the source: ${p.basename(entity.path)}',
                   );

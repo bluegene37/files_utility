@@ -106,7 +106,8 @@ class UserManualData {
         ),
         ManualSection(
           title: 'Step-by-Step File Transfer Workflow',
-          description: 'Follow these steps to execute a reliable file transfer:',
+          description:
+              'Follow these steps to execute a reliable file transfer:',
           steps: [
             'Select the Source directory by clicking Browse or choosing from Recent Directories.',
             'Select the Destination directory.',
@@ -186,7 +187,8 @@ class UserManualData {
     const ManualTopic(
       id: 'delete_files',
       title: 'Delete Files',
-      subtitle: 'Targeted cleanup by year, month, extension, and retention criteria',
+      subtitle:
+          'Targeted cleanup by year, month, extension, and retention criteria',
       icon: Icons.delete_forever_rounded,
       badge: 'Maintenance',
       keywords: [
@@ -233,7 +235,8 @@ class UserManualData {
     const ManualTopic(
       id: 'count_files',
       title: 'Count & Audit Files',
-      subtitle: 'Fast inventory auditing, size tallying, and directory tree inspection',
+      subtitle:
+          'Fast inventory auditing, size tallying, and directory tree inspection',
       icon: Icons.analytics_rounded,
       badge: 'Audit',
       keywords: [
@@ -272,7 +275,8 @@ class UserManualData {
     const ManualTopic(
       id: 'advanced_features',
       title: 'Advanced Features & Integrations',
-      subtitle: 'SQLite history, network shares (UNC/NAS), and automation controls',
+      subtitle:
+          'SQLite history, network shares (UNC/NAS), and automation controls',
       icon: Icons.tune_rounded,
       badge: 'Power User',
       keywords: [
@@ -341,7 +345,8 @@ class UserManualData {
       sections: [
         ManualSection(
           title: 'Global Hotkeys',
-          description: 'These hotkeys are available from anywhere within the application:',
+          description:
+              'These hotkeys are available from anywhere within the application:',
           shortcuts: [
             'F1 : Open In-App User Manual & Help Center',
             'Cmd+? / Ctrl+? : Open In-App User Manual & Help Center',
@@ -364,7 +369,8 @@ class UserManualData {
         ),
         ManualSection(
           title: 'Operation & Console Execution',
-          description: 'Control operations and logging without using the mouse:',
+          description:
+              'Control operations and logging without using the mouse:',
           shortcuts: [
             'Space / Enter : Start or resume pending operation',
             'Cmd+L / Ctrl+L : Clear active log console entries',
@@ -378,7 +384,8 @@ class UserManualData {
     const ManualTopic(
       id: 'troubleshooting',
       title: 'Settings, Permissions & Troubleshooting',
-      subtitle: 'OS permissions, storage locations, update manager, and diagnostics',
+      subtitle:
+          'OS permissions, storage locations, update manager, and diagnostics',
       icon: Icons.build_circle_rounded,
       badge: 'Support',
       keywords: [

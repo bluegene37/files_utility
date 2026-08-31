@@ -23,247 +23,249 @@ class DeleteFilesScreen extends StatelessWidget {
     return HelpShortcutWrapper(
       topicId: 'delete_files',
       child: Scaffold(
-      body: Container(
-        decoration: AppDecorations.gradientBackground(context),
-        child: Column(
-          children: [
-            // App Bar
-            _buildAppBar(context),
+        body: Container(
+          decoration: AppDecorations.gradientBackground(context),
+          child: Column(
+            children: [
+              // App Bar
+              _buildAppBar(context),
 
-            // Content
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    // Config Section
-                    Container(
-                      decoration: AppDecorations.glassCard(
-                        context: context,
-                        glowColor: AppColors.error,
-                      ),
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          PathRow(
-                            label: 'Target Folder',
-                            path: provider.targetPath,
-                            onPick: provider.pickTarget,
-                            onChanged: provider.setTargetPath,
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () => _showAdvancedSettingsDialog(
-                                  context,
-                                  provider,
-                                ),
-                                icon: const Icon(
-                                  Icons.settings,
-                                  size: 16,
-                                  color: AppColors.accent,
-                                ),
-                                label: const Text(
-                                  'Advanced Settings',
-                                  style: TextStyle(color: AppColors.accent),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(
-                                    color: AppColors.cardBorder,
+              // Content
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      // Config Section
+                      Container(
+                        decoration: AppDecorations.glassCard(
+                          context: context,
+                          glowColor: AppColors.error,
+                        ),
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            PathRow(
+                              label: 'Target Folder',
+                              path: provider.targetPath,
+                              onPick: provider.pickTarget,
+                              onChanged: provider.setTargetPath,
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: () => _showAdvancedSettingsDialog(
+                                    context,
+                                    provider,
                                   ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
+                                  icon: const Icon(
+                                    Icons.settings,
+                                    size: 16,
+                                    color: AppColors.accent,
                                   ),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Text(
-                                'Log Every',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                  color: context.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 80,
-                                child: DropdownButtonFormField<int>(
-                                  isExpanded: true,
-                                  initialValue: provider.logInterval,
-                                  decoration: const InputDecoration(
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 8,
+                                  label: const Text(
+                                    'Advanced Settings',
+                                    style: TextStyle(color: AppColors.accent),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(
+                                      color: AppColors.cardBorder,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
                                       vertical: 8,
                                     ),
+                                    visualDensity: VisualDensity.compact,
                                   ),
-                                  dropdownColor: context.cardBg,
-                                  items: [1, 5, 10, 25, 50, 100].map((
-                                    int value,
-                                  ) {
-                                    return DropdownMenuItem<int>(
-                                      value: value,
-                                      child: Text(
-                                        value.toString(),
-                                        style: TextStyle(
-                                          color: context.textPrimary,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                  onChanged: provider.isProcessing
-                                      ? null
-                                      : (val) {
-                                          if (val != null) {
-                                            provider.setLogInterval(val);
-                                          }
-                                        },
                                 ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'files',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: context.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Icon(
-                                Icons.info_outline,
-                                size: 14,
-                                color: context.textMuted,
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  'Controls how often progress is logged to the console',
+                                const SizedBox(width: 16),
+                                Text(
+                                  'Log Every',
                                   style: TextStyle(
-                                    fontSize: 11,
-                                    color: context.textMuted,
-                                    fontStyle: FontStyle.italic,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    color: context.textSecondary,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 80,
+                                  child: DropdownButtonFormField<int>(
+                                    isExpanded: true,
+                                    initialValue: provider.logInterval,
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 8,
+                                      ),
+                                    ),
+                                    dropdownColor: context.cardBg,
+                                    items: [1, 5, 10, 25, 50, 100].map((
+                                      int value,
+                                    ) {
+                                      return DropdownMenuItem<int>(
+                                        value: value,
+                                        child: Text(
+                                          value.toString(),
+                                          style: TextStyle(
+                                            color: context.textPrimary,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: provider.isProcessing
+                                        ? null
+                                        : (val) {
+                                            if (val != null) {
+                                              provider.setLogInterval(val);
+                                            }
+                                          },
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'files',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: context.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 14,
+                                  color: context.textMuted,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    'Controls how often progress is logged to the console',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: context.textMuted,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                StatBadge(
+                                  title: 'History',
+                                  value: 'View',
+                                  color: AppColors.accent,
+                                  icon: Icons.history,
+                                  onTap: () => showHistoryDialog(
+                                    context,
+                                    initialOperation: 'Delete',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Actions, Status, and Stats
+                      Row(
+                        children: [
+                          if (!provider.isProcessing) ...[
+                            ElevatedButton.icon(
+                              onPressed: provider.targetPath != null
+                                  ? () => _showDeleteConfirmation(
+                                      context,
+                                      provider,
+                                    )
+                                  : null,
+                              icon: const Icon(Icons.delete_forever),
+                              label: const Text('Delete All'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.error,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            OutlinedButton.icon(
+                              onPressed: provider.clearLogs,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Clear Logs'),
+                            ),
+                          ] else
+                            ElevatedButton.icon(
+                              onPressed: provider.stop,
+                              icon: const Icon(Icons.stop),
+                              label: const Text('Stop'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey.shade700,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          const SizedBox(width: 16),
+
+                          // Progress indicator
+                          if (provider.isProcessing)
+                            Container(
+                              width: 14,
+                              height: 14,
+                              margin: const EdgeInsets.only(right: 8),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  AppColors.error.withValues(alpha: 0.8),
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              StatBadge(
-                                title: 'History',
-                                value: 'View',
-                                color: AppColors.accent,
-                                icon: Icons.history,
-                                onTap: () => showHistoryDialog(
-                                  context,
-                                  initialOperation: 'Delete',
-                                ),
+                            ),
+
+                          // Status
+                          Expanded(
+                            child: Text(
+                              provider.currentStatus,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: context.textPrimary,
+                                fontSize: 13,
                               ),
-                            ],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Stats
+                          StatBadge(
+                            title: 'Deleted',
+                            value: provider.deletedCount.toString(),
+                            color: AppColors.error,
+                            icon: Icons.delete,
+                          ),
+                          const SizedBox(width: 8),
+                          StatBadge(
+                            title: 'Errors',
+                            value: provider.errorCount.toString(),
+                            color: AppColors.warning,
+                            icon: Icons.error_outline,
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 10),
+                      const SizedBox(height: 10),
 
-                    // Actions, Status, and Stats
-                    Row(
-                      children: [
-                        if (!provider.isProcessing) ...[
-                          ElevatedButton.icon(
-                            onPressed: provider.targetPath != null
-                                ? () =>
-                                      _showDeleteConfirmation(context, provider)
-                                : null,
-                            icon: const Icon(Icons.delete_forever),
-                            label: const Text('Delete All'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.error,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          OutlinedButton.icon(
-                            onPressed: provider.clearLogs,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Clear Logs'),
-                          ),
-                        ] else
-                          ElevatedButton.icon(
-                            onPressed: provider.stop,
-                            icon: const Icon(Icons.stop),
-                            label: const Text('Stop'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.grey.shade700,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        const SizedBox(width: 16),
-
-                        // Progress indicator
-                        if (provider.isProcessing)
-                          Container(
-                            width: 14,
-                            height: 14,
-                            margin: const EdgeInsets.only(right: 8),
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                AppColors.error.withValues(alpha: 0.8),
-                              ),
-                            ),
-                          ),
-
-                        // Status
-                        Expanded(
-                          child: Text(
-                            provider.currentStatus,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: context.textPrimary,
-                              fontSize: 13,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // Stats
-                        StatBadge(
-                          title: 'Deleted',
-                          value: provider.deletedCount.toString(),
-                          color: AppColors.error,
-                          icon: Icons.delete,
-                        ),
-                        const SizedBox(width: 8),
-                        StatBadge(
-                          title: 'Errors',
-                          value: provider.errorCount.toString(),
-                          color: AppColors.warning,
-                          icon: Icons.error_outline,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Logs
-                    Expanded(child: LogConsole(logs: provider.logs)),
-                  ],
+                      // Logs
+                      Expanded(child: LogConsole(logs: provider.logs)),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _sectionLabel(BuildContext context, String text) {
     return Text(

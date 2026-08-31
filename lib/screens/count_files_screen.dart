@@ -23,227 +23,227 @@ class CountFilesScreen extends StatelessWidget {
     return HelpShortcutWrapper(
       topicId: 'count_files',
       child: Scaffold(
-      body: Container(
-        decoration: AppDecorations.gradientBackground(context),
-        child: Column(
-          children: [
-            // App Bar
-            _buildAppBar(context),
+        body: Container(
+          decoration: AppDecorations.gradientBackground(context),
+          child: Column(
+            children: [
+              // App Bar
+              _buildAppBar(context),
 
-            // Content
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    // Config Section
-                    Container(
-                      decoration: AppDecorations.glassCard(
-                        context: context,
-                        glowColor: AppColors.success,
-                      ),
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          PathRow(
-                            label: 'Target Folder',
-                            path: provider.targetPath,
-                            onPick: provider.isCounting
-                                ? null
-                                : provider.pickTarget,
-                            onChanged: provider.isCounting
-                                ? null
-                                : provider.setTargetPath,
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Text(
-                                'Log Every',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                  color: context.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 80,
-                                child: DropdownButtonFormField<int>(
-                                  isExpanded: true,
-                                  initialValue: provider.logInterval,
-                                  decoration: const InputDecoration(
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 8,
-                                    ),
-                                  ),
-                                  dropdownColor: context.cardBg,
-                                  items: [1, 5, 10, 25, 50, 100].map((
-                                    int value,
-                                  ) {
-                                    return DropdownMenuItem<int>(
-                                      value: value,
-                                      child: Text(
-                                        value.toString(),
-                                        style: TextStyle(
-                                          color: context.textPrimary,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                  onChanged: provider.isCounting
-                                      ? null
-                                      : (val) {
-                                          if (val != null) {
-                                            provider.setLogInterval(val);
-                                          }
-                                        },
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'files',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: context.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Icon(
-                                Icons.info_outline,
-                                size: 14,
-                                color: context.textMuted,
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  'Controls how often progress is logged to the console (larger numbers run faster)',
+              // Content
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      // Config Section
+                      Container(
+                        decoration: AppDecorations.glassCard(
+                          context: context,
+                          glowColor: AppColors.success,
+                        ),
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            PathRow(
+                              label: 'Target Folder',
+                              path: provider.targetPath,
+                              onPick: provider.isCounting
+                                  ? null
+                                  : provider.pickTarget,
+                              onChanged: provider.isCounting
+                                  ? null
+                                  : provider.setTargetPath,
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Text(
+                                  'Log Every',
                                   style: TextStyle(
-                                    fontSize: 11,
-                                    color: context.textMuted,
-                                    fontStyle: FontStyle.italic,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    color: context.textSecondary,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 80,
+                                  child: DropdownButtonFormField<int>(
+                                    isExpanded: true,
+                                    initialValue: provider.logInterval,
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 8,
+                                      ),
+                                    ),
+                                    dropdownColor: context.cardBg,
+                                    items: [1, 5, 10, 25, 50, 100].map((
+                                      int value,
+                                    ) {
+                                      return DropdownMenuItem<int>(
+                                        value: value,
+                                        child: Text(
+                                          value.toString(),
+                                          style: TextStyle(
+                                            color: context.textPrimary,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: provider.isCounting
+                                        ? null
+                                        : (val) {
+                                            if (val != null) {
+                                              provider.setLogInterval(val);
+                                            }
+                                          },
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'files',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: context.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 14,
+                                  color: context.textMuted,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    'Controls how often progress is logged to the console (larger numbers run faster)',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: context.textMuted,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                StatBadge(
+                                  title: 'History',
+                                  value: 'View',
+                                  color: AppColors.accent,
+                                  icon: Icons.history,
+                                  onTap: () => showHistoryDialog(
+                                    context,
+                                    initialOperation: 'Count',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Actions, Status, and Stats
+                      Row(
+                        children: [
+                          if (!provider.isCounting) ...[
+                            ElevatedButton.icon(
+                              onPressed: provider.targetPath != null
+                                  ? provider.startCounting
+                                  : null,
+                              icon: const Icon(Icons.analytics_rounded),
+                              label: const Text('Count Files'),
+                            ),
+                            const SizedBox(width: 10),
+                            OutlinedButton.icon(
+                              onPressed: provider.clearLogs,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Clear'),
+                            ),
+                          ] else
+                            ElevatedButton.icon(
+                              onPressed: provider.stop,
+                              icon: const Icon(Icons.stop),
+                              label: const Text('Stop'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.error,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          const SizedBox(width: 16),
+
+                          // Progress indicator
+                          if (provider.isCounting)
+                            Container(
+                              width: 14,
+                              height: 14,
+                              margin: const EdgeInsets.only(right: 8),
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  AppColors.success,
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              StatBadge(
-                                title: 'History',
-                                value: 'View',
-                                color: AppColors.accent,
-                                icon: Icons.history,
-                                onTap: () => showHistoryDialog(
-                                  context,
-                                  initialOperation: 'Count',
-                                ),
+                            ),
+
+                          // Status
+                          Expanded(
+                            child: Text(
+                              provider.currentStatus,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: context.textPrimary,
+                                fontSize: 13,
                               ),
-                            ],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Stats
+                          StatBadge(
+                            title: 'Files',
+                            value: provider.totalFiles.toString(),
+                            color: AppColors.success,
+                            icon: Icons.insert_drive_file,
+                          ),
+                          const SizedBox(width: 8),
+                          StatBadge(
+                            title: 'Folders',
+                            value: provider.totalFolders.toString(),
+                            color: AppColors.info,
+                            icon: Icons.folder,
+                          ),
+                          const SizedBox(width: 8),
+                          StatBadge(
+                            title: 'Errors',
+                            value: provider.errors.toString(),
+                            color: AppColors.error,
+                            icon: Icons.error,
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 10),
+                      const SizedBox(height: 10),
 
-                    // Actions, Status, and Stats
-                    Row(
-                      children: [
-                        if (!provider.isCounting) ...[
-                          ElevatedButton.icon(
-                            onPressed: provider.targetPath != null
-                                ? provider.startCounting
-                                : null,
-                            icon: const Icon(Icons.analytics_rounded),
-                            label: const Text('Count Files'),
-                          ),
-                          const SizedBox(width: 10),
-                          OutlinedButton.icon(
-                            onPressed: provider.clearLogs,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Clear'),
-                          ),
-                        ] else
-                          ElevatedButton.icon(
-                            onPressed: provider.stop,
-                            icon: const Icon(Icons.stop),
-                            label: const Text('Stop'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.error,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        const SizedBox(width: 16),
-
-                        // Progress indicator
-                        if (provider.isCounting)
-                          Container(
-                            width: 14,
-                            height: 14,
-                            margin: const EdgeInsets.only(right: 8),
-                            child: const CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                AppColors.success,
-                              ),
-                            ),
-                          ),
-
-                        // Status
-                        Expanded(
-                          child: Text(
-                            provider.currentStatus,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: context.textPrimary,
-                              fontSize: 13,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // Stats
-                        StatBadge(
-                          title: 'Files',
-                          value: provider.totalFiles.toString(),
-                          color: AppColors.success,
-                          icon: Icons.insert_drive_file,
-                        ),
-                        const SizedBox(width: 8),
-                        StatBadge(
-                          title: 'Folders',
-                          value: provider.totalFolders.toString(),
-                          color: AppColors.info,
-                          icon: Icons.folder,
-                        ),
-                        const SizedBox(width: 8),
-                        StatBadge(
-                          title: 'Errors',
-                          value: provider.errors.toString(),
-                          color: AppColors.error,
-                          icon: Icons.error,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Logs
-                    Expanded(child: LogConsole(logs: provider.logs)),
-                  ],
+                      // Logs
+                      Expanded(child: LogConsole(logs: provider.logs)),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildAppBar(BuildContext context) {
     final currentProfileId = LocalDbService().currentProfileId;

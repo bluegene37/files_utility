@@ -56,85 +56,85 @@ class _HistoryScreenState extends State<HistoryScreen>
     return HelpShortcutWrapper(
       topicId: 'advanced_features',
       child: Scaffold(
-      body: Container(
-        decoration: AppDecorations.gradientBackground(context),
-        child: Column(
-          children: [
-            // App Bar
-            _buildAppBar(context, currentProfile.name),
+        body: Container(
+          decoration: AppDecorations.gradientBackground(context),
+          child: Column(
+            children: [
+              // App Bar
+              _buildAppBar(context, currentProfile.name),
 
-            // Content
-            Expanded(
-              child: Consumer<HistoryProvider>(
-                builder: (context, provider, child) {
-                  if (provider.isLoading) {
-                    return Center(
-                      child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          context.primaryAccent,
+              // Content
+              Expanded(
+                child: Consumer<HistoryProvider>(
+                  builder: (context, provider, child) {
+                    if (provider.isLoading) {
+                      return Center(
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            context.primaryAccent,
+                          ),
                         ),
+                      );
+                    }
+
+                    return Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Operations Visual Graphs Dashboard
+                          _buildVisualGraphsDashboard(context, provider),
+                          const SizedBox(height: 16),
+
+                          // Tab Bar for each operation table
+                          Container(
+                            decoration: BoxDecoration(
+                              color: context.containerBg,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: context.border),
+                            ),
+                            child: TabBar(
+                              controller: _tabController,
+                              indicatorColor: context.primaryAccent,
+                              labelColor: context.primaryAccent,
+                              unselectedLabelColor: context.textSecondary,
+                              labelStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                              tabs: _operations
+                                  .map((op) => Tab(text: '$op History'))
+                                  .toList(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Tab Bar Views (Tables per operation)
+                          Expanded(
+                            child: TabBarView(
+                              controller: _tabController,
+                              children: _operations.map((op) {
+                                final filtered = op == 'All'
+                                    ? provider.records
+                                    : provider.records
+                                          .where((r) => r.operation == op)
+                                          .toList();
+                                return _buildHistoryTable(context, filtered);
+                              }).toList(),
+                            ),
+                          ),
+                        ],
                       ),
                     );
-                  }
-
-                  return Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Operations Visual Graphs Dashboard
-                        _buildVisualGraphsDashboard(context, provider),
-                        const SizedBox(height: 16),
-
-                        // Tab Bar for each operation table
-                        Container(
-                          decoration: BoxDecoration(
-                            color: context.containerBg,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: context.border),
-                          ),
-                          child: TabBar(
-                            controller: _tabController,
-                            indicatorColor: context.primaryAccent,
-                            labelColor: context.primaryAccent,
-                            unselectedLabelColor: context.textSecondary,
-                            labelStyle: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                            tabs: _operations
-                                .map((op) => Tab(text: '$op History'))
-                                .toList(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Tab Bar Views (Tables per operation)
-                        Expanded(
-                          child: TabBarView(
-                            controller: _tabController,
-                            children: _operations.map((op) {
-                              final filtered = op == 'All'
-                                  ? provider.records
-                                  : provider.records
-                                        .where((r) => r.operation == op)
-                                        .toList();
-                              return _buildHistoryTable(context, filtered);
-                            }).toList(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildAppBar(BuildContext context, String profileName) {
     return Container(
