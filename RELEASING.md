@@ -126,6 +126,46 @@ Updater state (last check time, cached release, skipped version) lives in
 
 ---
 
+## ✍️ Enabling Windows Code Signing
+
+`release.yml` already contains the `signtool.exe` steps. They are inert until
+two repository secrets exist, so releases keep publishing unsigned until you
+supply a certificate — nothing to uncomment, nothing to merge.
+
+| Secret | Value |
+| :--- | :--- |
+| `WINDOWS_CERT_BASE64` | Your `.pfx` certificate, base64-encoded |
+| `WINDOWS_CERT_PASSWORD` | The `.pfx` export password |
+
+Encode the certificate:
+
+```bash
+# macOS / Linux
+base64 -i certificate.pfx | tr -d '\n' | pbcopy
+```
+
+```powershell
+# Windows
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("certificate.pfx")) | Set-Clipboard
+```
+
+Add both under **Settings → Secrets and variables → Actions**. The next tagged
+release signs the application executable *and* the Inno installer (SHA-256,
+timestamped against `timestamp.digicert.com`, so signatures stay valid after
+the certificate expires). The certificate is written to `RUNNER_TEMP` and
+deleted in an `if: always()` step.
+
+With no secret set the build logs a `::warning::` naming the consequence and
+continues unsigned — a release is never blocked by a missing certificate.
+
+> [!NOTE]
+> **EV vs OV certificates.** An EV (Extended Validation) certificate clears
+> SmartScreen immediately. A standard OV certificate must first accrue
+> download reputation, so early users may still see the warning even though
+> the binary is correctly signed.
+
+---
+
 ## 💻 Manual / Local Packaging
 
 ### Windows Installer (Inno Setup)
@@ -160,6 +200,6 @@ dart run flutter_launcher_icons
 
 | Platform | Current Status | User Experience & Workaround | Production Remedy |
 | :--- | :--- | :--- | :--- |
-| **Windows (`.exe`)** | **Unsigned** | Microsoft Defender SmartScreen warns "Windows protected your PC / Unknown Publisher". Users click **More info** $\rightarrow$ **Run anyway**. | Obtain EV / Authenticode Certificate and sign via `signtool.exe` or GitHub Action. |
+| **Windows (`.exe`)** | **Unsigned by default — signing wired up, awaiting a certificate** | Microsoft Defender SmartScreen warns "Windows protected your PC / Unknown Publisher". Users click **More info** $\rightarrow$ **Run anyway**. | Add the two repository secrets below; `release.yml` then signs automatically via `signtool.exe`. |
 | **Windows (`.msix`)** | **Self-signed** | Requires installing the publisher certificate into the local `Trusted People` certificate store. | Acquire Microsoft Partner Center certificate or sign with organization CA. |
 | **macOS (`.dmg`)** | **Unsigned / Not Notarized** | Apple Gatekeeper blocks untrusted execution on first launch. Users right-click `.app` in `/Applications` $\rightarrow$ **Open**, or run: `xattr -dr com.apple.quarantine "/Applications/Files Utility.app"`. | Join Apple Developer Program, sign with Developer ID Application certificate, and notarize via `xcrun notarytool`. |
