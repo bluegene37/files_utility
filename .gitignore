@@ -92,7 +92,8 @@ docs/
 plans/
 specs/
 
-# Project documentation (kept local only; README.md and LICENSE stay tracked)
+# Project documentation (kept local only; LICENSE stays tracked)
+README.md
 CHANGELOG.md
 CONTRIBUTING.md
 RELEASING.md
