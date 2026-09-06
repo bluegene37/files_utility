@@ -72,4 +72,4 @@ inno_bundle:
   languages:
     - "english"
 
-# Build commands: see RELEASING.md
+# Build commands: see scripts/ in this repo

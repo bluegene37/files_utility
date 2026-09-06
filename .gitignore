@@ -78,3 +78,24 @@ app.*.map.json
 *.provisionprofile
 .env*
 !.env.example
+
+# AI assistant files and generated notes (kept local only)
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+.claude/
+.gstack/
+.cursor/
+.windsurf/
+.antigravity/
+docs/
+plans/
+specs/
+
+# Project documentation (kept local only; README.md and LICENSE stay tracked)
+CHANGELOG.md
+CONTRIBUTING.md
+RELEASING.md
+SECURITY.md
+.github/pull_request_template.md
+.github/ISSUE_TEMPLATE/

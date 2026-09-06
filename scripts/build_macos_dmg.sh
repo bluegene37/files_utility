@@ -8,7 +8,7 @@
 # Gatekeeper will quarantine the app on other Macs: users must right-click >
 # Open the first time, or clear quarantine with
 #   xattr -dr com.apple.quarantine "/Applications/Files Utility.app"
-# See RELEASING.md for signing status.
+# Signing status is documented in the local release notes.
 
 set -euo pipefail
 
