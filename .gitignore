@@ -92,11 +92,8 @@ docs/
 plans/
 specs/
 
-# Project documentation (kept local only; LICENSE stays tracked)
-README.md
-CHANGELOG.md
-CONTRIBUTING.md
-RELEASING.md
-SECURITY.md
-.github/pull_request_template.md
-.github/ISSUE_TEMPLATE/
+# Web target (not shipped; desktop only)
+web/
+
+# Project docs that ship with the repo (re-included over ~/.gitignore_global)
+!RELEASING.md
