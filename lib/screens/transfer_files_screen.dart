@@ -195,6 +195,122 @@ class TransferFilesScreen extends StatelessWidget {
                                       ),
                                     ],
                                   ),
+                                  if (provider.enableDateRange ||
+                                      provider.enableAgeFilter ||
+                                      provider.excludeSubfolders) ...[
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      children: [
+                                        if (provider.enableDateRange)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.accent
+                                                  .withValues(alpha: 0.12),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: AppColors.accent
+                                                    .withValues(alpha: 0.3),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                  Icons.calendar_today,
+                                                  size: 12,
+                                                  color: AppColors.accent,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Date: ${DateFormat('dd/MM/yyyy').format(provider.fromDate)} – ${DateFormat('dd/MM/yyyy').format(provider.toDate)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight:
+                                                        FontWeight.w500,
+                                                    color: AppColors.accent,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        if (provider.enableAgeFilter)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.accent
+                                                  .withValues(alpha: 0.12),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: AppColors.accent
+                                                    .withValues(alpha: 0.3),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                  Icons.schedule,
+                                                  size: 12,
+                                                  color: AppColors.accent,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Age: > ${provider.ageFilterValue} ${provider.ageFilterUnit}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight:
+                                                        FontWeight.w500,
+                                                    color: AppColors.accent,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        if (provider.excludeSubfolders)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.cardBorder
+                                                  .withValues(alpha: 0.3),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.folder,
+                                                  size: 12,
+                                                  color: context.textMuted,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Source folder only',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: context.textMuted,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -547,6 +663,63 @@ class TransferFilesScreen extends StatelessWidget {
                                     ? (date) {}
                                     : (date) => provider.setToDate(date),
                               ),
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: Checkbox(
+                                    value: provider.todayOnly,
+                                    onChanged: provider.isProcessing
+                                        ? null
+                                        : (val) => provider.setTodayOnly(
+                                            val ?? false,
+                                          ),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Today',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: context.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: Checkbox(
+                                    value: provider.yesterdayOnly,
+                                    onChanged: provider.isProcessing
+                                        ? null
+                                        : (val) =>
+                                            provider.setYesterdayOnly(
+                                              val ?? false,
+                                            ),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Yesterday',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: context.textSecondary,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
