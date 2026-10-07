@@ -87,10 +87,20 @@ Pushing a tag matching `v*` (or manually executing the `workflow_dispatch` on Gi
    - Compiles Windows x64 release binaries (`flutter build windows --release`).
    - Invokes Inno Setup compiler (`dart run inno_bundle:build --release --no-app`).
    - Uploads `files_utility-setup.exe`.
+<!-- Gene - Oct, 07, 2026: Updated macOS Runner pipeline description to include Developer ID code signing, Hardened Runtime, and Apple notarization -->
+<!-- Previous implementation:
 2. **macOS Runner (`macos-latest`)**:
    - Executes `flutter test`.
    - Compiles macOS release `.app` (`flutter build macos --release`).
    - Packages drag-to-`/Applications` DMG image via [`scripts/build_macos_dmg.sh`](scripts/build_macos_dmg.sh).
+   - Uploads `Files Utility-<version>.dmg`.
+-->
+2. **macOS Runner (`macos-latest`)**:
+   - Executes `flutter test`.
+   - Imports Apple Developer ID certificate (if secrets are set).
+   - Compiles macOS release `.app` (`flutter build macos --release`).
+   - Packages and signs drag-to-`/Applications` DMG image with Developer ID & Hardened Runtime via [`scripts/build_macos_dmg.sh`](scripts/build_macos_dmg.sh).
+   - Submits to Apple Notary Service (`xcrun notarytool`) and staples tickets if credentials are provided.
    - Uploads `Files Utility-<version>.dmg`.
 3. **Publish Step (`ubuntu-latest`)**:
    - Downloads all release artifacts from runners.
@@ -166,6 +176,32 @@ continues unsigned — a release is never blocked by a missing certificate.
 
 ---
 
+<!-- Gene - Oct, 07, 2026: Added macOS Developer ID Code Signing & Notarization instructions -->
+## 🍏 Enabling macOS Code Signing & Notarization
+
+`release.yml` and `scripts/build_macos_dmg.sh` support Apple Developer ID Application code signing, Hardened Runtime, DMG signing, and automated Apple Notarization via `xcrun notarytool`.
+
+### GitHub Actions Secrets
+
+To enable automated signing and notarization on GitHub Releases, configure the following secrets under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| :--- | :--- |
+| `MACOS_CERTIFICATE_BASE64` | Your Developer ID Application `.p12` certificate, base64-encoded |
+| `MACOS_CERTIFICATE_PASSWORD` | The `.p12` export password |
+| `APPLE_ID` | Apple Developer Account email (e.g. `bluegene37@outlook.com`) |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password generated from appleid.apple.com |
+| `APPLE_TEAM_ID` | Apple Developer Team ID (`T7LB768N2Z`) |
+
+Encode `.p12` certificate for GitHub Secrets:
+```bash
+base64 -i cert.p12 | tr -d '\n' | pbcopy
+```
+
+With no certificate secret set, the CI workflow falls back gracefully to an ad-hoc signed `.app` and DMG without failing the build.
+
+---
+
 ## 💻 Manual / Local Packaging
 
 ### Windows Installer & Portable Bundle (Automated Script)
@@ -198,8 +234,18 @@ dart run msix:create
 
 ### macOS Disk Image (.dmg)
 ```bash
+# Package, sign with Developer ID Application, and create DMG:
 ./scripts/build_macos_dmg.sh
+
 # Output location: build/macos/Files Utility-<version>.dmg
+```
+
+For local automated notarization, store your credentials once in Keychain:
+```bash
+xcrun notarytool store-credentials "files-utility-notary" \
+  --apple-id "bluegene37@outlook.com" \
+  --team-id "T7LB768N2Z" \
+  --password "<your-app-specific-password>"
 ```
 
 ### Application Icons
@@ -216,4 +262,8 @@ dart run flutter_launcher_icons
 | :--- | :--- | :--- | :--- |
 | **Windows (`.exe`)** | **Unsigned by default — signing wired up, awaiting a certificate** | Microsoft Defender SmartScreen warns "Windows protected your PC / Unknown Publisher". Users click **More info** $\rightarrow$ **Run anyway**. | Add the two repository secrets below; `release.yml` then signs automatically via `signtool.exe`. |
 | **Windows (`.msix`)** | **Self-signed** | Requires installing the publisher certificate into the local `Trusted People` certificate store. | Acquire Microsoft Partner Center certificate or sign with organization CA. |
+<!-- Gene - Oct, 07, 2026: Updated macOS signing status to Developer ID Application signed with notarization pipeline -->
+<!-- Previous implementation:
 | **macOS (`.dmg`)** | **Unsigned / Not Notarized** | Apple Gatekeeper blocks untrusted execution on first launch. Users right-click `.app` in `/Applications` $\rightarrow$ **Open**, or run: `xattr -dr com.apple.quarantine "/Applications/Files Utility.app"`. | Join Apple Developer Program, sign with Developer ID Application certificate, and notarize via `xcrun notarytool`. |
+-->
+| **macOS (`.dmg`)** | **Developer ID Signed & Notarization Pipeline Enabled** | Fully trusted and verified by Apple Gatekeeper when signed with Developer ID Application and notarized. | Configured with `Developer ID Application: Gene Ray Medel (T7LB768N2Z)` and Hardened Runtime; automated via `scripts/build_macos_dmg.sh` and CI. |

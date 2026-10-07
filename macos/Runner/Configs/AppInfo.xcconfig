@@ -10,5 +10,8 @@ PRODUCT_NAME = Files Utility
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = dev.genexis.filesutility
 
+// Gene - Oct, 07, 2026: Configured DEVELOPMENT_TEAM to official Apple Team ID T7LB768N2Z from Developer ID certificate
+DEVELOPMENT_TEAM = T7LB768N2Z
+
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 genexis.dev. All rights reserved.

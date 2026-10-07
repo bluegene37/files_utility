@@ -68,7 +68,53 @@ jobs:
       - name: Run Test Suite
         run: flutter test
 
+      # Gene - Oct, 07, 2026: Import Apple Developer certificate for Developer ID code signing
+      - name: Import Apple Developer Certificate
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$MACOS_CERTIFICATE_BASE64" ]; then
+            echo "::warning ::MACOS_CERTIFICATE_BASE64 secret not set. Skipping certificate import and codesigning."
+            exit 0
+          fi
+          
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
+          
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          
+          CERT_PATH=$RUNNER_TEMP/cert.p12
+          echo "$MACOS_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$CERT_PATH"
+          
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -n "$IDENTITY" ]; then
+            echo "SIGNING_IDENTITY=$IDENTITY" >> $GITHUB_ENV
+            echo "Loaded signing identity: $IDENTITY"
+          else
+            echo "::warning ::Developer ID Application identity not found in imported certificate."
+          fi
+
+      # Gene - Oct, 07, 2026: Package and sign macOS DMG with Developer ID and optional Notarization
+      # Previous implementation:
+      # - name: Package macOS DMG
+      #   run: |
+      #     chmod +x scripts/build_macos_dmg.sh
+      #     ./scripts/build_macos_dmg.sh
       - name: Package macOS DMG
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ env.SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || 'T7LB768N2Z' }}
         run: |
           chmod +x scripts/build_macos_dmg.sh
           ./scripts/build_macos_dmg.sh
@@ -79,6 +125,14 @@ jobs:
           name: macos-dmg
           path: build/macos/*.dmg
           if-no-files-found: error
+
+      # Gene - Oct, 07, 2026: Clean up temporary keychain after build
+      - name: Clean up keychain
+        if: always()
+        run: |
+          if [ -n "$KEYCHAIN_PATH" ] && [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
 
   build-linux:
     name: Build Linux Packages
