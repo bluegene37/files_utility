@@ -75,12 +75,24 @@ void main() {
       final topics = UserManualData.topics;
       expect(topics.isNotEmpty, isTrue);
 
+      // final expectedTopicIds = [
+      //   'getting_started',
+      //   'transfer_files',
+      //   'copy_files',
+      //   'delete_files',
+      //   'count_files',
+      //   'advanced_features',
+      //   'shortcuts_cheat_sheet',
+      //   'troubleshooting',
+      // ];
+      // Gene - Nov, 21, 2026: Assert ftp_files manual topic exists alongside existing topics
       final expectedTopicIds = [
         'getting_started',
         'transfer_files',
         'copy_files',
         'delete_files',
         'count_files',
+        'ftp_files',
         'advanced_features',
         'shortcuts_cheat_sheet',
         'troubleshooting',

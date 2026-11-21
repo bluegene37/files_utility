@@ -25,6 +25,8 @@ dependencies:
   window_manager: ^0.5.2
   sqflite: ^2.4.3
   sqflite_common_ffi: ^2.4.2
+  # Gene - Nov, 21, 2026: Add ftpconnect for native FTP/FTPS/FTPES/SFTP uploads
+  ftpconnect: ^3.0.0
 
 dev_dependencies:
   flutter_test:

@@ -57,13 +57,23 @@ class UserManualData {
         ),
         ManualSection(
           title: 'Core Navigation & Tools',
+          // description:
+          //     'The main dashboard provides rapid access to the 4 primary file management modules, an aggregate comparative analytics overview, and the recent run history table.',
+          // steps: [
+          //   'Transfer Files: Move files matching date and extension filters while automatically pruning successfully moved source files.',
+          //   'Copy Files: Mirror single or multiple directories with customizable run sequence orders.',
+          //   'Delete Files: Purge obsolete archives and files based on year and month matrix filters.',
+          //   'Count Files: Rapidly audit directory file counts, subfolder totals, and compute operational throughput.',
+          // ],
+          // Gene - Nov, 21, 2026: Update dashboard tools overview to include FTP Upload
           description:
-              'The main dashboard provides rapid access to the 4 primary file management modules, an aggregate comparative analytics overview, and the recent run history table.',
+              'The main dashboard provides rapid access to the 5 primary file management modules, an aggregate comparative analytics overview, and the recent run history table.',
           steps: [
             'Transfer Files: Move files matching date and extension filters while automatically pruning successfully moved source files.',
             'Copy Files: Mirror single or multiple directories with customizable run sequence orders.',
             'Delete Files: Purge obsolete archives and files based on year and month matrix filters.',
             'Count Files: Rapidly audit directory file counts, subfolder totals, and compute operational throughput.',
+            'FTP Upload: Upload local or network share files to FTP, FTPS, FTPES, or SFTP servers with subfolder filters, size verification, dry-run checks, and scheduled runs.',
           ],
           shortcuts: ['Cmd+1', 'Cmd+2', 'Cmd+3', 'Cmd+4'],
           tags: ['navigation', 'tools', 'dashboard'],
@@ -271,6 +281,63 @@ class UserManualData {
       ],
     ),
 
+    // Gene - Nov, 21, 2026: Add User Manual topic for FTP Upload automation, settings, and scheduler
+    // 5b. FTP Upload
+    const ManualTopic(
+      id: 'ftp_files',
+      title: 'FTP Upload & Scheduler',
+      subtitle:
+          'Automated FTP, FTPS, FTPES, and SFTP uploads with per-profile credentials and scheduling',
+      icon: Icons.cloud_upload_rounded,
+      badge: 'Core Tool',
+      keywords: [
+        'ftp',
+        'ftps',
+        'ftpes',
+        'sftp',
+        'upload',
+        'schedule',
+        'scheduler',
+        'dry run',
+        'retry',
+        'remote',
+        'subfolders',
+      ],
+      sections: [
+        ManualSection(
+          title: 'Server Connection & Security',
+          description:
+              'Configure your server protocol (Plain FTP, Implicit FTPS, Explicit FTPES, or SSH SFTP), Host, Port, Username, and Password inside the collapsible FTP Connection panel. Credentials are saved per App Profile with password obfuscation at rest and automatic redaction from logs and run history.',
+          steps: [
+            'Expand the FTP Connection card and select the protocol (defaulting to Plain FTP on port 21).',
+            'Enter your server host (e.g., ftp.example.com), port, username, and password.',
+            'Click Test Connection to verify connectivity and check access to your optional Remote Folder before running.',
+          ],
+          tags: ['ftp', 'ftps', 'sftp', 'credentials', 'security'],
+        ),
+        ManualSection(
+          title: 'Single & Multiple Upload Sources',
+          description:
+              'Upload from a single local/network directory or enable Multiple Sources to configure ordered upload jobs with optional comma-separated Subfolders filters (e.g., FolderA, FolderB) and custom FTP Destination folders (e.g., Backups). Each subfolder is scanned and uploaded immediately over one persistent connection to prevent server idle timeouts.',
+          tags: ['sources', 'subfolders', 'remote-path'],
+        ),
+        ManualSection(
+          title: 'Date Filters, Reliability & Dry-Run Mode',
+          description:
+              'Open Advanced Settings to pick a Date Filter Mode (Yesterday, Today, N Days Ago, Specific Date, Date Range, or All Files) matched against Creation Date or Modified Date. Skip-if-exists (matching size), post-upload size verification, configurable retries, and Dry-Run simulation help protect large backups.',
+          tip:
+              'Run with Dry-Run mode enabled first when setting up new subfolder or date filters to confirm which files would upload or skip without transferring data.',
+          tags: ['date-filter', 'dry-run', 'retry', 'verification'],
+        ),
+        ManualSection(
+          title: 'Weekday & Time Scheduler',
+          description:
+              'Enable Schedule in Advanced Settings, choose a Run At time, select the target weekdays (Mon–Sun), and choose Repeat or Stop on completion. Click Start Schedule to arm the timer while leaving Run Now available for immediate manual runs anytime.',
+          tags: ['scheduler', 'automation', 'weekdays'],
+        ),
+      ],
+    ),
+
     // 6. Advanced Features & Integrations
     const ManualTopic(
       id: 'advanced_features',
@@ -298,7 +365,9 @@ class UserManualData {
               'Every execution across all tools is automatically logged to an embedded SQLite database. The History & Analytics Dashboard computes operation distributions, transfer speeds, error tallies, and run durations.',
           steps: [
             'Access the History Dashboard directly on the main screen or click "View Full Analytics".',
-            'Filter past runs by Operation Type (Transfer, Copy, Delete, Count) or Status (Completed, Stopped, Failed).',
+            // 'Filter past runs by Operation Type (Transfer, Copy, Delete, Count) or Status (Completed, Stopped, Failed).',
+            // Gene - Nov, 21, 2026: Include FTP in History filter documentation
+            'Filter past runs by Operation Type (Transfer, Copy, Delete, Count, FTP) or Status (Completed, Stopped, Failed).',
             'Inspect detailed per-run telemetry including start/end timestamps, source/destination paths, and errors.',
           ],
           shortcuts: ['Cmd+H', 'Ctrl+H'],

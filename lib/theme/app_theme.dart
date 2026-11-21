@@ -19,6 +19,9 @@ extension ThemeContextExtension on BuildContext {
       isDarkMode ? AppColors.cardBorder : AppColors.lightCardBorder;
   Color get primaryAccent =>
       isDarkMode ? AppColors.accent : AppColors.lightAccent;
+  // Gene - Nov, 21, 2026: Add theme-aware FTP accent color getter
+  Color get ftpAccent =>
+      isDarkMode ? AppColors.ftpDark : AppColors.ftpLight;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,6 +77,9 @@ class AppColors {
   static const Color error = Color(0xFFC74838); // Terracotta error
   static const Color warning = Color(0xFFD98A2B); // Warm honey amber
   static const Color info = Color(0xFF6B8BA6); // Muted slate blue
+  // Gene - Nov, 21, 2026: Add muted teal accents for the FTP Upload module
+  static const Color ftpDark = Color(0xFF5FA8A0);
+  static const Color ftpLight = Color(0xFF2A7B74);
 
   // Text (Dark)
   static const Color textPrimary = Color(0xFFFAF7F0); // Warm cream

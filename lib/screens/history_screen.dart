@@ -21,12 +21,21 @@ class _HistoryScreenState extends State<HistoryScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
+  // final List<String> _operations = [
+  //   'All',
+  //   'Transfer',
+  //   'Copy',
+  //   'Delete',
+  //   'Count',
+  // ];
+  // Gene - Nov, 21, 2026: Include 'FTP' tab in HistoryScreen operations
   final List<String> _operations = [
     'All',
     'Transfer',
     'Copy',
     'Delete',
     'Count',
+    'FTP',
   ];
 
   @override
@@ -203,11 +212,23 @@ class _HistoryScreenState extends State<HistoryScreen>
         .where((r) => r.operation == 'Count')
         .fold(0, (sum, r) => sum + r.filesProcessed);
 
+    // int maxFiles = [
+    //   transferFiles,
+    //   copyFiles,
+    //   deleteFiles,
+    //   countFiles,
+    // ].reduce((max, val) => val > max ? val : max);
+    // Gene - Nov, 21, 2026: Include FTP upload file count in HistoryScreen summary graph
+    int ftpFiles = records
+        .where((r) => r.operation == 'FTP')
+        .fold(0, (sum, r) => sum + r.filesProcessed);
+
     int maxFiles = [
       transferFiles,
       copyFiles,
       deleteFiles,
       countFiles,
+      ftpFiles,
     ].reduce((max, val) => val > max ? val : max);
     if (maxFiles == 0) maxFiles = 1;
 
@@ -306,6 +327,21 @@ class _HistoryScreenState extends State<HistoryScreen>
                       .length,
                   filesCount: countFiles,
                   ratio: countFiles / maxFiles,
+                ),
+              ),
+              // Gene - Nov, 21, 2026: Add FTP operation graph card to HistoryScreen
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildOperationGraphCard(
+                  context,
+                  title: 'FTP',
+                  icon: Icons.cloud_upload,
+                  color: context.ftpAccent,
+                  runsCount: records
+                      .where((r) => r.operation == 'FTP')
+                      .length,
+                  filesCount: ftpFiles,
+                  ratio: ftpFiles / maxFiles,
                 ),
               ),
             ],
@@ -717,6 +753,9 @@ class _HistoryScreenState extends State<HistoryScreen>
         return AppColors.error;
       case 'Count':
         return isDark ? AppColors.success : const Color(0xFF16A34A);
+      // Gene - Nov, 21, 2026: Color mapping for FTP operation in HistoryScreen
+      case 'FTP':
+        return isDark ? AppColors.ftpDark : AppColors.ftpLight;
       default:
         return isDark ? AppColors.textMuted : AppColors.lightTextMuted;
     }
@@ -732,6 +771,9 @@ class _HistoryScreenState extends State<HistoryScreen>
         return Icons.delete_forever;
       case 'Count':
         return Icons.analytics;
+      // Gene - Nov, 21, 2026: Icon mapping for FTP operation in HistoryScreen
+      case 'FTP':
+        return Icons.cloud_upload;
       default:
         return Icons.help_outline;
     }

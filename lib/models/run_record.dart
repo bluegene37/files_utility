@@ -1,6 +1,8 @@
 class RunRecord {
   final String id;
-  final String operation; // 'Transfer', 'Copy', 'Delete', 'Count'
+  // final String operation; // 'Transfer', 'Copy', 'Delete', 'Count'
+  // Gene - Nov, 21, 2026: Document 'FTP' as a supported RunRecord operation type
+  final String operation; // 'Transfer', 'Copy', 'Delete', 'Count', 'FTP'
   final DateTime startTime;
   final DateTime endTime;
   final int filesProcessed;

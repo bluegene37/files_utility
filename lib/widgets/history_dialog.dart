@@ -195,7 +195,9 @@ class _HistoryDialogState extends State<HistoryDialog> {
     List<RunRecord> filtered,
     bool isSpecificScreen,
   ) {
-    final operations = ['All', 'Transfer', 'Copy', 'Delete', 'Count'];
+    // final operations = ['All', 'Transfer', 'Copy', 'Delete', 'Count'];
+    // Gene - Nov, 21, 2026: Add 'FTP' filter chip to HistoryDialog
+    final operations = ['All', 'Transfer', 'Copy', 'Delete', 'Count', 'FTP'];
 
     int totalFiles = filtered.fold(0, (sum, r) => sum + r.filesProcessed);
     int totalFolders = filtered.fold(0, (sum, r) => sum + r.foldersProcessed);
@@ -615,6 +617,9 @@ class _HistoryDialogState extends State<HistoryDialog> {
         return AppColors.error;
       case 'Count':
         return isDark ? AppColors.success : const Color(0xFF16A34A);
+      // Gene - Nov, 21, 2026: Color mapping for FTP operation in HistoryDialog
+      case 'FTP':
+        return isDark ? AppColors.ftpDark : AppColors.ftpLight;
       default:
         return AppColors.textMuted;
     }
@@ -630,6 +635,9 @@ class _HistoryDialogState extends State<HistoryDialog> {
         return Icons.delete_forever;
       case 'Count':
         return Icons.analytics;
+      // Gene - Nov, 21, 2026: Icon mapping for FTP operation in HistoryDialog
+      case 'FTP':
+        return Icons.cloud_upload;
       default:
         return Icons.help_outline;
     }

@@ -14,6 +14,8 @@ import 'transfer_files_screen.dart';
 import 'delete_files_screen.dart';
 import 'copy_files_screen.dart';
 import 'count_files_screen.dart';
+// Gene - Nov, 21, 2026: Import FtpFilesScreen for the 5th dashboard card
+import 'ftp_files_screen.dart';
 import 'history_screen.dart';
 import '../services/window_service.dart';
 
@@ -54,7 +56,59 @@ class _MainScreenState extends State<MainScreen> {
 
                     const SizedBox(height: 16),
 
-                    // 4 Action Buttons in a Single Line
+                    // // 4 Action Buttons in a Single Line
+                    // Row(
+                    //   children: [
+                    //     Expanded(
+                    //       child: _DashboardCard(
+                    //         icon: Icons.move_to_inbox_rounded,
+                    //         title: 'Transfer Files',
+                    //         subtitle: 'Move files by date & filters',
+                    //         accentColor: context.primaryAccent,
+                    //         onTap: () => _navigateTo(
+                    //           context,
+                    //           const TransferFilesScreen(),
+                    //         ),
+                    //       ),
+                    //     ),
+                    //     const SizedBox(width: 12),
+                    //     Expanded(
+                    //       child: _DashboardCard(
+                    //         icon: Icons.file_copy_rounded,
+                    //         title: 'Copy Files',
+                    //         subtitle: 'Mirror directories with date range',
+                    //         accentColor: context.isDarkMode
+                    //             ? const Color(0xFFE2A06E)
+                    //             : const Color(0xFFA0582C),
+                    //         onTap: () =>
+                    //             _navigateTo(context, const CopyFilesScreen()),
+                    //       ),
+                    //     ),
+                    //     const SizedBox(width: 12),
+                    //     Expanded(
+                    //       child: _DashboardCard(
+                    //         icon: Icons.delete_forever_rounded,
+                    //         title: 'Delete Files',
+                    //         subtitle: 'Remove files matching criteria',
+                    //         accentColor: AppColors.error,
+                    //         onTap: () =>
+                    //             _navigateTo(context, const DeleteFilesScreen()),
+                    //       ),
+                    //     ),
+                    //     const SizedBox(width: 12),
+                    //     Expanded(
+                    //       child: _DashboardCard(
+                    //         icon: Icons.analytics_rounded,
+                    //         title: 'Count Files',
+                    //         subtitle: 'Audit file & folder totals',
+                    //         accentColor: AppColors.success,
+                    //         onTap: () =>
+                    //             _navigateTo(context, const CountFilesScreen()),
+                    //       ),
+                    //     ),
+                    //   ],
+                    // ),
+                    // Gene - Nov, 21, 2026: Expanded dashboard action row to 5 cards including FTP Upload
                     Row(
                       children: [
                         Expanded(
@@ -69,7 +123,7 @@ class _MainScreenState extends State<MainScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: _DashboardCard(
                             icon: Icons.file_copy_rounded,
@@ -82,7 +136,7 @@ class _MainScreenState extends State<MainScreen> {
                                 _navigateTo(context, const CopyFilesScreen()),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: _DashboardCard(
                             icon: Icons.delete_forever_rounded,
@@ -93,7 +147,7 @@ class _MainScreenState extends State<MainScreen> {
                                 _navigateTo(context, const DeleteFilesScreen()),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: _DashboardCard(
                             icon: Icons.analytics_rounded,
@@ -102,6 +156,17 @@ class _MainScreenState extends State<MainScreen> {
                             accentColor: AppColors.success,
                             onTap: () =>
                                 _navigateTo(context, const CountFilesScreen()),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _DashboardCard(
+                            icon: Icons.cloud_upload_rounded,
+                            title: 'FTP Upload',
+                            subtitle: 'Upload files to FTP / SFTP',
+                            accentColor: context.ftpAccent,
+                            onTap: () =>
+                                _navigateTo(context, const FtpFilesScreen()),
                           ),
                         ),
                       ],
@@ -233,11 +298,23 @@ class _MainScreenState extends State<MainScreen> {
             .where((r) => r.operation == 'Count')
             .fold(0, (sum, r) => sum + r.filesProcessed);
 
+        // int maxFiles = [
+        //   transferFiles,
+        //   copyFiles,
+        //   deleteFiles,
+        //   countFiles,
+        // ].reduce((max, val) => val > max ? val : max);
+        // Gene - Nov, 21, 2026: Include FTP uploads in dashboard comparative totals
+        int ftpFiles = records
+            .where((r) => r.operation == 'FTP')
+            .fold(0, (sum, r) => sum + r.filesProcessed);
+
         int maxFiles = [
           transferFiles,
           copyFiles,
           deleteFiles,
           countFiles,
+          ftpFiles,
         ].reduce((max, val) => val > max ? val : max);
         if (maxFiles == 0) maxFiles = 1;
 
@@ -248,6 +325,32 @@ class _MainScreenState extends State<MainScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Dashboard Header
+              // Row(
+              //   children: [
+              //     Icon(
+              //       Icons.analytics_outlined,
+              //       color: context.primaryAccent,
+              //       size: 22,
+              //     ),
+              //     const SizedBox(width: 8),
+              //     Text(
+              //       'History & Analytics Dashboard (All Profiles)',
+              //       style: TextStyle(
+              //         fontSize: 16,
+              //         fontWeight: FontWeight.w600,
+              //         color: context.textPrimary,
+              //       ),
+              //     ),
+              //     const Spacer(),
+              //     TextButton.icon(
+              //       onPressed: () =>
+              //           _navigateTo(context, const HistoryScreen()),
+              //       icon: const Icon(Icons.bar_chart_rounded, size: 16),
+              //       label: const Text('View Full Analytics'),
+              //     ),
+              //   ],
+              // ),
+              // Gene - Nov, 21, 2026: Wrap dashboard header title in Expanded to prevent horizontal overflow on narrow/scaled viewports
               Row(
                 children: [
                   Icon(
@@ -256,15 +359,19 @@ class _MainScreenState extends State<MainScreen> {
                     size: 22,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    'History & Analytics Dashboard (All Profiles)',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: context.textPrimary,
+                  Expanded(
+                    child: Text(
+                      'History & Analytics Dashboard (All Profiles)',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: context.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   TextButton.icon(
                     onPressed: () =>
                         _navigateTo(context, const HistoryScreen()),
@@ -317,6 +424,17 @@ class _MainScreenState extends State<MainScreen> {
                       countFiles,
                       countFiles / maxFiles,
                       AppColors.success,
+                    ),
+                  ),
+                  // Gene - Nov, 21, 2026: Add FTP comparative bar to main dashboard
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildMiniGraphBar(
+                      context,
+                      'FTP',
+                      ftpFiles,
+                      ftpFiles / maxFiles,
+                      context.ftpAccent,
                     ),
                   ),
                 ],
@@ -563,6 +681,11 @@ class _MainScreenState extends State<MainScreen> {
                     case 'Count':
                       opColor = AppColors.success;
                       opIcon = Icons.analytics;
+                      break;
+                    // Gene - Nov, 21, 2026: Style FTP entries in main dashboard recent activity table
+                    case 'FTP':
+                      opColor = context.ftpAccent;
+                      opIcon = Icons.cloud_upload;
                       break;
                     default:
                       opColor = context.textMuted;

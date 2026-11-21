@@ -32,6 +32,13 @@ class HistoryProvider with ChangeNotifier {
         .fold(0, (sum, r) => sum + r.filesProcessed);
   }
 
+  // Gene - Nov, 21, 2026: Add aggregate uploaded file count for FTP runs
+  int get totalFilesUploaded {
+    return _records
+        .where((r) => r.operation == 'FTP')
+        .fold(0, (sum, r) => sum + r.filesProcessed);
+  }
+
   int get totalErrors {
     return _records.fold(0, (sum, r) => sum + r.errors);
   }

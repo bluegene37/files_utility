@@ -9,6 +9,8 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:files_utility/providers/copy_files_provider.dart';
 import 'package:files_utility/providers/count_files_provider.dart';
 import 'package:files_utility/providers/delete_files_provider.dart';
+// Gene - Nov, 21, 2026: Verify cleared FTP paths and credentials do not reappear on reload
+import 'package:files_utility/providers/ftp_files_provider.dart';
 import 'package:files_utility/providers/transfer_files_provider.dart';
 import 'package:files_utility/services/app_sqlite_service.dart';
 import 'package:files_utility/services/local_db_service.dart';
@@ -129,6 +131,52 @@ void main() {
         isNull,
         reason: 'cleared Transfer destination came back from the database',
       );
+    },
+  );
+
+  // Gene - Nov, 21, 2026: Regression check that cleared FTP fields stay cleared across reloadSettings()
+  test(
+    'FTP paths and credentials stay cleared across a reload',
+    () async {
+      final provider = FtpFilesProvider();
+      provider
+        ..setSourcePath('/tmp/qa_ftp_src')
+        ..setHost('ftp.example.com')
+        ..setUsername('test_user')
+        ..setPassword('test_pass_123')
+        ..setRemoteDirectory('Backups')
+        ..setSubfolders('FolderA');
+      await _settle({
+        'ftp_sourcePath': '/tmp/qa_ftp_src',
+        'ftp_host': 'ftp.example.com',
+        'ftp_username': 'test_user',
+        'ftp_remoteDirectory': 'Backups',
+        'ftp_subfolders': 'FolderA',
+      });
+
+      provider
+        ..setSourcePath('')
+        ..setHost('')
+        ..setUsername('')
+        ..setPassword('')
+        ..setRemoteDirectory('')
+        ..setSubfolders('');
+      await _settle({
+        'ftp_sourcePath': null,
+        'ftp_host': null,
+        'ftp_username': null,
+        'ftp_password': null,
+        'ftp_remoteDirectory': null,
+        'ftp_subfolders': null,
+      });
+
+      await provider.reloadSettings();
+      expect(provider.sourcePath, isNull);
+      expect(provider.host, isEmpty);
+      expect(provider.username, isEmpty);
+      expect(provider.password, isEmpty);
+      expect(provider.remoteDirectory, isEmpty);
+      expect(provider.subfolders, isEmpty);
     },
   );
 }

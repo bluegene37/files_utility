@@ -1,0 +1,1582 @@
+// Gene - Nov, 21, 2026: Provider for FTP/FTPS/FTPES/SFTP upload execution, multi-source mapping, per-profile SQLite persistence, and scheduled runs.
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:file_selector/file_selector.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:logging/logging.dart';
+import 'package:path/path.dart' as p;
+import '../models/ftp_upload_source.dart';
+import '../models/run_record.dart';
+import '../services/credential_obfuscator.dart';
+import '../services/file_creation_date.dart';
+import '../services/file_logger.dart';
+import '../services/ftp_transfer_service.dart';
+import '../services/history_service.dart';
+import '../services/local_db_service.dart';
+import '../services/path_safety.dart';
+
+enum FtpDateMode {
+  yesterday('Yesterday'),
+  today('Today'),
+  daysAgo('N Days Ago'),
+  specificDate('Specific Date'),
+  dateRange('Date Range'),
+  allFiles('All Files');
+
+  final String label;
+  const FtpDateMode(this.label);
+
+  static FtpDateMode fromStorage(String? value) {
+    return FtpDateMode.values.firstWhere(
+      (m) => m.name == value,
+      orElse: () => FtpDateMode.yesterday,
+    );
+  }
+}
+
+enum FtpDateType {
+  creation('Creation Date'),
+  modified('Modified Date');
+
+  final String label;
+  const FtpDateType(this.label);
+
+  static FtpDateType fromStorage(String? value) {
+    return FtpDateType.values.firstWhere(
+      (t) => t.name == value,
+      orElse: () => FtpDateType.creation,
+    );
+  }
+}
+
+class _SubfolderWorkItem {
+  final String rootPath;
+  final String localDir;
+  final String remoteDir;
+
+  const _SubfolderWorkItem({
+    required this.rootPath,
+    required this.localDir,
+    required this.remoteDir,
+  });
+}
+
+class _QueuedUploadFile {
+  final File file;
+  final int size;
+
+  const _QueuedUploadFile({required this.file, required this.size});
+}
+
+class FtpFilesProvider with ChangeNotifier {
+  final Logger _log = Logger('FtpFilesProvider');
+  final FileLogger _fileLogger = FileLogger();
+  final NumberFormat _numFmt = NumberFormat('#,##0');
+  final FtpClientAdapter Function(FtpConnectionConfig config) _clientFactory;
+  final DateTime Function() _nowProvider;
+  final bool _persistSettings;
+
+  // Connection settings
+  String host = '';
+  int port = 21;
+  String username = '';
+  String password = '';
+  FtpProtocol protocol = FtpProtocol.ftp;
+  FtpTransferMode transferMode = FtpTransferMode.passive;
+  int timeoutSeconds = 30;
+
+  // Upload source settings
+  bool useMultipleSources = false;
+  String? sourcePath;
+  String subfolders = '';
+  String remoteDirectory = '';
+  List<FtpUploadSource> uploadSources = [const FtpUploadSource()];
+
+  // Date filter settings
+  FtpDateMode dateMode = FtpDateMode.yesterday;
+  int daysAgo = 1;
+  FtpDateType dateType = FtpDateType.creation;
+  DateTime specificDate = DateTime.now();
+  DateTime fromDate = DateTime.now();
+  DateTime toDate = DateTime.now();
+
+  // Upload & reliability options
+  bool includeSubfolders = false;
+  bool skipIfExists = true;
+  bool verifySizeAfterUpload = true;
+  bool dryRun = false;
+  int retryCount = 3;
+  int retryDelaySeconds = 5;
+  int logInterval = 1;
+
+  // Schedule settings
+  bool enableSchedule = false;
+  TimeOfDay runTime = const TimeOfDay(hour: 0, minute: 0);
+  Map<int, bool> runDays = {
+    1: true,
+    2: true,
+    3: true,
+    4: true,
+    5: true,
+    6: true,
+    7: true,
+  };
+  String onCompletionAction = 'repeat'; // 'repeat' or 'stop'
+
+  // Runtime state
+  bool isUploading = false;
+  bool isScheduleArmed = false;
+  bool isTestingConnection = false;
+  bool get isProcessing => isUploading || isScheduleArmed;
+  DateTime? nextScheduledRun;
+  String currentStatus = 'Idle';
+  List<String> logs = [];
+
+  int filesUploaded = 0;
+  int filesSkipped = 0;
+  int filesChecked = 0;
+  int errors = 0;
+
+  int settingsVersion = 0;
+
+  bool _stopRequested = false;
+  bool _disposed = false;
+  Timer? _scheduleTimer;
+  FtpClientAdapter? _activeClient;
+  bool _saveInFlight = false;
+  bool _savePending = false;
+  Completer<void>? _saveIdleCompleter;
+
+  FtpFilesProvider({
+    FtpClientAdapter Function(FtpConnectionConfig config)? clientFactory,
+    DateTime Function()? nowProvider,
+    bool persistSettings = true,
+  }) : _clientFactory = clientFactory ?? FtpConnectAdapter.new,
+       _nowProvider = nowProvider ?? DateTime.now,
+       _persistSettings = persistSettings {
+    final now = _nowProvider();
+    specificDate = DateTime(now.year, now.month, now.day);
+    fromDate = DateTime(now.year, now.month, now.day);
+    toDate = DateTime(now.year, now.month, now.day);
+    if (_persistSettings) {
+      _loadSettings();
+      LocalDbService().addListener(_onProfileChanged);
+    }
+  }
+
+  void _onProfileChanged() {
+    reloadSettings();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) {
+      super.notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    LocalDbService().removeListener(_onProfileChanged);
+    _scheduleTimer?.cancel();
+    _scheduleTimer = null;
+    unawaited(_activeClient?.disconnect());
+    super.dispose();
+  }
+
+  // --- Validation & Derived Helpers ---
+
+  bool get hasValidConnection =>
+      host.trim().isNotEmpty && port >= 1 && port <= 65535;
+
+  bool get hasValidSources {
+    if (useMultipleSources) {
+      return uploadSources.any((s) => s.isValid);
+    }
+    return sourcePath != null && sourcePath!.trim().isNotEmpty;
+  }
+
+  bool get hasCheckedScheduleDays => runDays.values.any((checked) => checked);
+
+  bool get canRunNow =>
+      !isUploading &&
+      !isTestingConnection &&
+      hasValidConnection &&
+      hasValidSources;
+
+  bool get canArmSchedule =>
+      !isProcessing &&
+      !isTestingConnection &&
+      enableSchedule &&
+      hasValidConnection &&
+      hasValidSources &&
+      hasCheckedScheduleDays;
+
+  FtpConnectionConfig get connectionConfig => FtpConnectionConfig(
+    host: host.trim(),
+    port: port,
+    username: username.trim(),
+    password: password,
+    protocol: protocol,
+    transferMode: transferMode,
+    timeoutSeconds: timeoutSeconds,
+  );
+
+  // --- Pure Static Helpers (Testable) ---
+
+  /// Returns the earliest future DateTime matching [runTime] on a checked [runDays] weekday.
+  static DateTime? computeNextScheduledRun({
+    required DateTime now,
+    required TimeOfDay runTime,
+    required Map<int, bool> runDays,
+  }) {
+    final hasAnyDay = runDays.values.any((checked) => checked);
+    if (!hasAnyDay) return null;
+
+    for (int offset = 0; offset <= 7; offset++) {
+      final candidateDay = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).add(Duration(days: offset));
+      if (runDays[candidateDay.weekday] != true) continue;
+
+      final candidate = DateTime(
+        candidateDay.year,
+        candidateDay.month,
+        candidateDay.day,
+        runTime.hour,
+        runTime.minute,
+      );
+      if (candidate.isAfter(now)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  /// Checks whether [fileDate] satisfies [dateMode] relative to [referenceNow].
+  static bool matchesDateFilter({
+    required DateTime fileDate,
+    required FtpDateMode dateMode,
+    required DateTime referenceNow,
+    required int daysAgo,
+    required DateTime specificDate,
+    required DateTime fromDate,
+    required DateTime toDate,
+  }) {
+    if (dateMode == FtpDateMode.allFiles) return true;
+
+    final target = DateTime(fileDate.year, fileDate.month, fileDate.day);
+    final refDay = DateTime(
+      referenceNow.year,
+      referenceNow.month,
+      referenceNow.day,
+    );
+
+    switch (dateMode) {
+      case FtpDateMode.today:
+        return target == refDay;
+      case FtpDateMode.yesterday:
+        return target == refDay.subtract(const Duration(days: 1));
+      case FtpDateMode.daysAgo:
+        final safeDays = daysAgo < 0 ? 0 : daysAgo;
+        return target == refDay.subtract(Duration(days: safeDays));
+      case FtpDateMode.specificDate:
+        final spec = DateTime(
+          specificDate.year,
+          specificDate.month,
+          specificDate.day,
+        );
+        return target == spec;
+      case FtpDateMode.dateRange:
+        final from = DateTime(fromDate.year, fromDate.month, fromDate.day);
+        final to = DateTime(toDate.year, toDate.month, toDate.day);
+        return !target.isBefore(from) && !target.isAfter(to);
+      case FtpDateMode.allFiles:
+        return true;
+    }
+  }
+
+  // --- Logging ---
+
+  void _addLog(String message) {
+    final safeMessage = CredentialObfuscator.redact(message, password);
+    final timestamp = DateFormat('HH:mm:ss').format(_nowProvider());
+    logs.insert(0, '[$timestamp] $safeMessage');
+    if (logs.length > 1000) logs.removeLast();
+  }
+
+  void clearLogs() {
+    logs.clear();
+    notifyListeners();
+  }
+
+  // --- Persistence ---
+
+  Future<void> _loadSettings() async {
+    final db = LocalDbService();
+    final profileId = db.currentProfileId;
+
+    host = db.getString('ftp_host') ?? '';
+    protocol = FtpProtocol.fromStorage(db.getString('ftp_protocol'));
+    port = db.getInt('ftp_port') ?? protocol.defaultPort;
+    username = db.getString('ftp_username') ?? '';
+    final storedPass = db.getString('ftp_password') ?? '';
+    password = CredentialObfuscator.decode(storedPass, profileId: profileId);
+    transferMode = FtpTransferMode.fromStorage(db.getString('ftp_transferMode'));
+    timeoutSeconds = db.getInt('ftp_timeoutSeconds') ?? 30;
+
+    useMultipleSources = db.getBool('ftp_useMultipleSources') ?? false;
+    sourcePath = db.getString('ftp_sourcePath');
+    subfolders = db.getString('ftp_subfolders') ?? '';
+    remoteDirectory = db.getString('ftp_remoteDirectory') ?? '';
+
+    final sourcesJson = db.getString('ftp_uploadSources');
+    if (sourcesJson != null && sourcesJson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(sourcesJson) as List;
+        uploadSources = decoded
+            .map(
+              (item) => FtpUploadSource.fromJson(
+                Map<String, dynamic>.from(item as Map),
+              ),
+            )
+            .toList();
+      } catch (_) {
+        uploadSources = [const FtpUploadSource()];
+      }
+    } else {
+      uploadSources = [const FtpUploadSource()];
+    }
+    if (uploadSources.isEmpty) {
+      uploadSources = [const FtpUploadSource()];
+    }
+
+    dateMode = FtpDateMode.fromStorage(db.getString('ftp_dateMode'));
+    daysAgo = db.getInt('ftp_daysAgo') ?? 1;
+    dateType = FtpDateType.fromStorage(db.getString('ftp_dateType'));
+
+    final now = _nowProvider();
+    final sYear = db.getInt('ftp_specificDate_year');
+    final sMonth = db.getInt('ftp_specificDate_month');
+    final sDay = db.getInt('ftp_specificDate_day');
+    specificDate = (sYear != null && sMonth != null && sDay != null)
+        ? DateTime(sYear, sMonth, sDay)
+        : DateTime(now.year, now.month, now.day);
+
+    final fYear = db.getInt('ftp_fromDate_year');
+    final fMonth = db.getInt('ftp_fromDate_month');
+    final fDay = db.getInt('ftp_fromDate_day');
+    fromDate = (fYear != null && fMonth != null && fDay != null)
+        ? DateTime(fYear, fMonth, fDay)
+        : DateTime(now.year, now.month, now.day);
+
+    final tYear = db.getInt('ftp_toDate_year');
+    final tMonth = db.getInt('ftp_toDate_month');
+    final tDay = db.getInt('ftp_toDate_day');
+    toDate = (tYear != null && tMonth != null && tDay != null)
+        ? DateTime(tYear, tMonth, tDay)
+        : DateTime(now.year, now.month, now.day);
+
+    includeSubfolders = db.getBool('ftp_includeSubfolders') ?? false;
+    skipIfExists = db.getBool('ftp_skipIfExists') ?? true;
+    verifySizeAfterUpload = db.getBool('ftp_verifySizeAfterUpload') ?? true;
+    dryRun = db.getBool('ftp_dryRun') ?? false;
+    retryCount = db.getInt('ftp_retryCount') ?? 3;
+    retryDelaySeconds = db.getInt('ftp_retryDelaySeconds') ?? 5;
+    logInterval = db.getInt('ftp_logInterval') ?? 1;
+
+    enableSchedule = db.getBool('ftp_enableSchedule') ?? false;
+    final runHour = db.getInt('ftp_runHour');
+    final runMinute = db.getInt('ftp_runMinute');
+    runTime = (runHour != null && runMinute != null)
+        ? TimeOfDay(hour: runHour, minute: runMinute)
+        : const TimeOfDay(hour: 0, minute: 0);
+
+    for (int day = 1; day <= 7; day++) {
+      runDays[day] = db.getBool('ftp_runDay_$day') ?? true;
+    }
+
+    onCompletionAction = db.getString('ftp_onCompletionAction') ?? 'repeat';
+
+    settingsVersion++;
+    notifyListeners();
+  }
+
+  Future<void> reloadSettings() async {
+    await _loadSettings();
+  }
+
+  Future<void> _saveSettings() {
+    if (!_persistSettings) return Future.value();
+    _savePending = true;
+    _saveIdleCompleter ??= Completer<void>();
+    if (!_saveInFlight) {
+      _saveInFlight = true;
+      Future.microtask(_drainSaveQueue);
+    }
+    return _saveIdleCompleter!.future;
+  }
+
+  Future<void> _drainSaveQueue() async {
+    try {
+      while (_savePending && !_disposed) {
+        _savePending = false;
+        await _writeSettings();
+      }
+    } catch (_) {
+    } finally {
+      _saveInFlight = false;
+      final completer = _saveIdleCompleter;
+      _saveIdleCompleter = null;
+      if (completer != null && !completer.isCompleted) {
+        completer.complete();
+      }
+    }
+  }
+
+  @visibleForTesting
+  Future<void> flushSavesForTest() async {
+    await Future<void>.delayed(Duration.zero);
+    if (_saveIdleCompleter != null) {
+      await _saveIdleCompleter!.future;
+    }
+  }
+
+  Future<void> _writeSettings() async {
+    final db = LocalDbService();
+    final profileId = db.currentProfileId;
+    if (db.currentProfileId != profileId) return;
+
+    await db.setOrRemoveString('ftp_host', _nullIfEmpty(host));
+    await db.setString('ftp_protocol', protocol.storageKey);
+    await db.setInt('ftp_port', port);
+    await db.setOrRemoveString('ftp_username', _nullIfEmpty(username));
+
+    if (password.isEmpty) {
+      await db.setOrRemoveString('ftp_password', null);
+    } else {
+      await db.setString(
+        'ftp_password',
+        CredentialObfuscator.encode(password, profileId: profileId),
+      );
+    }
+
+    await db.setString('ftp_transferMode', transferMode.storageKey);
+    await db.setInt('ftp_timeoutSeconds', timeoutSeconds);
+
+    await db.setBool('ftp_useMultipleSources', useMultipleSources);
+    await db.setOrRemoveString('ftp_sourcePath', sourcePath);
+    await db.setOrRemoveString('ftp_subfolders', _nullIfEmpty(subfolders));
+    await db.setOrRemoveString(
+      'ftp_remoteDirectory',
+      _nullIfEmpty(remoteDirectory),
+    );
+    await db.setString(
+      'ftp_uploadSources',
+      jsonEncode(uploadSources.map((s) => s.toJson()).toList()),
+    );
+
+    await db.setString('ftp_dateMode', dateMode.name);
+    await db.setInt('ftp_daysAgo', daysAgo);
+    await db.setString('ftp_dateType', dateType.name);
+
+    await db.setInt('ftp_specificDate_year', specificDate.year);
+    await db.setInt('ftp_specificDate_month', specificDate.month);
+    await db.setInt('ftp_specificDate_day', specificDate.day);
+
+    await db.setInt('ftp_fromDate_year', fromDate.year);
+    await db.setInt('ftp_fromDate_month', fromDate.month);
+    await db.setInt('ftp_fromDate_day', fromDate.day);
+
+    await db.setInt('ftp_toDate_year', toDate.year);
+    await db.setInt('ftp_toDate_month', toDate.month);
+    await db.setInt('ftp_toDate_day', toDate.day);
+
+    await db.setBool('ftp_includeSubfolders', includeSubfolders);
+    await db.setBool('ftp_skipIfExists', skipIfExists);
+    await db.setBool('ftp_verifySizeAfterUpload', verifySizeAfterUpload);
+    await db.setBool('ftp_dryRun', dryRun);
+    await db.setInt('ftp_retryCount', retryCount);
+    await db.setInt('ftp_retryDelaySeconds', retryDelaySeconds);
+    await db.setInt('ftp_logInterval', logInterval);
+
+    await db.setBool('ftp_enableSchedule', enableSchedule);
+    await db.setInt('ftp_runHour', runTime.hour);
+    await db.setInt('ftp_runMinute', runTime.minute);
+    for (int day = 1; day <= 7; day++) {
+      await db.setBool('ftp_runDay_$day', runDays[day] ?? true);
+    }
+    await db.setString('ftp_onCompletionAction', onCompletionAction);
+  }
+
+  String? _nullIfEmpty(String value) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  String? _sanitizePath(String? path) {
+    if (path == null) return null;
+    final clean = path.replaceAll('"', '').replaceAll("'", '').trim();
+    return clean.isEmpty ? null : clean;
+  }
+
+  // --- Setters ---
+
+  void setHost(String value) {
+    host = value.trim();
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setPort(int value) {
+    if (value >= 1 && value <= 65535) {
+      port = value;
+      _saveSettings();
+      notifyListeners();
+    }
+  }
+
+  void setUsername(String value) {
+    username = value.trim();
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setPassword(String value) {
+    password = value;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setProtocol(FtpProtocol newProtocol) {
+    if (port == protocol.defaultPort) {
+      port = newProtocol.defaultPort;
+    }
+    protocol = newProtocol;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setTransferMode(FtpTransferMode mode) {
+    transferMode = mode;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setTimeoutSeconds(int seconds) {
+    timeoutSeconds = seconds.clamp(5, 600);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setUseMultipleSources(bool val) {
+    useMultipleSources = val;
+    if (val && uploadSources.isEmpty) {
+      uploadSources = [const FtpUploadSource()];
+    }
+    _saveSettings();
+    notifyListeners();
+  }
+
+  Future<void> pickSource() async {
+    final path = await getDirectoryPath(initialDirectory: sourcePath);
+    if (path != null) setSourcePath(path);
+  }
+
+  void setSourcePath(String? path) {
+    sourcePath = _sanitizePath(path);
+    if (sourcePath != null) {
+      LocalDbService().addRecentDirectory(sourcePath!);
+    }
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSubfolders(String value) {
+    subfolders = value.trim();
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setRemoteDirectory(String value) {
+    remoteDirectory = value.trim();
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void addUploadSource() {
+    uploadSources.add(
+      FtpUploadSource(runOrder: uploadSources.length + 1),
+    );
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void removeUploadSource(int index) {
+    if (uploadSources.length > 1 && index >= 0 && index < uploadSources.length) {
+      uploadSources.removeAt(index);
+      _saveSettings();
+      notifyListeners();
+    }
+  }
+
+  Future<void> pickSourceAt(int index) async {
+    if (index < 0 || index >= uploadSources.length) return;
+    final path = await getDirectoryPath(
+      initialDirectory: uploadSources[index].localPath,
+    );
+    if (path != null) setSourcePathAt(index, path);
+  }
+
+  void setSourceNameAt(int index, String name) {
+    if (index < 0 || index >= uploadSources.length) return;
+    uploadSources[index] = uploadSources[index].copyWith(name: name.trim());
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSourcePathAt(int index, String? path) {
+    if (index < 0 || index >= uploadSources.length) return;
+    final clean = _sanitizePath(path);
+    uploadSources[index] = clean == null
+        ? uploadSources[index].copyWith(clearLocalPath: true)
+        : uploadSources[index].copyWith(localPath: clean);
+    if (clean != null) {
+      LocalDbService().addRecentDirectory(clean);
+    }
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSourceSubfoldersAt(int index, String value) {
+    if (index < 0 || index >= uploadSources.length) return;
+    uploadSources[index] = uploadSources[index].copyWith(
+      subfolders: value.trim(),
+    );
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSourceFtpDestAt(int index, String value) {
+    if (index < 0 || index >= uploadSources.length) return;
+    uploadSources[index] = uploadSources[index].copyWith(
+      ftpDest: value.trim(),
+    );
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSourceRunOrderAt(int index, int order) {
+    if (index < 0 || index >= uploadSources.length) return;
+    uploadSources[index] = uploadSources[index].copyWith(
+      runOrder: order.clamp(1, 20),
+    );
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setDateMode(FtpDateMode mode) {
+    dateMode = mode;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setDaysAgo(int days) {
+    daysAgo = days.clamp(0, 365);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setDateType(FtpDateType type) {
+    dateType = type;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSpecificDate(DateTime date) {
+    specificDate = DateTime(date.year, date.month, date.day);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setFromDate(DateTime date) {
+    fromDate = DateTime(date.year, date.month, date.day);
+    if (fromDate.isAfter(toDate)) {
+      toDate = fromDate;
+    }
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setToDate(DateTime date) {
+    toDate = DateTime(date.year, date.month, date.day);
+    if (toDate.isBefore(fromDate)) {
+      fromDate = toDate;
+    }
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setIncludeSubfolders(bool val) {
+    includeSubfolders = val;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSkipIfExists(bool val) {
+    skipIfExists = val;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setVerifySizeAfterUpload(bool val) {
+    verifySizeAfterUpload = val;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setDryRun(bool val) {
+    dryRun = val;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setRetryCount(int count) {
+    retryCount = count.clamp(1, 10);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setRetryDelaySeconds(int seconds) {
+    retryDelaySeconds = seconds.clamp(0, 120);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setLogInterval(int interval) {
+    logInterval = interval;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setEnableSchedule(bool val) {
+    enableSchedule = val;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setRunTime(TimeOfDay time) {
+    runTime = time;
+    _saveSettings();
+    if (isScheduleArmed && !isUploading) {
+      _recomputeArmedNextRun();
+    } else {
+      notifyListeners();
+    }
+  }
+
+  void setRunDay(int day, bool value) {
+    runDays[day] = value;
+    _saveSettings();
+    if (isScheduleArmed && !isUploading) {
+      if (!hasCheckedScheduleDays) {
+        _scheduleTimer?.cancel();
+        _scheduleTimer = null;
+        isScheduleArmed = false;
+        nextScheduledRun = null;
+        currentStatus = 'Idle';
+        _addLog('⚠️ Schedule disarmed because no run days remain selected.');
+      } else {
+        _recomputeArmedNextRun();
+        return;
+      }
+    }
+    notifyListeners();
+  }
+
+  void setOnCompletionAction(String action) {
+    onCompletionAction = action;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void _recomputeArmedNextRun() {
+    final next = computeNextScheduledRun(
+      now: _nowProvider(),
+      runTime: runTime,
+      runDays: runDays,
+    );
+    nextScheduledRun = next;
+    if (next != null) {
+      final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+      currentStatus = '⏰ Scheduled — Next run: $formatted';
+      _addLog('⏰ Schedule updated — next run at $formatted.');
+    }
+    notifyListeners();
+  }
+
+  // --- Connection Test ---
+
+  Future<FtpTestResult> testConnection() async {
+    if (!hasValidConnection) {
+      return const FtpTestResult(
+        success: false,
+        message: 'Enter a valid server host and port (1-65535) first.',
+      );
+    }
+    if (isTestingConnection || isUploading) {
+      return const FtpTestResult(
+        success: false,
+        message: 'Another FTP operation is already in progress.',
+      );
+    }
+
+    isTestingConnection = true;
+    final previousStatus = currentStatus;
+    currentStatus = '🔌 Testing connection...';
+    final config = connectionConfig;
+    _addLog('🔌 Testing connection to ${config.displayEndpoint()}...');
+    notifyListeners();
+
+    final client = _clientFactory(config);
+    try {
+      await client.connect();
+      final cwd = await client.currentDirectory();
+      String message = 'Connected (${config.protocol.shortLabel}) — CWD: $cwd';
+
+      if (!useMultipleSources && remoteDirectory.trim().isNotEmpty) {
+        final target = joinRemotePath(remoteDirectory, '');
+        final ok = await client.changeDirectory(target);
+        if (ok) {
+          message += ' | Remote folder "$target" accessible';
+        } else {
+          message +=
+              ' | Remote folder "$target" does not exist yet (will be created on upload)';
+        }
+      }
+
+      _addLog('✅ $message');
+      return FtpTestResult(success: true, message: message);
+    } catch (e) {
+      final safeErr = CredentialObfuscator.redact(e.toString(), password);
+      _addLog('❌ Connection test failed: $safeErr');
+      return FtpTestResult(success: false, message: safeErr);
+    } finally {
+      await client.disconnect();
+      isTestingConnection = false;
+      currentStatus = previousStatus;
+      notifyListeners();
+    }
+  }
+
+  // --- Scheduling & Execution Controls ---
+
+  void startSchedule() {
+    if (!canArmSchedule) return;
+
+    final next = computeNextScheduledRun(
+      now: _nowProvider(),
+      runTime: runTime,
+      runDays: runDays,
+    );
+    if (next == null) {
+      _addLog('⚠️ Select at least one weekday before starting the schedule.');
+      notifyListeners();
+      return;
+    }
+
+    _stopRequested = false;
+    isScheduleArmed = true;
+    nextScheduledRun = next;
+
+    final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+    currentStatus = '⏰ Scheduled — Next run: $formatted';
+    _addLog('⏰ Schedule armed. Waiting for $formatted...');
+    notifyListeners();
+
+    _ensureScheduleTimerRunning();
+  }
+
+  void _ensureScheduleTimerRunning() {
+    _scheduleTimer?.cancel();
+    _scheduleTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _checkScheduleTick();
+    });
+  }
+
+  Future<void> _checkScheduleTick() async {
+    if (!isScheduleArmed || isUploading || _stopRequested) return;
+    final dueAt = nextScheduledRun;
+    if (dueAt == null) return;
+
+    final now = _nowProvider();
+    if (!now.isBefore(dueAt)) {
+      nextScheduledRun = null;
+      _addLog(
+        '⏳ Scheduled run time reached (${DateFormat('dd/MM/yyyy HH:mm').format(dueAt)}). Starting upload...',
+      );
+      await _executeUploadPass(isScheduledRun: true);
+    }
+  }
+
+  @visibleForTesting
+  Future<void> triggerScheduleTickForTest() => _checkScheduleTick();
+
+  Future<void> runNow() async {
+    if (!canRunNow) return;
+    await _executeUploadPass(isScheduledRun: false);
+  }
+
+  void stop() {
+    if (!isProcessing) return;
+    _stopRequested = true;
+    _scheduleTimer?.cancel();
+    _scheduleTimer = null;
+    isScheduleArmed = false;
+    nextScheduledRun = null;
+
+    if (isUploading) {
+      currentStatus = '⛔ Stopping...';
+      _addLog('⛔ Stop requested by user. Closing active FTP connection...');
+      unawaited(_activeClient?.disconnect());
+    } else {
+      currentStatus = '⛔ Stopped';
+      _addLog('⛔ FTP schedule stopped by user.');
+    }
+    notifyListeners();
+  }
+
+  // --- Upload Engine ---
+
+  List<FtpUploadSource> _getOrderedSources() {
+    if (!useMultipleSources) {
+      return [
+        FtpUploadSource(
+          name: 'Default',
+          localPath: sourcePath,
+          subfolders: subfolders,
+          ftpDest: remoteDirectory,
+          runOrder: 1,
+        ),
+      ];
+    }
+
+    final valid = uploadSources.where((s) => s.isValid).toList();
+    // Sort stably by runOrder while preserving insertion order for ties.
+    final indexed = valid.asMap().entries.toList()
+      ..sort((a, b) {
+        final cmp = a.value.runOrder.compareTo(b.value.runOrder);
+        return cmp != 0 ? cmp : a.key.compareTo(b.key);
+      });
+    return indexed.map((e) => e.value).toList();
+  }
+
+  Future<List<_SubfolderWorkItem>> _buildWorkItems(
+    FtpUploadSource source,
+  ) async {
+    final basePath = source.localPath!.trim();
+    final baseDir = Directory(basePath);
+    if (!await baseDir.exists()) {
+      _addLog('❌ Source directory not found: $basePath');
+      await _fileLogger.error('FTP', 'Source directory not found: $basePath');
+      errors++;
+      return [];
+    }
+
+    final selectedSubs = source.parsedSubfolders;
+    final items = <_SubfolderWorkItem>[];
+
+    if (selectedSubs.isNotEmpty) {
+      for (final rawSub in selectedSubs) {
+        final subParts = rawSub
+            .replaceAll(r'\', '/')
+            .split('/')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty && s != '.' && s != '..')
+            .toList();
+        if (subParts.isEmpty) continue;
+
+        final subLocalPath = p.joinAll([basePath, ...subParts]);
+        final subDir = Directory(subLocalPath);
+        if (!await subDir.exists()) {
+          _addLog('⚠️ Subfolder not found: $subLocalPath');
+          await _fileLogger.error('FTP', 'Subfolder not found: $subLocalPath');
+          errors++;
+          continue;
+        }
+        if (!await resolvesWithinRoot(basePath, subLocalPath)) {
+          _addLog('⚠️ Skipped symlink outside source root: $subLocalPath');
+          continue;
+        }
+
+        final remoteBase = joinRemotePath(source.ftpDest, subParts.join('/'));
+        if (!includeSubfolders) {
+          items.add(
+            _SubfolderWorkItem(
+              rootPath: basePath,
+              localDir: subLocalPath,
+              remoteDir: remoteBase,
+            ),
+          );
+        } else {
+          await _collectDirectoriesIterative(
+            rootPath: basePath,
+            startDir: subLocalPath,
+            remotePrefix: remoteBase,
+            out: items,
+          );
+        }
+      }
+      return items;
+    }
+
+    final remoteBase = joinRemotePath(source.ftpDest, '');
+    if (!includeSubfolders) {
+      items.add(
+        _SubfolderWorkItem(
+          rootPath: basePath,
+          localDir: basePath,
+          remoteDir: remoteBase,
+        ),
+      );
+    } else {
+      await _collectDirectoriesIterative(
+        rootPath: basePath,
+        startDir: basePath,
+        remotePrefix: remoteBase,
+        out: items,
+      );
+    }
+    return items;
+  }
+
+  Future<void> _collectDirectoriesIterative({
+    required String rootPath,
+    required String startDir,
+    required String remotePrefix,
+    required List<_SubfolderWorkItem> out,
+  }) async {
+    final queue = <String>[startDir];
+    while (queue.isNotEmpty && !_stopRequested) {
+      final currentPath = queue.removeAt(0);
+      final rel = p.relative(currentPath, from: startDir);
+      final mappedRemote = (rel == '.' || rel.isEmpty)
+          ? remotePrefix
+          : joinRemotePath(remotePrefix, rel);
+      out.add(
+        _SubfolderWorkItem(
+          rootPath: rootPath,
+          localDir: currentPath,
+          remoteDir: mappedRemote,
+        ),
+      );
+
+      try {
+        await for (final entity in Directory(
+          currentPath,
+        ).list(recursive: false, followLinks: false)) {
+          if (_stopRequested) break;
+          if (entity is Directory) {
+            if (await resolvesWithinRoot(rootPath, entity.path)) {
+              queue.add(entity.path);
+            }
+          }
+        }
+      } catch (e) {
+        final safeErr = CredentialObfuscator.redact(e.toString(), password);
+        _addLog('⚠️ Unable to list directory $currentPath: $safeErr');
+        await _fileLogger.error(
+          'FTP',
+          'Unable to list directory $currentPath: $safeErr',
+        );
+        errors++;
+      }
+    }
+  }
+
+  Future<List<_QueuedUploadFile>> _scanSubfolderFiles(
+    _SubfolderWorkItem item,
+    DateTime referenceNow,
+  ) async {
+    final candidateFiles = <File>[];
+    final statsByPath = <String, FileStat>{};
+
+    try {
+      await for (final entity in Directory(
+        item.localDir,
+      ).list(recursive: false, followLinks: false)) {
+        if (_stopRequested) break;
+        if (entity is File) {
+          if (!await resolvesWithinRoot(item.rootPath, entity.path)) {
+            continue;
+          }
+          try {
+            final stats = await entity.stat();
+            if (stats.type == FileSystemEntityType.file) {
+              candidateFiles.add(entity);
+              statsByPath[entity.path] = stats;
+            }
+          } catch (e) {
+            errors++;
+            _addLog('⚠️ Failed to stat ${entity.path}: $e');
+          }
+        }
+      }
+    } catch (e) {
+      errors++;
+      final safeErr = CredentialObfuscator.redact(e.toString(), password);
+      _addLog('⚠️ Failed scanning ${item.localDir}: $safeErr');
+      await _fileLogger.error('FTP', 'Failed scanning ${item.localDir}: $safeErr');
+      return [];
+    }
+
+    if (candidateFiles.isEmpty) return [];
+
+    Map<String, DateTime> creationDates = const {};
+    if (dateType == FtpDateType.creation) {
+      creationDates = await getCreationDatesForFiles(
+        candidateFiles,
+        statsByPath,
+      );
+    }
+
+    final matched = <_QueuedUploadFile>[];
+    for (final file in candidateFiles) {
+      if (_stopRequested) break;
+      final stats = statsByPath[file.path]!;
+      filesChecked++;
+      final fileDate = dateType == FtpDateType.creation
+          ? (creationDates[file.path] ?? stats.changed)
+          : stats.modified;
+
+      if (matchesDateFilter(
+        fileDate: fileDate,
+        dateMode: dateMode,
+        referenceNow: referenceNow,
+        daysAgo: daysAgo,
+        specificDate: specificDate,
+        fromDate: fromDate,
+        toDate: toDate,
+      )) {
+        matched.add(_QueuedUploadFile(file: file, size: stats.size));
+      }
+    }
+    return matched;
+  }
+
+  Future<void> _executeUploadPass({required bool isScheduledRun}) async {
+    if (isUploading) return;
+
+    _stopRequested = false;
+    isUploading = true;
+    filesUploaded = 0;
+    filesSkipped = 0;
+    filesChecked = 0;
+    errors = 0;
+
+    final startTime = _nowProvider();
+    final runRefNow = startTime;
+    final config = connectionConfig;
+    final sources = _getOrderedSources();
+
+    currentStatus = dryRun
+        ? '🧪 Dry run: connecting to ${config.host}...'
+        : '🔌 Connecting to ${config.host}...';
+
+    final sourceSummary = useMultipleSources
+        ? '${sources.length} sources (${sources.first.displayName}...)'
+        : (sourcePath ?? '');
+    final endpointSummary = useMultipleSources
+        ? config.displayEndpoint()
+        : config.displayEndpoint(remoteDirectory);
+
+    await _fileLogger.logRunStart(
+      operation: 'FTP',
+      sourcePath: sourceSummary,
+      destPath: endpointSummary,
+    );
+
+    _addLog(
+      dryRun
+          ? '🧪 Starting DRY RUN -> $endpointSummary (Mode: ${dateMode.label}, Date: ${dateType.label})'
+          : '🚀 Starting FTP upload -> $endpointSummary (Mode: ${dateMode.label}, Date: ${dateType.label})',
+    );
+    notifyListeners();
+
+    bool hadFatalError = false;
+    int foldersProcessed = 0;
+    FtpClientAdapter? client;
+
+    try {
+      final needsConnection = !dryRun || skipIfExists;
+      if (needsConnection) {
+        client = _clientFactory(config);
+        _activeClient = client;
+        await client.connect();
+        _addLog('✅ Connected to ${config.displayEndpoint()}');
+        await _fileLogger.info(
+          'FTP',
+          'Connected to ${config.displayEndpoint()}',
+        );
+      }
+
+      for (final source in sources) {
+        if (_stopRequested) break;
+        final workItems = await _buildWorkItems(source);
+
+        for (final workItem in workItems) {
+          if (_stopRequested) break;
+          foldersProcessed++;
+          currentStatus = dryRun
+              ? '🧪 Scanning ${p.basename(workItem.localDir)}...'
+              : '⏳ Scanning ${p.basename(workItem.localDir)}...';
+          notifyListeners();
+
+          // Step A: Local scan of current subfolder.
+          final miniQueue = await _scanSubfolderFiles(workItem, runRefNow);
+          if (miniQueue.isEmpty || _stopRequested) {
+            continue;
+          }
+
+          final remoteDisplay = workItem.remoteDir.isEmpty
+              ? '/'
+              : '/${workItem.remoteDir.startsWith('/') ? workItem.remoteDir.substring(1) : workItem.remoteDir}';
+          _addLog(
+            '📂 ${workItem.localDir} -> ${miniQueue.length} file(s) matched (target: $remoteDisplay)',
+          );
+          await _fileLogger.info(
+            'FTP',
+            '${workItem.localDir} -> ${miniQueue.length} matched for $remoteDisplay',
+          );
+
+          // Step B: Prepare remote directory and upload mini queue immediately.
+          Map<String, int?>? remoteSizes;
+          if (needsConnection && client == null) {
+            client = _clientFactory(config);
+            _activeClient = client;
+            await client.connect();
+          }
+          if (client != null) {
+            if (!dryRun) {
+              final dirReady = await client.ensureRemoteDirectory(
+                workItem.remoteDir,
+              );
+              if (!dirReady) {
+                errors++;
+                final msg =
+                    '❌ Cannot access or create remote directory "$remoteDisplay"';
+                _addLog(msg);
+                await _fileLogger.error('FTP', msg);
+                continue;
+              }
+              if (skipIfExists) {
+                remoteSizes = await client.listRemoteFileSizes();
+              }
+            } else if (skipIfExists) {
+              final dirExists = await client.changeDirectory(
+                workItem.remoteDir,
+              );
+              remoteSizes = dirExists
+                  ? await client.listRemoteFileSizes()
+                  : <String, int?>{};
+            }
+          }
+
+          for (final item in miniQueue) {
+            if (_stopRequested) break;
+            final fileName = p.basename(item.file.path);
+
+            if (skipIfExists && client != null) {
+              bool existsRemotely = false;
+              int? existingSize;
+
+              if (remoteSizes != null) {
+                existsRemotely = remoteSizes.containsKey(fileName);
+                existingSize = remoteSizes[fileName];
+                if (existsRemotely && existingSize == null) {
+                  existingSize = await client.getRemoteFileSize(fileName);
+                }
+              } else {
+                existingSize = await client.getRemoteFileSize(fileName);
+                existsRemotely = existingSize != null;
+              }
+
+              if (existsRemotely) {
+                if (existingSize == item.size) {
+                  filesSkipped++;
+                  final skipMsg = dryRun
+                      ? '🧪 [DRY RUN] Would skip (already on FTP): $fileName'
+                      : '⏭ Skipped (already on FTP): $fileName';
+                  if (dryRun ||
+                      logInterval <= 1 ||
+                      filesSkipped % logInterval == 0) {
+                    _addLog(skipMsg);
+                  }
+                  await _fileLogger.info('FTP', skipMsg);
+                  notifyListeners();
+                  continue;
+                } else {
+                  final diffMsg = dryRun
+                      ? '🧪 [DRY RUN] Would re-upload (size differs: remote=${existingSize ?? "?"}, local=${item.size}): $fileName'
+                      : '🔄 Size differs (remote=${existingSize ?? "?"}, local=${item.size}) — re-uploading: $fileName';
+                  _addLog(diffMsg);
+                  await _fileLogger.info('FTP', diffMsg);
+                }
+              }
+            }
+
+            if (dryRun) {
+              filesUploaded++;
+              final dryMsg =
+                  '🧪 [DRY RUN] Would upload: $fileName (${_numFmt.format(item.size)} bytes) -> $remoteDisplay';
+              _addLog(dryMsg);
+              await _fileLogger.info('FTP', dryMsg);
+              notifyListeners();
+              continue;
+            }
+
+            currentStatus = '⬆️ Uploading $fileName...';
+            notifyListeners();
+
+            final maxAttempts = retryCount.clamp(1, 10);
+            for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+              if (_stopRequested) break;
+              try {
+                if (client == null) {
+                  final freshClient = _clientFactory(config);
+                  _activeClient = freshClient;
+                  await freshClient.connect();
+                  final dirOk = await freshClient.ensureRemoteDirectory(
+                    workItem.remoteDir,
+                  );
+                  if (!dirOk) {
+                    await freshClient.disconnect();
+                    throw Exception(
+                      'Failed to enter remote folder "$remoteDisplay" after reconnect',
+                    );
+                  }
+                  client = freshClient;
+                }
+
+                final uploaded = await client.uploadFile(
+                  item.file,
+                  remoteName: fileName,
+                );
+                if (!uploaded) {
+                  throw Exception('Server rejected upload of $fileName');
+                }
+
+                if (verifySizeAfterUpload) {
+                  final remoteSize = await client.getRemoteFileSize(fileName);
+                  if (remoteSize != null &&
+                      remoteSize >= 0 &&
+                      remoteSize != item.size) {
+                    throw Exception(
+                      'Size verification mismatch for $fileName (local=${item.size}, remote=$remoteSize)',
+                    );
+                  }
+                }
+
+                filesUploaded++;
+                if (logInterval <= 1 || filesUploaded % logInterval == 0) {
+                  _addLog(
+                    '✅ Uploaded ($filesUploaded): $fileName (${_numFmt.format(item.size)} bytes)',
+                  );
+                }
+                await _fileLogger.info(
+                  'FTP',
+                  'Uploaded $fileName (${item.size} bytes) to $remoteDisplay',
+                );
+                notifyListeners();
+                break;
+              } catch (e) {
+                if (_stopRequested) break;
+                final safeErr = CredentialObfuscator.redact(
+                  e.toString(),
+                  password,
+                );
+
+                if (attempt < maxAttempts) {
+                  final warnMsg =
+                      '⚠️ Attempt $attempt/$maxAttempts failed for $fileName: $safeErr. Retrying in ${retryDelaySeconds}s...';
+                  _addLog(warnMsg);
+                  await _fileLogger.error('FTP', warnMsg);
+                  notifyListeners();
+
+                  await _cancellableDelay(
+                    Duration(seconds: retryDelaySeconds),
+                  );
+                  if (_stopRequested) break;
+
+                  // Reconnect before retrying in case the socket dropped mid-transfer.
+                  await client?.disconnect();
+                  client = null;
+                  _activeClient = null;
+                  try {
+                    final nextClient = _clientFactory(config);
+                    _activeClient = nextClient;
+                    await nextClient.connect();
+                    final dirOk = await nextClient.ensureRemoteDirectory(
+                      workItem.remoteDir,
+                    );
+                    if (!dirOk) {
+                      await nextClient.disconnect();
+                      throw Exception(
+                        'Failed to re-enter remote folder "$remoteDisplay" after reconnect',
+                      );
+                    }
+                    client = nextClient;
+                  } catch (reconnectErr) {
+                    final safeReconnectErr = CredentialObfuscator.redact(
+                      reconnectErr.toString(),
+                      password,
+                    );
+                    final reconnectMsg =
+                        '⚠️ Reconnect failed before attempt ${attempt + 1}: $safeReconnectErr';
+                    _addLog(reconnectMsg);
+                    await _fileLogger.error('FTP', reconnectMsg);
+                    client = null;
+                    _activeClient = null;
+                  }
+                } else {
+                  errors++;
+                  final failMsg =
+                      '❌ Failed uploading $fileName after $maxAttempts attempt(s): $safeErr';
+                  _addLog(failMsg);
+                  await _fileLogger.error('FTP', failMsg);
+                  notifyListeners();
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e, stack) {
+      if (!_stopRequested) {
+        hadFatalError = true;
+        errors++;
+        final safeErr = CredentialObfuscator.redact(e.toString(), password);
+        _log.severe('FTP upload critical error: $safeErr', stack);
+        _addLog('❌ FTP Error: $safeErr');
+        await _fileLogger.error('FTP', 'Critical Error: $safeErr');
+      }
+    } finally {
+      _activeClient = null;
+      await client?.disconnect();
+      isUploading = false;
+
+      final endTime = _nowProvider();
+      final runId = _fileLogger.getRunId('FTP') ?? 'RUN-FTP';
+      await _fileLogger.logRunEnd(
+        operation: 'FTP',
+        filesProcessed: filesUploaded,
+        errors: errors,
+        wasStopped: _stopRequested,
+      );
+
+      final statusLabel = _stopRequested
+          ? 'Stopped'
+          : (hadFatalError ? 'Error' : 'Completed');
+      final summaryPrefix = dryRun ? '[DRY RUN] ' : '';
+      final configSummary =
+          '$summaryPrefix${config.protocol.shortLabel} | Date: ${dateMode.label} (${dateType.label}) | Checked: ${_numFmt.format(filesChecked)} | Skipped: ${_numFmt.format(filesSkipped)}';
+
+      await HistoryService().saveRecord(
+        RunRecord(
+          id: runId,
+          operation: 'FTP',
+          startTime: startTime,
+          endTime: endTime,
+          filesProcessed: filesUploaded,
+          foldersProcessed: foldersProcessed,
+          errors: errors,
+          status: statusLabel,
+          configSummary: configSummary,
+          sourcePath: sourceSummary,
+          destPath: endpointSummary,
+        ),
+      );
+
+      if (_stopRequested) {
+        _scheduleTimer?.cancel();
+        _scheduleTimer = null;
+        isScheduleArmed = false;
+        nextScheduledRun = null;
+        currentStatus = '⛔ Stopped';
+        _addLog(
+          '⛔ Run stopped. Uploaded: ${_numFmt.format(filesUploaded)}, Skipped: ${_numFmt.format(filesSkipped)}, Errors: ${_numFmt.format(errors)}.',
+        );
+      } else if (isScheduledRun) {
+        if (onCompletionAction == 'repeat' &&
+            enableSchedule &&
+            hasCheckedScheduleDays) {
+          final next = computeNextScheduledRun(
+            now: _nowProvider(),
+            runTime: runTime,
+            runDays: runDays,
+          );
+          nextScheduledRun = next;
+          if (next != null) {
+            final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+            currentStatus = '🏁 Completed. Next run at $formatted';
+            _addLog(
+              '🏁 ${dryRun ? "Dry run" : "Upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted.',
+            );
+            _ensureScheduleTimerRunning();
+          } else {
+            isScheduleArmed = false;
+            _scheduleTimer?.cancel();
+            _scheduleTimer = null;
+            currentStatus = hadFatalError ? '❌ Error' : '✅ Completed';
+          }
+        } else {
+          isScheduleArmed = false;
+          nextScheduledRun = null;
+          _scheduleTimer?.cancel();
+          _scheduleTimer = null;
+          currentStatus = hadFatalError ? '❌ Error' : '✅ Completed';
+          _addLog(
+            '✅ Scheduled ${dryRun ? "dry run" : "upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+          );
+        }
+      } else {
+        if (isScheduleArmed) {
+          final next = computeNextScheduledRun(
+            now: _nowProvider(),
+            runTime: runTime,
+            runDays: runDays,
+          );
+          nextScheduledRun = next;
+          if (next != null) {
+            final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+            currentStatus = '⏰ Scheduled — Next run: $formatted';
+            _addLog(
+              '✅ Manual run finished (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Schedule remains armed for $formatted.',
+            );
+          }
+        } else {
+          currentStatus = hadFatalError
+              ? '❌ Error'
+              : (dryRun ? '✅ Dry Run Completed' : '✅ Completed');
+          _addLog(
+            '✅ ${dryRun ? "Dry run" : "Upload"} finished! Checked: $filesChecked, Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors.',
+          );
+        }
+      }
+
+      notifyListeners();
+    }
+  }
+
+  Future<void> _cancellableDelay(Duration duration) async {
+    final deadline = DateTime.now().add(duration);
+    while (DateTime.now().isBefore(deadline) && !_stopRequested) {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+  }
+}

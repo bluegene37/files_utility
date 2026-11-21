@@ -10,6 +10,8 @@ import 'providers/transfer_files_provider.dart';
 import 'providers/delete_files_provider.dart';
 import 'providers/copy_files_provider.dart';
 import 'providers/count_files_provider.dart';
+// Gene - Nov, 21, 2026: Register FtpFilesProvider for the new FTP Upload module
+import 'providers/ftp_files_provider.dart';
 import 'providers/history_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/update_provider.dart';
@@ -41,6 +43,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => DeleteFilesProvider()),
         ChangeNotifierProvider(create: (_) => CopyFilesProvider()),
         ChangeNotifierProvider(create: (_) => CountFilesProvider()),
+        // Gene - Nov, 21, 2026: Provide FtpFilesProvider globally across dashboard and FTP screen
+        ChangeNotifierProvider(create: (_) => FtpFilesProvider()),
         ChangeNotifierProvider(create: (_) => UpdateProvider()),
       ],
       child: Consumer<ThemeProvider>(

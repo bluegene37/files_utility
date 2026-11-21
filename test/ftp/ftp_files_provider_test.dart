@@ -1,0 +1,581 @@
+// Gene - Nov, 21, 2026: Unit tests for FtpFilesProvider upload flow, V1 features, scheduler, history, and redaction.
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:files_utility/providers/ftp_files_provider.dart';
+import 'package:files_utility/services/app_sqlite_service.dart';
+import 'package:files_utility/services/ftp_transfer_service.dart';
+import 'package:files_utility/services/global_db_service.dart';
+import 'package:files_utility/services/history_service.dart';
+import 'package:files_utility/services/local_db_service.dart';
+
+class FakeRemoteServerState {
+  int connectCount = 0;
+  int disconnectCount = 0;
+  final List<String> ensuredDirs = [];
+  final List<String> uploadCalls = [];
+  final Map<String, Map<String, List<int>>> dirs = {'': {}};
+
+  String? connectErrorMessage;
+  int failUploadAttemptsRemaining = 0;
+  String? failUploadErrorMessage;
+  int wrongReportedSizeAttemptsRemaining = 0;
+
+  String _norm(String raw) {
+    final clean = joinRemotePath(raw, '');
+    return clean.startsWith('/') ? clean.substring(1) : clean;
+  }
+
+  void seedFile(String remoteDir, String fileName, List<int> bytes) {
+    final norm = _norm(remoteDir);
+    dirs.putIfAbsent(norm, () => {})[fileName] = bytes;
+  }
+
+  List<int>? getFile(String remoteDir, String fileName) {
+    return dirs[_norm(remoteDir)]?[fileName];
+  }
+}
+
+class FakeFtpClientAdapter implements FtpClientAdapter {
+  final FakeRemoteServerState state;
+  String _cwd = '';
+
+  FakeFtpClientAdapter(this.state);
+
+  @override
+  Future<void> connect() async {
+    state.connectCount++;
+    if (state.connectErrorMessage != null) {
+      throw Exception(state.connectErrorMessage);
+    }
+    _cwd = '';
+  }
+
+  @override
+  Future<void> disconnect() async {
+    state.disconnectCount++;
+  }
+
+  @override
+  Future<String> currentDirectory() async => '/$_cwd';
+
+  @override
+  Future<bool> changeDirectory(String remotePath) async {
+    final norm = state._norm(remotePath);
+    if (state.dirs.containsKey(norm)) {
+      _cwd = norm;
+      return true;
+    }
+    return false;
+  }
+
+  @override
+  Future<bool> ensureRemoteDirectory(String remotePath) async {
+    final norm = state._norm(remotePath);
+    state.ensuredDirs.add(norm);
+    state.dirs.putIfAbsent(norm, () => {});
+    _cwd = norm;
+    return true;
+  }
+
+  @override
+  Future<Map<String, int?>?> listRemoteFileSizes() async {
+    final entries = state.dirs[_cwd] ?? const {};
+    return {for (final e in entries.entries) e.key: e.value.length};
+  }
+
+  @override
+  Future<int?> getRemoteFileSize(String remoteName) async {
+    if (state.wrongReportedSizeAttemptsRemaining > 0) {
+      state.wrongReportedSizeAttemptsRemaining--;
+      return 1;
+    }
+    return state.dirs[_cwd]?[remoteName]?.length;
+  }
+
+  @override
+  Future<bool> uploadFile(File localFile, {String? remoteName}) async {
+    final name = remoteName ?? p.basename(localFile.path);
+    final fullRemote = _cwd.isEmpty ? name : '$_cwd/$name';
+    state.uploadCalls.add(fullRemote);
+
+    if (state.failUploadAttemptsRemaining > 0) {
+      state.failUploadAttemptsRemaining--;
+      throw Exception(
+        state.failUploadErrorMessage ?? 'Simulated socket drop during upload',
+      );
+    }
+
+    final bytes = await localFile.readAsBytes();
+    state.dirs.putIfAbsent(_cwd, () => {})[name] = bytes;
+    return true;
+  }
+}
+
+Future<void> _flushDbWrites() async {
+  // Let queued SQLite writes settle before reloading or switching profiles.
+  await Future<void>.delayed(const Duration(milliseconds: 120));
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory appRootDir;
+  late Directory tempSourcesDir;
+
+  setUpAll(() async {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    appRootDir = Directory.systemTemp.createTempSync('files_utility_ftp_app_');
+    tempSourcesDir = Directory.systemTemp.createTempSync(
+      'files_utility_ftp_src_',
+    );
+    AppSqliteService().appDirPath = appRootDir.path;
+    await GlobalDbService().init();
+  });
+
+  tearDownAll(() {
+    if (appRootDir.existsSync()) appRootDir.deleteSync(recursive: true);
+    if (tempSourcesDir.existsSync()) tempSourcesDir.deleteSync(recursive: true);
+  });
+
+  FtpFilesProvider buildProvider({
+    required FakeRemoteServerState server,
+    DateTime Function()? nowProvider,
+  }) {
+    return FtpFilesProvider(
+      clientFactory: (_) => FakeFtpClientAdapter(server),
+      nowProvider: nowProvider,
+    );
+  }
+
+  group('FtpFilesProvider', () {
+    test(
+      'single-source upload filters dates accurately across all modes',
+      () async {
+        await LocalDbService().init('ftp_test_dates');
+        HistoryService().init('ftp_test_dates');
+        await HistoryService().clearHistory(allProfiles: false);
+
+        final src = Directory(p.join(tempSourcesDir.path, 'dates_case'))
+          ..createSync(recursive: true);
+
+        final fileYesterday = File(p.join(src.path, 'yesterday.txt'))
+          ..writeAsBytesSync([1, 2, 3, 4]);
+        final fileToday = File(p.join(src.path, 'today.txt'))
+          ..writeAsBytesSync([5, 6, 7]);
+        final fileOlder = File(p.join(src.path, 'older.txt'))
+          ..writeAsBytesSync([8, 9]);
+
+        final fakeNow = DateTime(2026, 11, 21, 10, 0);
+        fileYesterday.setLastModifiedSync(DateTime(2026, 11, 20, 15, 0));
+        fileToday.setLastModifiedSync(DateTime(2026, 11, 21, 8, 30));
+        fileOlder.setLastModifiedSync(DateTime(2026, 11, 15, 12, 0));
+
+        final server = FakeRemoteServerState();
+        final provider = buildProvider(
+          server: server,
+          nowProvider: () => fakeNow,
+        );
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setPort(21)
+          ..setUsername('test_user')
+          ..setPassword('test_pass_123')
+          ..setSourcePath(src.path)
+          ..setRemoteDirectory('DailyDrop')
+          ..setDateType(FtpDateType.modified)
+          ..setDateMode(FtpDateMode.yesterday);
+
+        await provider.runNow();
+        expect(provider.filesUploaded, 1);
+        expect(server.getFile('DailyDrop', 'yesterday.txt'), [1, 2, 3, 4]);
+        expect(server.getFile('DailyDrop', 'today.txt'), isNull);
+
+        // Today mode picks up today.txt
+        provider.setDateMode(FtpDateMode.today);
+        await provider.runNow();
+        expect(provider.filesUploaded, 1);
+        expect(server.getFile('DailyDrop', 'today.txt'), [5, 6, 7]);
+
+        // N Days Ago (6 days before Nov 21 = Nov 15) picks up older.txt
+        provider
+          ..setDateMode(FtpDateMode.daysAgo)
+          ..setDaysAgo(6);
+        await provider.runNow();
+        expect(provider.filesUploaded, 1);
+        expect(server.getFile('DailyDrop', 'older.txt'), [8, 9]);
+
+        // Specific date mode -> clears remote first by targeting a subfolder
+        provider
+          ..setRemoteDirectory('SpecificDrop')
+          ..setDateMode(FtpDateMode.specificDate)
+          ..setSpecificDate(DateTime(2026, 11, 15));
+        await provider.runNow();
+        expect(provider.filesUploaded, 1);
+        expect(server.getFile('SpecificDrop', 'older.txt'), [8, 9]);
+
+        // Date range mode
+        provider
+          ..setRemoteDirectory('RangeDrop')
+          ..setDateMode(FtpDateMode.dateRange)
+          ..setFromDate(DateTime(2026, 11, 20))
+          ..setToDate(DateTime(2026, 11, 21));
+        await provider.runNow();
+        expect(provider.filesUploaded, 2);
+        expect(server.getFile('RangeDrop', 'yesterday.txt'), isNotNull);
+        expect(server.getFile('RangeDrop', 'today.txt'), isNotNull);
+
+        // All files mode (and creation date default on freshly created temp files)
+        provider
+          ..setRemoteDirectory('AllDrop')
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setDateType(FtpDateType.creation);
+        await provider.runNow();
+        expect(provider.filesUploaded, 3);
+      },
+    );
+
+    test(
+      'multi-source runOrder, subfolder filter, and custom FTP destination mapping',
+      () async {
+        await LocalDbService().init('ftp_test_multi');
+        HistoryService().init('ftp_test_multi');
+
+        final rootA = Directory(p.join(tempSourcesDir.path, 'multi_a'))
+          ..createSync(recursive: true);
+        Directory(p.join(rootA.path, 'FolderA')).createSync();
+        Directory(p.join(rootA.path, 'FolderB')).createSync();
+        Directory(p.join(rootA.path, 'IgnoredFolder')).createSync();
+
+        File(p.join(rootA.path, 'FolderA', 'doc1.pdf'))
+            .writeAsBytesSync([10, 20]);
+        File(p.join(rootA.path, 'FolderB', 'img1.jpg'))
+            .writeAsBytesSync([30, 40]);
+        File(p.join(rootA.path, 'IgnoredFolder', 'skip.txt'))
+            .writeAsBytesSync([50]);
+
+        final rootB = Directory(p.join(tempSourcesDir.path, 'multi_b'))
+          ..createSync(recursive: true);
+        Directory(p.join(rootB.path, 'Sub1')).createSync();
+        File(p.join(rootB.path, 'Sub1', 'backup.bak'))
+            .writeAsBytesSync([99, 100, 101]);
+
+        final server = FakeRemoteServerState();
+        final provider = buildProvider(server: server);
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setUsername('test_user')
+          ..setPassword('test_pass_123')
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setUseMultipleSources(true);
+
+        // Add second source; assign runOrder 2 to rootA and runOrder 1 to rootB.
+        provider.addUploadSource();
+        provider
+          ..setSourceNameAt(0, 'JobFiles')
+          ..setSourcePathAt(0, rootA.path)
+          ..setSourceSubfoldersAt(0, 'FolderA, FolderB')
+          ..setSourceFtpDestAt(0, '')
+          ..setSourceRunOrderAt(0, 2)
+          ..setSourceNameAt(1, 'BackupsSource')
+          ..setSourcePathAt(1, rootB.path)
+          ..setSourceSubfoldersAt(1, 'Sub1')
+          ..setSourceFtpDestAt(1, 'Backups')
+          ..setSourceRunOrderAt(1, 1);
+
+        await provider.runNow();
+
+        expect(provider.errors, 0);
+        expect(provider.filesUploaded, 3);
+        expect(server.uploadCalls, [
+          'Backups/Sub1/backup.bak',
+          'FolderA/doc1.pdf',
+          'FolderB/img1.jpg',
+        ]);
+        expect(server.getFile('', 'skip.txt'), isNull);
+      },
+    );
+
+    test(
+      'skipIfExists skips matching sizes and re-uploads mismatched partial files',
+      () async {
+        await LocalDbService().init('ftp_test_skip');
+        HistoryService().init('ftp_test_skip');
+
+        final src = Directory(p.join(tempSourcesDir.path, 'skip_case'))
+          ..createSync(recursive: true);
+        File(p.join(src.path, 'same.bin')).writeAsBytesSync([1, 2, 3, 4]);
+        File(p.join(src.path, 'partial.bin'))
+            .writeAsBytesSync([10, 20, 30, 40, 50]);
+
+        final server = FakeRemoteServerState();
+        server.seedFile('Target', 'same.bin', [1, 2, 3, 4]); // exact 4 bytes
+        server.seedFile('Target', 'partial.bin', [10, 20]); // partial 2 bytes
+
+        final provider = buildProvider(server: server);
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setSourcePath(src.path)
+          ..setRemoteDirectory('Target')
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(true);
+
+        await provider.runNow();
+
+        expect(provider.filesSkipped, 1);
+        expect(provider.filesUploaded, 1);
+        expect(server.uploadCalls, ['Target/partial.bin']);
+        expect(
+          server.getFile('Target', 'partial.bin'),
+          [10, 20, 30, 40, 50],
+        );
+      },
+    );
+
+    test(
+      'retries failed upload and size mismatch with reconnect and succeeds',
+      () async {
+        await LocalDbService().init('ftp_test_retry');
+        HistoryService().init('ftp_test_retry');
+
+        final src = Directory(p.join(tempSourcesDir.path, 'retry_case'))
+          ..createSync(recursive: true);
+        File(p.join(src.path, 'asset.dat')).writeAsBytesSync([1, 2, 3, 4, 5]);
+
+        // Attempt 1 fails with upload exception; attempt 2 returns wrong size on
+        // sizeFile verification; attempt 3 succeeds cleanly.
+        final server = FakeRemoteServerState()
+          ..failUploadAttemptsRemaining = 1
+          ..wrongReportedSizeAttemptsRemaining = 1;
+
+        final provider = buildProvider(server: server);
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setPassword('test_pass_123')
+          ..setSourcePath(src.path)
+          ..setRemoteDirectory('RetryDrop')
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(false)
+          ..setVerifySizeAfterUpload(true)
+          ..setRetryCount(3)
+          ..setRetryDelaySeconds(0);
+
+        await provider.runNow();
+
+        expect(provider.errors, 0);
+        expect(provider.filesUploaded, 1);
+        expect(server.connectCount, 3);
+        expect(server.uploadCalls.length, 3);
+      },
+    );
+
+    test(
+      'dryRun scans and logs without uploading or creating remote folders',
+      () async {
+        await LocalDbService().init('ftp_test_dry');
+        HistoryService().init('ftp_test_dry');
+        await HistoryService().clearHistory(allProfiles: false);
+
+        final src = Directory(p.join(tempSourcesDir.path, 'dry_case'))
+          ..createSync(recursive: true);
+        File(p.join(src.path, 'already.txt')).writeAsBytesSync([1, 2, 3]);
+        File(p.join(src.path, 'newfile.txt')).writeAsBytesSync([4, 5, 6, 7]);
+
+        final server = FakeRemoteServerState();
+        server.seedFile('DryTarget', 'already.txt', [1, 2, 3]);
+
+        final provider = buildProvider(server: server);
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setSourcePath(src.path)
+          ..setRemoteDirectory('DryTarget')
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(true)
+          ..setDryRun(true);
+
+        await provider.runNow();
+
+        expect(server.uploadCalls, isEmpty);
+        expect(server.ensuredDirs, isEmpty);
+        expect(provider.filesSkipped, 1);
+        expect(provider.filesUploaded, 1);
+        expect(provider.logs.any((l) => l.contains('[DRY RUN]')), isTrue);
+
+        final records = await HistoryService().loadHistory(
+          operation: 'FTP',
+          allProfiles: false,
+        );
+        expect(records, hasLength(1));
+        expect(records.first.status, 'Completed');
+        expect(records.first.configSummary, contains('[DRY RUN]'));
+      },
+    );
+
+    test(
+      'testConnection reports success/failure and redacts password in all outputs',
+      () async {
+        await LocalDbService().init('ftp_test_conn');
+
+        final server = FakeRemoteServerState();
+        server.dirs['Uploads'] = {};
+        final provider = buildProvider(server: server);
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setUsername('test_user')
+          ..setPassword('test_pass_123')
+          ..setRemoteDirectory('Uploads');
+
+        final okResult = await provider.testConnection();
+        expect(okResult.success, isTrue);
+        expect(okResult.message, contains('Uploads'));
+
+        // Simulate failure containing secret password in exception message.
+        server.connectErrorMessage =
+            'Auth failed for test_user with password test_pass_123';
+        final failResult = await provider.testConnection();
+        expect(failResult.success, isFalse);
+        expect(failResult.message, isNot(contains('test_pass_123')));
+        expect(failResult.message, contains('***'));
+        expect(
+          provider.logs.any((l) => l.contains('test_pass_123')),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'scheduler lifecycle arms, supports Run Now while armed, repeats/stops, and stops cleanly',
+      () async {
+        await LocalDbService().init('ftp_test_sched');
+        HistoryService().init('ftp_test_sched');
+
+        final src = Directory(p.join(tempSourcesDir.path, 'sched_case'))
+          ..createSync(recursive: true);
+        File(p.join(src.path, 'daily.txt')).writeAsBytesSync([7, 8, 9]);
+
+        // Start clock on Monday 2026-11-23 at 08:00.
+        DateTime clock = DateTime(2026, 11, 23, 8, 0);
+        final server = FakeRemoteServerState();
+        final provider = buildProvider(
+          server: server,
+          nowProvider: () => clock,
+        );
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setSourcePath(src.path)
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(false)
+          ..setEnableSchedule(true)
+          ..setRunTime(const TimeOfDay(hour: 10, minute: 0))
+          ..setOnCompletionAction('repeat');
+
+        provider.startSchedule();
+        expect(provider.isScheduleArmed, isTrue);
+        expect(provider.nextScheduledRun, DateTime(2026, 11, 23, 10, 0));
+
+        // Run Now while armed keeps schedule armed.
+        await provider.runNow();
+        expect(provider.filesUploaded, 1);
+        expect(provider.isScheduleArmed, isTrue);
+        expect(provider.nextScheduledRun, DateTime(2026, 11, 23, 10, 0));
+
+        // Advance clock to 10:00 and trigger schedule tick -> Repeat schedules next day.
+        clock = DateTime(2026, 11, 23, 10, 0);
+        await provider.triggerScheduleTickForTest();
+        expect(provider.filesUploaded, 1);
+        expect(provider.isScheduleArmed, isTrue);
+        expect(provider.nextScheduledRun, DateTime(2026, 11, 24, 10, 0));
+
+        // Switch completion action to Stop, advance clock, trigger -> disarms.
+        provider.setOnCompletionAction('stop');
+        clock = DateTime(2026, 11, 24, 10, 0);
+        await provider.triggerScheduleTickForTest();
+        expect(provider.isScheduleArmed, isFalse);
+        expect(provider.nextScheduledRun, isNull);
+
+        // Re-arm and explicitly stop.
+        clock = DateTime(2026, 11, 24, 11, 0);
+        provider.startSchedule();
+        expect(provider.isScheduleArmed, isTrue);
+        provider.stop();
+        expect(provider.isScheduleArmed, isFalse);
+        expect(provider.currentStatus, '⛔ Stopped');
+      },
+    );
+
+    test(
+      'persists History RunRecord without secrets and isolates settings per profile',
+      () async {
+        await LocalDbService().init('ftp_prof_a');
+        HistoryService().init('ftp_prof_a');
+        await HistoryService().clearHistory(allProfiles: false);
+
+        final src = Directory(p.join(tempSourcesDir.path, 'persist_case'))
+          ..createSync(recursive: true);
+        File(p.join(src.path, 'item.txt')).writeAsBytesSync([1, 2]);
+
+        final server = FakeRemoteServerState();
+        final provider = buildProvider(server: server);
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setPort(2121)
+          ..setUsername('test_user')
+          ..setPassword('test_pass_123')
+          ..setSourcePath(src.path)
+          ..setRemoteDirectory('Archive')
+          ..setDateMode(FtpDateMode.allFiles);
+
+        await provider.runNow();
+        await provider.flushSavesForTest();
+
+        final records = await HistoryService().loadHistory(
+          operation: 'FTP',
+          allProfiles: false,
+        );
+        expect(records, hasLength(1));
+        expect(records.first.operation, 'FTP');
+        expect(records.first.filesProcessed, 1);
+        expect(records.first.configSummary, isNot(contains('test_pass_123')));
+        expect(records.first.destPath, isNot(contains('test_pass_123')));
+        expect(
+          LocalDbService().getString('ftp_password'),
+          isNot(equals('test_pass_123')),
+        );
+
+        // Switch to empty Profile B -> isolated clean settings.
+        await LocalDbService().init('ftp_prof_b');
+        await _flushDbWrites();
+        expect(provider.host, isEmpty);
+        expect(provider.password, isEmpty);
+        expect(provider.sourcePath, isNull);
+
+        // Switch back to Profile A -> restored with decrypted password in memory.
+        await LocalDbService().init('ftp_prof_a');
+        await _flushDbWrites();
+        expect(provider.host, 'ftp.example.com');
+        expect(provider.port, 2121);
+        expect(provider.password, 'test_pass_123');
+      },
+    );
+  });
+}

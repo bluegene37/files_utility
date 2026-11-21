@@ -1,0 +1,1779 @@
+// Gene - Nov, 21, 2026: FTP Upload screen with collapsible connection settings, single/multi-source config, dry-run/retry options, and weekday+time scheduler.
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../models/ftp_upload_source.dart';
+import '../providers/ftp_files_provider.dart';
+import '../services/ftp_transfer_service.dart';
+import '../services/global_db_service.dart';
+import '../services/local_db_service.dart';
+import '../services/window_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/help_shortcut_wrapper.dart';
+import '../widgets/history_dialog.dart';
+import '../widgets/theme_toggle_button.dart';
+
+class FtpFilesScreen extends StatefulWidget {
+  const FtpFilesScreen({super.key});
+
+  @override
+  State<FtpFilesScreen> createState() => _FtpFilesScreenState();
+}
+
+class _FtpFilesScreenState extends State<FtpFilesScreen> {
+  late final TextEditingController _hostController;
+  late final TextEditingController _portController;
+  late final TextEditingController _userController;
+  late final TextEditingController _passController;
+  late final TextEditingController _remoteDirController;
+  late final TextEditingController _subfoldersController;
+
+  bool _connectionExpanded = true;
+  bool _obscurePassword = true;
+  int _lastSettingsVersion = -1;
+  bool _initializedExpansion = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hostController = TextEditingController();
+    _portController = TextEditingController();
+    _userController = TextEditingController();
+    _passController = TextEditingController();
+    _remoteDirController = TextEditingController();
+    _subfoldersController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _hostController.dispose();
+    _portController.dispose();
+    _userController.dispose();
+    _passController.dispose();
+    _remoteDirController.dispose();
+    _subfoldersController.dispose();
+    super.dispose();
+  }
+
+  void _syncControllersIfNeeded(FtpFilesProvider provider) {
+    if (_lastSettingsVersion == provider.settingsVersion) return;
+    _lastSettingsVersion = provider.settingsVersion;
+
+    _setControllerText(_hostController, provider.host);
+    _setControllerText(_portController, provider.port.toString());
+    _setControllerText(_userController, provider.username);
+    _setControllerText(_passController, provider.password);
+    _setControllerText(_remoteDirController, provider.remoteDirectory);
+    _setControllerText(_subfoldersController, provider.subfolders);
+
+    if (!_initializedExpansion) {
+      _connectionExpanded = provider.host.trim().isEmpty;
+      _initializedExpansion = true;
+    }
+  }
+
+  void _setControllerText(TextEditingController controller, String value) {
+    if (controller.text != value) {
+      controller.text = value;
+    }
+  }
+
+  Future<void> _handleTestConnection(FtpFilesProvider provider) async {
+    final result = await provider.testConnection();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message),
+        backgroundColor: result.success ? AppColors.success : AppColors.error,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<FtpFilesProvider>(context);
+    _syncControllersIfNeeded(provider);
+
+    WindowService().updateTitle(
+      'FTP Upload',
+      status: provider.isProcessing ? provider.currentStatus : null,
+    );
+
+    final accentColor = context.ftpAccent;
+
+    return HelpShortcutWrapper(
+      topicId: 'ftp_files',
+      child: Scaffold(
+        body: Container(
+          decoration: AppDecorations.gradientBackground(context),
+          child: Column(
+            children: [
+              _buildAppBar(context, accentColor),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 8.0,
+                  ),
+                  child: Column(
+                    children: [
+                      Flexible(
+                        flex: 0,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight:
+                                MediaQuery.of(context).size.height * 0.52,
+                          ),
+                          child: SingleChildScrollView(
+                            child: Container(
+                              decoration: AppDecorations.glassCard(
+                                context: context,
+                                glowColor: accentColor,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16.0,
+                                vertical: 12.0,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildSourceSection(context, provider),
+                                  const SizedBox(height: 10),
+                                  _buildConnectionCard(
+                                    context,
+                                    provider,
+                                    accentColor,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  _buildSettingsStrip(
+                                    context,
+                                    provider,
+                                    accentColor,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildActionAndStatsRow(context, provider, accentColor),
+                      const SizedBox(height: 8),
+                      Expanded(child: LogConsole(logs: provider.logs)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context, Color accentColor) {
+    final currentProfileId = LocalDbService().currentProfileId;
+    final currentProfile = GlobalDbService().profiles.firstWhere(
+      (p) => p.id == currentProfileId,
+      orElse: () => GlobalDbService().profiles.first,
+    );
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+      child: Row(
+        children: [
+          IconButton(
+            icon: Icon(Icons.arrow_back_rounded, color: accentColor),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          const SizedBox(width: 4),
+          Icon(Icons.cloud_upload_rounded, color: accentColor, size: 22),
+          const SizedBox(width: 10),
+          Text(
+            'FTP Upload (${currentProfile.name})',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: context.textPrimary,
+            ),
+          ),
+          const Spacer(),
+          const HelpManualButton(topicId: 'ftp_files'),
+          const SizedBox(width: 4),
+          const ThemeToggleButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSourceSection(BuildContext context, FtpFilesProvider provider) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: Checkbox(
+                key: const Key('ftp_multiple_sources_checkbox'),
+                value: provider.useMultipleSources,
+                onChanged: provider.isProcessing
+                    ? null
+                    : (val) => provider.setUseMultipleSources(val ?? false),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: provider.isProcessing
+                  ? null
+                  : () => provider.setUseMultipleSources(
+                      !provider.useMultipleSources,
+                    ),
+              child: Text(
+                'Multiple Sources',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: context.textSecondary,
+                ),
+              ),
+            ),
+            if (provider.useMultipleSources) ...[
+              const SizedBox(width: 16),
+              Icon(Icons.folder_copy, size: 16, color: context.textMuted),
+              const SizedBox(width: 6),
+              Text(
+                '${provider.uploadSources.length} source${provider.uploadSources.length == 1 ? '' : 's'} configured',
+                style: TextStyle(fontSize: 13, color: context.textSecondary),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton.icon(
+                onPressed: provider.isProcessing
+                    ? null
+                    : () => _showUploadSourcesDialog(context, provider),
+                icon: const Icon(Icons.edit, size: 15),
+                label: const Text(
+                  'Edit Sources',
+                  style: TextStyle(fontSize: 12),
+                ),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (!provider.useMultipleSources) ...[
+          const SizedBox(height: 8),
+          PathRow(
+            label: 'Local Source',
+            path: provider.sourcePath,
+            onPick: provider.isProcessing ? null : provider.pickSource,
+            onChanged: provider.isProcessing ? null : provider.setSourcePath,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              SizedBox(
+                width: 100,
+                child: Text(
+                  'Subfolders:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: context.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _subfoldersController,
+                  enabled: !provider.isProcessing,
+                  onChanged: provider.setSubfolders,
+                  style: TextStyle(color: context.textPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Optional: FolderA, FolderB',
+                    hintStyle: TextStyle(color: context.textMuted),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Remote Folder:',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: context.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _remoteDirController,
+                  enabled: !provider.isProcessing,
+                  onChanged: provider.setRemoteDirectory,
+                  style: TextStyle(color: context.textPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Optional (blank = FTP root)',
+                    hintStyle: TextStyle(color: context.textMuted),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildConnectionCard(
+    BuildContext context,
+    FtpFilesProvider provider,
+    Color accentColor,
+  ) {
+    final hostDisplay = provider.host.trim().isEmpty
+        ? 'Not configured'
+        : '${provider.host.trim()}:${provider.port}';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: context.containerBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            key: const Key('ftp_connection_header'),
+            borderRadius: BorderRadius.circular(10),
+            onTap: () =>
+                setState(() => _connectionExpanded = !_connectionExpanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.dns_rounded, size: 17, color: accentColor),
+                  const SizedBox(width: 8),
+                  Text(
+                    'FTP Connection',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: context.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '${provider.protocol.shortLabel} • $hostDisplay',
+                      style: TextStyle(fontSize: 12, color: context.textMuted),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    key: const Key('ftp_test_connection_btn'),
+                    onPressed:
+                        (provider.hasValidConnection &&
+                            !provider.isTestingConnection &&
+                            !provider.isUploading)
+                        ? () => _handleTestConnection(provider)
+                        : null,
+                    icon: provider.isTestingConnection
+                        ? SizedBox(
+                            width: 13,
+                            height: 13,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: accentColor,
+                            ),
+                          )
+                        : Icon(Icons.wifi_tethering, size: 15, color: accentColor),
+                    label: Text(
+                      provider.isTestingConnection
+                          ? 'Testing...'
+                          : 'Test Connection',
+                      style: TextStyle(fontSize: 12, color: accentColor),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: context.border),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    _connectionExpanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    color: context.textMuted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_connectionExpanded) ...[
+            Divider(height: 1, color: context.border),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: DropdownButtonFormField<FtpProtocol>(
+                          isExpanded: true,
+                          initialValue: provider.protocol,
+                          decoration: const InputDecoration(
+                            labelText: 'Protocol',
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                          ),
+                          dropdownColor: context.cardBg,
+                          items: FtpProtocol.values
+                              .map(
+                                (p) => DropdownMenuItem<FtpProtocol>(
+                                  value: p,
+                                  child: Text(
+                                    p.label,
+                                    style: TextStyle(
+                                      color: context.textPrimary,
+                                      fontSize: 13,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: provider.isProcessing
+                              ? null
+                              : (val) {
+                                  if (val != null) {
+                                    provider.setProtocol(val);
+                                    _setControllerText(
+                                      _portController,
+                                      provider.port.toString(),
+                                    );
+                                  }
+                                },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 4,
+                        child: TextField(
+                          key: const Key('ftp_host_field'),
+                          controller: _hostController,
+                          enabled: !provider.isProcessing,
+                          onChanged: provider.setHost,
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 13,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Host / IP Address',
+                            hintText: 'ftp.example.com',
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          key: const Key('ftp_port_field'),
+                          controller: _portController,
+                          enabled: !provider.isProcessing,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          onChanged: (val) {
+                            final parsed = int.tryParse(val);
+                            if (parsed != null &&
+                                parsed >= 1 &&
+                                parsed <= 65535) {
+                              provider.setPort(parsed);
+                            }
+                          },
+                          onEditingComplete: () {
+                            _setControllerText(
+                              _portController,
+                              provider.port.toString(),
+                            );
+                          },
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 13,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Port',
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: Tooltip(
+                          message: provider.protocol.supportsTransferMode
+                              ? 'Passive mode is used for firewall-friendly transfers'
+                              : 'Transfer mode does not apply to SFTP',
+                          child: DropdownButtonFormField<FtpTransferMode>(
+                            isExpanded: true,
+                            initialValue: FtpTransferMode.passive,
+                            decoration: const InputDecoration(
+                              labelText: 'Transfer Mode',
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                            ),
+                            dropdownColor: context.cardBg,
+                            items: [
+                              DropdownMenuItem<FtpTransferMode>(
+                                value: FtpTransferMode.passive,
+                                child: Text(
+                                  FtpTransferMode.passive.label,
+                                  style: TextStyle(
+                                    color: context.textPrimary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            onChanged:
+                                (!provider.isProcessing &&
+                                    provider.protocol.supportsTransferMode)
+                                ? (val) {
+                                    if (val != null) {
+                                      provider.setTransferMode(val);
+                                    }
+                                  }
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          key: const Key('ftp_username_field'),
+                          controller: _userController,
+                          enabled: !provider.isProcessing,
+                          onChanged: provider.setUsername,
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 13,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Username',
+                            hintText: 'anonymous if blank',
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          key: const Key('ftp_password_field'),
+                          controller: _passController,
+                          enabled: !provider.isProcessing,
+                          obscureText: _obscurePassword,
+                          onChanged: provider.setPassword,
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 13,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
+                            suffixIcon: IconButton(
+                              key: const Key('ftp_password_visibility_btn'),
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                size: 17,
+                                color: context.textMuted,
+                              ),
+                              tooltip: _obscurePassword
+                                  ? 'Show password'
+                                  : 'Hide password',
+                              onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsStrip(
+    BuildContext context,
+    FtpFilesProvider provider,
+    Color accentColor,
+  ) {
+    final dateTypeShort =
+        provider.dateType == FtpDateType.creation ? 'Created' : 'Modified';
+    final dateChipText = provider.dateMode == FtpDateMode.daysAgo
+        ? '${provider.daysAgo}d ago ($dateTypeShort)'
+        : '${provider.dateMode.label} ($dateTypeShort)';
+
+    return Row(
+      children: [
+        Expanded(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                key: const Key('ftp_advanced_settings_btn'),
+                onPressed: () =>
+                    _showAdvancedSettingsDialog(context, provider, accentColor),
+                icon: Icon(Icons.settings, size: 16, color: accentColor),
+                label: Text(
+                  'Advanced Settings',
+                  style: TextStyle(color: accentColor),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: context.border),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              _infoPill(
+                context,
+                icon: Icons.calendar_today,
+                label: dateChipText,
+                color: context.textSecondary,
+              ),
+              if (provider.enableSchedule)
+                _infoPill(
+                  context,
+                  icon: Icons.schedule,
+                  label:
+                      '${provider.runTime.format(context)} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})',
+                  color: accentColor,
+                ),
+              if (provider.dryRun)
+                _infoPill(
+                  context,
+                  icon: Icons.science_outlined,
+                  label: 'DRY RUN',
+                  color: AppColors.warning,
+                  emphasized: true,
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          'Log Every',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+            color: context.textSecondary,
+          ),
+        ),
+        const SizedBox(width: 6),
+        SizedBox(
+          width: 74,
+          child: DropdownButtonFormField<int>(
+            isExpanded: true,
+            initialValue: provider.logInterval,
+            decoration: const InputDecoration(
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            ),
+            dropdownColor: context.cardBg,
+            items: [1, 5, 10, 25, 50, 100].map((int value) {
+              return DropdownMenuItem<int>(
+                value: value,
+                child: Text(
+                  value.toString(),
+                  style: TextStyle(color: context.textPrimary, fontSize: 13),
+                ),
+              );
+            }).toList(),
+            onChanged: provider.isProcessing
+                ? null
+                : (val) {
+                    if (val != null) provider.setLogInterval(val);
+                  },
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          'files',
+          style: TextStyle(fontSize: 13, color: context.textSecondary),
+        ),
+        const SizedBox(width: 12),
+        StatBadge(
+          title: 'History',
+          value: 'View',
+          color: accentColor,
+          icon: Icons.history,
+          onTap: () => showHistoryDialog(context, initialOperation: 'FTP'),
+        ),
+      ],
+    );
+  }
+
+  Widget _infoPill(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required Color color,
+    bool emphasized = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: emphasized
+            ? color.withValues(alpha: 0.16)
+            : context.containerBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: emphasized ? color.withValues(alpha: 0.6) : context.border,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: emphasized ? FontWeight.bold : FontWeight.w500,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionAndStatsRow(
+    BuildContext context,
+    FtpFilesProvider provider,
+    Color accentColor,
+  ) {
+    return Row(
+      children: [
+        if (!provider.isProcessing) ...[
+          if (!provider.enableSchedule)
+            ElevatedButton.icon(
+              key: const Key('ftp_start_upload_btn'),
+              onPressed: provider.canRunNow ? provider.runNow : null,
+              icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+              label: const Text('Start Upload'),
+            )
+          else ...[
+            ElevatedButton.icon(
+              key: const Key('ftp_start_schedule_btn'),
+              onPressed: provider.canArmSchedule ? provider.startSchedule : null,
+              icon: const Icon(Icons.schedule_rounded, size: 18),
+              label: const Text('Start Schedule'),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              key: const Key('ftp_run_now_btn'),
+              onPressed: provider.canRunNow ? provider.runNow : null,
+              icon: const Icon(Icons.play_arrow_rounded, size: 18),
+              label: const Text('Run Now'),
+            ),
+          ],
+        ] else ...[
+          ElevatedButton.icon(
+            key: const Key('ftp_stop_btn'),
+            onPressed: provider.stop,
+            icon: const Icon(Icons.stop, size: 18),
+            label: const Text('Stop'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+          ),
+          if (provider.isScheduleArmed && !provider.isUploading) ...[
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              key: const Key('ftp_run_now_btn'),
+              onPressed: provider.canRunNow ? provider.runNow : null,
+              icon: const Icon(Icons.play_arrow_rounded, size: 18),
+              label: const Text('Run Now'),
+            ),
+          ],
+        ],
+        const SizedBox(width: 14),
+        if (provider.isUploading || provider.isTestingConnection)
+          Container(
+            width: 14,
+            height: 14,
+            margin: const EdgeInsets.only(right: 8),
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(accentColor),
+            ),
+          ),
+        Expanded(
+          child: Text(
+            provider.currentStatus,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: context.textPrimary,
+              fontSize: 13,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        StatBadge(
+          title: 'Uploaded',
+          value: provider.filesUploaded.toString(),
+          color: AppColors.success,
+          icon: Icons.cloud_done_rounded,
+        ),
+        const SizedBox(width: 8),
+        StatBadge(
+          title: 'Skipped',
+          value: provider.filesSkipped.toString(),
+          color: AppColors.warning,
+          icon: Icons.fast_forward_rounded,
+        ),
+        const SizedBox(width: 8),
+        StatBadge(
+          title: 'Errors',
+          value: provider.errors.toString(),
+          color: AppColors.error,
+          icon: Icons.error,
+        ),
+      ],
+    );
+  }
+
+  void _showUploadSourcesDialog(
+    BuildContext context,
+    FtpFilesProvider provider,
+  ) {
+    showDialog(
+      context: context,
+      builder: (_) => _FtpUploadSourcesDialog(provider: provider),
+    );
+  }
+
+  void _showAdvancedSettingsDialog(
+    BuildContext context,
+    FtpFilesProvider provider,
+    Color accentColor,
+  ) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return ChangeNotifierProvider<FtpFilesProvider>.value(
+          value: provider,
+          child: Consumer<FtpFilesProvider>(
+            builder: (context, provider, child) {
+              return AlertDialog(
+                title: Row(
+                  children: [
+                    Icon(Icons.settings, size: 22, color: accentColor),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Advanced Settings',
+                      style: TextStyle(fontSize: 18),
+                    ),
+                  ],
+                ),
+                contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                content: SizedBox(
+                  width: MediaQuery.of(context).size.width * 0.7,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // ── File Date Filter ──
+                        _sectionLabel(context, '📅 File Date Filter'),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 10,
+                          runSpacing: 8,
+                          children: [
+                            SizedBox(
+                              width: 170,
+                              child: DropdownButtonFormField<FtpDateMode>(
+                                key: const Key('ftp_date_mode_dropdown'),
+                                isExpanded: true,
+                                initialValue: provider.dateMode,
+                                decoration: const InputDecoration(
+                                  labelText: 'Date Filter Mode',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                ),
+                                dropdownColor: context.cardBg,
+                                items: FtpDateMode.values
+                                    .map(
+                                      (mode) => DropdownMenuItem<FtpDateMode>(
+                                        value: mode,
+                                        child: Text(
+                                          mode.label,
+                                          style: TextStyle(
+                                            color: context.textPrimary,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: provider.isProcessing
+                                    ? null
+                                    : (val) {
+                                        if (val != null) {
+                                          provider.setDateMode(val);
+                                        }
+                                      },
+                              ),
+                            ),
+                            if (provider.dateMode == FtpDateMode.daysAgo)
+                              SizedBox(
+                                width: 110,
+                                child: TextFormField(
+                                  initialValue: provider.daysAgo.toString(),
+                                  enabled: !provider.isProcessing,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                  ],
+                                  onChanged: (val) {
+                                    final parsed = int.tryParse(val);
+                                    if (parsed != null) {
+                                      provider.setDaysAgo(parsed);
+                                    }
+                                  },
+                                  style: TextStyle(
+                                    color: context.textPrimary,
+                                    fontSize: 13,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Days Ago',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            if (provider.dateMode == FtpDateMode.specificDate)
+                              SizedBox(
+                                width: 150,
+                                child: _buildDatePicker(
+                                  context,
+                                  label: 'Target Date',
+                                  date: provider.specificDate,
+                                  enabled: !provider.isProcessing,
+                                  onPicked: provider.setSpecificDate,
+                                ),
+                              ),
+                            if (provider.dateMode == FtpDateMode.dateRange) ...[
+                              SizedBox(
+                                width: 145,
+                                child: _buildDatePicker(
+                                  context,
+                                  label: 'From',
+                                  date: provider.fromDate,
+                                  enabled: !provider.isProcessing,
+                                  onPicked: provider.setFromDate,
+                                ),
+                              ),
+                              SizedBox(
+                                width: 145,
+                                child: _buildDatePicker(
+                                  context,
+                                  label: 'To',
+                                  date: provider.toDate,
+                                  enabled: !provider.isProcessing,
+                                  onPicked: provider.setToDate,
+                                ),
+                              ),
+                            ],
+                            ToggleButtons(
+                              isSelected: [
+                                provider.dateType == FtpDateType.creation,
+                                provider.dateType == FtpDateType.modified,
+                              ],
+                              onPressed: provider.isProcessing
+                                  ? null
+                                  : (index) {
+                                      provider.setDateType(
+                                        index == 0
+                                            ? FtpDateType.creation
+                                            : FtpDateType.modified,
+                                      );
+                                    },
+                              borderRadius: BorderRadius.circular(8),
+                              constraints: const BoxConstraints(
+                                minHeight: 34,
+                                minWidth: 110,
+                              ),
+                              children: const [
+                                Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 8),
+                                  child: Text('Creation Date'),
+                                ),
+                                Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 8),
+                                  child: Text('Modified Date'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 12),
+                        Divider(color: context.border, thickness: 1),
+                        const SizedBox(height: 8),
+
+                        // ── Upload & Reliability ──
+                        _sectionLabel(context, '📁 Upload & Reliability'),
+                        const SizedBox(height: 6),
+                        _buildOptionCheckbox(
+                          context,
+                          value: provider.includeSubfolders,
+                          enabled: !provider.isProcessing,
+                          label: 'Include nested subfolders',
+                          subtitle:
+                              'Recursively scan subdirectories and mirror relative folders remotely',
+                          onChanged: provider.setIncludeSubfolders,
+                        ),
+                        _buildOptionCheckbox(
+                          context,
+                          value: provider.skipIfExists,
+                          enabled: !provider.isProcessing,
+                          label: 'Skip if already on FTP (matching size)',
+                          subtitle:
+                              'Skips identical files and re-uploads partial size mismatches',
+                          onChanged: provider.setSkipIfExists,
+                        ),
+                        _buildOptionCheckbox(
+                          context,
+                          value: provider.verifySizeAfterUpload,
+                          enabled: !provider.isProcessing,
+                          label: 'Verify file size after upload',
+                          subtitle:
+                              'Confirms remote byte count matches local file size',
+                          onChanged: provider.setVerifySizeAfterUpload,
+                        ),
+                        _buildOptionCheckbox(
+                          context,
+                          key: const Key('ftp_dry_run_checkbox'),
+                          value: provider.dryRun,
+                          enabled: !provider.isProcessing,
+                          label: 'Dry-Run mode (simulate without uploading)',
+                          subtitle:
+                              'Scans files and logs what would upload or skip without transferring data',
+                          onChanged: provider.setDryRun,
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          children: [
+                            _intDropdown(
+                              context,
+                              label: 'Timeout (s)',
+                              value: provider.timeoutSeconds,
+                              options: const [15, 30, 60, 120, 300],
+                              enabled: !provider.isProcessing,
+                              onChanged: provider.setTimeoutSeconds,
+                            ),
+                            _intDropdown(
+                              context,
+                              label: 'Retry Count',
+                              value: provider.retryCount,
+                              options: const [1, 2, 3, 5, 10],
+                              enabled: !provider.isProcessing,
+                              onChanged: provider.setRetryCount,
+                            ),
+                            _intDropdown(
+                              context,
+                              label: 'Retry Delay (s)',
+                              value: provider.retryDelaySeconds,
+                              options: const [1, 3, 5, 10, 15, 30],
+                              enabled: !provider.isProcessing,
+                              onChanged: provider.setRetryDelaySeconds,
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 12),
+                        Divider(color: context.border, thickness: 1),
+                        const SizedBox(height: 8),
+
+                        // ── Schedule ──
+                        _sectionLabel(context, '⏰ Schedule'),
+                        const SizedBox(height: 8),
+                        IntrinsicHeight(
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: Checkbox(
+                                  key: const Key('ftp_enable_schedule_checkbox'),
+                                  value: provider.enableSchedule,
+                                  onChanged: provider.isProcessing
+                                      ? null
+                                      : (val) => provider.setEnableSchedule(
+                                          val ?? false,
+                                        ),
+                                  visualDensity: VisualDensity.compact,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Enable Schedule',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                  color: context.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              SizedBox(
+                                width: 115,
+                                child: StyledTimePicker(
+                                  label: 'Run At',
+                                  time: provider.runTime,
+                                  enabled:
+                                      !provider.isProcessing &&
+                                      provider.enableSchedule,
+                                  onPicked: provider.setRunTime,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              const VerticalDivider(width: 1, thickness: 1),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Wrap(
+                                  spacing: 4,
+                                  runSpacing: 2,
+                                  children: [
+                                    for (final entry in {
+                                      1: 'Mon',
+                                      2: 'Tue',
+                                      3: 'Wed',
+                                      4: 'Thu',
+                                      5: 'Fri',
+                                      6: 'Sat',
+                                      7: 'Sun',
+                                    }.entries)
+                                      FilterChip(
+                                        label: Text(
+                                          entry.value,
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                        selected:
+                                            provider.runDays[entry.key] ?? true,
+                                        onSelected:
+                                            (!provider.isProcessing &&
+                                                provider.enableSchedule)
+                                            ? (val) => provider.setRunDay(
+                                                entry.key,
+                                                val,
+                                              )
+                                            : null,
+                                        visualDensity: VisualDensity.compact,
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 4,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (provider.enableSchedule &&
+                            !provider.hasCheckedScheduleDays) ...[
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Select at least one day to arm the schedule.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.error,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 12),
+                        Divider(color: context.border, thickness: 1),
+                        const SizedBox(height: 8),
+
+                        // ── Completion ──
+                        _sectionLabel(context, '✅ Completion'),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Text(
+                              'When Complete',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                color: context.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            ToggleButtons(
+                              isSelected: [
+                                provider.onCompletionAction == 'repeat',
+                                provider.onCompletionAction == 'stop',
+                              ],
+                              onPressed: provider.isProcessing
+                                  ? null
+                                  : (index) {
+                                      provider.setOnCompletionAction(
+                                        index == 0 ? 'repeat' : 'stop',
+                                      );
+                                    },
+                              borderRadius: BorderRadius.circular(8),
+                              constraints: const BoxConstraints(
+                                minHeight: 30,
+                                minWidth: 85,
+                              ),
+                              children: const [
+                                Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 8),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.repeat, size: 16),
+                                      SizedBox(width: 4),
+                                      Text('Repeat'),
+                                    ],
+                                  ),
+                                ),
+                                Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 8),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.stop_circle_outlined, size: 16),
+                                      SizedBox(width: 4),
+                                      Text('Stop'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                provider.onCompletionAction == 'repeat'
+                                    ? 'Will wait and re-run on the next scheduled day & time'
+                                    : 'Will stop after 1 scheduled run',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: context.textMuted,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Done'),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOptionCheckbox(
+    BuildContext context, {
+    Key? key,
+    required bool value,
+    required bool enabled,
+    required String label,
+    required String subtitle,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: Checkbox(
+              key: key,
+              value: value,
+              onChanged: enabled ? (val) => onChanged(val ?? false) : null,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: context.textSecondary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 11,
+                color: context.textMuted,
+                fontStyle: FontStyle.italic,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _intDropdown(
+    BuildContext context, {
+    required String label,
+    required int value,
+    required List<int> options,
+    required bool enabled,
+    required ValueChanged<int> onChanged,
+  }) {
+    final effectiveOptions = options.contains(value)
+        ? options
+        : ([...options, value]..sort());
+
+    return SizedBox(
+      width: 130,
+      child: DropdownButtonFormField<int>(
+        isExpanded: true,
+        initialValue: value,
+        decoration: InputDecoration(
+          labelText: label,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 8,
+          ),
+        ),
+        dropdownColor: context.cardBg,
+        items: effectiveOptions
+            .map(
+              (v) => DropdownMenuItem<int>(
+                value: v,
+                child: Text(
+                  v.toString(),
+                  style: TextStyle(color: context.textPrimary, fontSize: 13),
+                ),
+              ),
+            )
+            .toList(),
+        onChanged: enabled
+            ? (val) {
+                if (val != null) onChanged(val);
+              }
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildDatePicker(
+    BuildContext context, {
+    required String label,
+    required DateTime date,
+    required bool enabled,
+    required ValueChanged<DateTime> onPicked,
+  }) {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    return InkWell(
+      onTap: enabled
+          ? () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: date,
+                firstDate: DateTime(2010),
+                lastDate: DateTime(DateTime.now().year + 2),
+              );
+              if (picked != null) onPicked(picked);
+            }
+          : null,
+      borderRadius: BorderRadius.circular(8),
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.4,
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 8,
+            ),
+            suffixIcon: Icon(
+              Icons.calendar_today,
+              size: 15,
+              color: context.textMuted,
+            ),
+          ),
+          child: Text(
+            dateFormat.format(date),
+            style: TextStyle(color: context.textPrimary, fontSize: 13),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(BuildContext context, String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: context.textMuted,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+}
+
+class _FtpUploadSourcesDialog extends StatefulWidget {
+  final FtpFilesProvider provider;
+
+  const _FtpUploadSourcesDialog({required this.provider});
+
+  @override
+  State<_FtpUploadSourcesDialog> createState() =>
+      _FtpUploadSourcesDialogState();
+}
+
+class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
+  final List<TextEditingController> _nameControllers = [];
+  final List<TextEditingController> _subfoldersControllers = [];
+  final List<TextEditingController> _destControllers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _rebuildControllers();
+  }
+
+  @override
+  void dispose() {
+    _disposeControllers();
+    super.dispose();
+  }
+
+  void _disposeControllers() {
+    for (final c in _nameControllers) {
+      c.dispose();
+    }
+    for (final c in _subfoldersControllers) {
+      c.dispose();
+    }
+    for (final c in _destControllers) {
+      c.dispose();
+    }
+    _nameControllers.clear();
+    _subfoldersControllers.clear();
+    _destControllers.clear();
+  }
+
+  void _rebuildControllers() {
+    _disposeControllers();
+    for (final source in widget.provider.uploadSources) {
+      _nameControllers.add(TextEditingController(text: source.name));
+      _subfoldersControllers.add(
+        TextEditingController(text: source.subfolders),
+      );
+      _destControllers.add(TextEditingController(text: source.ftpDest));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sources = widget.provider.uploadSources;
+    final accentColor = context.ftpAccent;
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.folder_copy, size: 22, color: accentColor),
+          const SizedBox(width: 8),
+          const Text('Upload Sources', style: TextStyle(fontSize: 18)),
+          const Spacer(),
+          TextButton.icon(
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add Source', style: TextStyle(fontSize: 13)),
+            onPressed: () {
+              widget.provider.addUploadSource();
+              setState(_rebuildControllers);
+            },
+          ),
+        ],
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+      content: SizedBox(
+        width: MediaQuery.of(context).size.width * 0.72,
+        height: MediaQuery.of(context).size.height * 0.54,
+        child: ListView.separated(
+          itemCount: sources.length,
+          separatorBuilder: (_, _) => Divider(
+            height: 18,
+            color: AppColors.cardBorder.withValues(alpha: 0.5),
+          ),
+          itemBuilder: (context, i) {
+            final FtpUploadSource src = sources[i];
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Source ${i + 1}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: context.textMuted,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 170,
+                      child: TextField(
+                        controller: _nameControllers[i],
+                        onChanged: (val) =>
+                            widget.provider.setSourceNameAt(i, val),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textPrimary,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Label',
+                          hintText: 'e.g. Backups',
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Run Order:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    SizedBox(
+                      width: 52,
+                      height: 28,
+                      child: DropdownButton<int>(
+                        value: src.runOrder.clamp(1, 20),
+                        isDense: true,
+                        dropdownColor: context.cardBg,
+                        underline: Container(height: 1, color: context.border),
+                        items: List.generate(20, (n) => n + 1)
+                            .map(
+                              (v) => DropdownMenuItem<int>(
+                                value: v,
+                                child: Text(
+                                  '$v',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: context.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            widget.provider.setSourceRunOrderAt(i, val);
+                            setState(() {});
+                          }
+                        },
+                      ),
+                    ),
+                    const Spacer(),
+                    if (sources.length > 1)
+                      IconButton(
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          size: 18,
+                          color: AppColors.error,
+                        ),
+                        tooltip: 'Remove source',
+                        onPressed: () {
+                          widget.provider.removeUploadSource(i);
+                          setState(_rebuildControllers);
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                PathRow(
+                  label: 'Local Path',
+                  path: src.localPath,
+                  onPick: () async {
+                    await widget.provider.pickSourceAt(i);
+                    if (mounted) setState(() {});
+                  },
+                  onChanged: (val) {
+                    widget.provider.setSourcePathAt(i, val);
+                  },
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _subfoldersControllers[i],
+                        onChanged: (val) =>
+                            widget.provider.setSourceSubfoldersAt(i, val),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textPrimary,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Subfolders (optional, comma-separated)',
+                          hintText: 'FolderA, FolderB',
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _destControllers[i],
+                        onChanged: (val) =>
+                            widget.provider.setSourceFtpDestAt(i, val),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textPrimary,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'FTP Dest Folder (optional)',
+                          hintText: 'Leave blank for FTP root',
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Done'),
+        ),
+      ],
+    );
+  }
+}
