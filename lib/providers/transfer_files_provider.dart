@@ -90,10 +90,24 @@ class TransferFilesProvider with ChangeNotifier {
   String? sourcePath;
   String? destPath;
 
+  static DateTime get _defaultFromDate {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, 1);
+  }
+
+  static DateTime get _defaultToDate {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
   // Date range filter for Transfer
   bool enableDateRange = false;
-  DateTime fromDate = DateTime(2025, 1, 1);
-  DateTime toDate = DateTime(2025, 1, 31);
+  DateTime fromDate = _defaultFromDate;
+  DateTime toDate = _defaultToDate;
+
+  // Quick date filter: "Today Only" and "Yesterday Only"
+  bool todayOnly = false;
+  bool yesterdayOnly = false;
 
   bool isProcessing = false;
   List<String> logs = [];
@@ -161,8 +175,11 @@ class TransferFilesProvider with ChangeNotifier {
     reloadSettings();
   }
 
+  bool _isDisposed = false;
+
   @override
   void dispose() {
+    _isDisposed = true;
     LocalDbService().removeListener(_onProfileChanged);
     _refreshTimer?.cancel();
     _scheduleTimer?.cancel();
@@ -170,6 +187,13 @@ class TransferFilesProvider with ChangeNotifier {
     _isolateKillTimer?.cancel();
     _workerIsolate?.kill(priority: Isolate.immediate);
     super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
   }
 
   void _startTimer() {
@@ -213,6 +237,9 @@ class TransferFilesProvider with ChangeNotifier {
     ageFilterUnit = db.getString('transfer_ageFilterUnit') ?? 'Days';
     ageFilterValue = db.getInt('transfer_ageFilterValue') ?? 30;
     enableDateRange = db.getBool('transfer_enableDateRange') ?? false;
+    todayOnly = db.getBool('transfer_todayOnly') ?? false;
+    yesterdayOnly = db.getBool('transfer_yesterdayOnly') ?? false;
+    _applyQuickDateFilter();
     excludeSubfolders = db.getBool('transfer_excludeSubfolders') ?? false;
     logInterval = db.getInt('transfer_logInterval') ?? 100;
     // Awaited: the resume marker and the moved/error counts must be in place
@@ -264,6 +291,8 @@ class TransferFilesProvider with ChangeNotifier {
     await db.setString('transfer_ageFilterUnit', ageFilterUnit);
     await db.setInt('transfer_ageFilterValue', ageFilterValue);
     await db.setBool('transfer_enableDateRange', enableDateRange);
+    await db.setBool('transfer_todayOnly', todayOnly);
+    await db.setBool('transfer_yesterdayOnly', yesterdayOnly);
     await db.setBool('transfer_excludeSubfolders', excludeSubfolders);
     await db.setInt('transfer_logInterval', logInterval);
 
@@ -369,6 +398,8 @@ class TransferFilesProvider with ChangeNotifier {
   void setFromDate(DateTime date) {
     fromDate = date;
     if (fromDate.isAfter(toDate)) toDate = fromDate;
+    todayOnly = false;
+    yesterdayOnly = false;
     _saveSettings();
     notifyListeners();
   }
@@ -376,20 +407,69 @@ class TransferFilesProvider with ChangeNotifier {
   void setToDate(DateTime date) {
     toDate = date;
     if (toDate.isBefore(fromDate)) fromDate = toDate;
+    todayOnly = false;
+    yesterdayOnly = false;
     _saveSettings();
     notifyListeners();
   }
 
   void setEnableDateRange(bool val) {
     enableDateRange = val;
-    if (val) enableAgeFilter = false;
+    if (!val) {
+      todayOnly = false;
+      yesterdayOnly = false;
+    } else {
+      enableAgeFilter = false;
+    }
     _saveSettings();
     notifyListeners();
   }
 
+  void setTodayOnly(bool val) {
+    todayOnly = val;
+    if (val) enableAgeFilter = false;
+    _applyQuickDateFilter();
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setYesterdayOnly(bool val) {
+    yesterdayOnly = val;
+    if (val) enableAgeFilter = false;
+    _applyQuickDateFilter();
+    _saveSettings();
+    notifyListeners();
+  }
+
+  /// Computes from/to dates based on the Today/Yesterday checkboxes.
+  /// Called on load, on toggle, and at each run start to keep dates current.
+  void _applyQuickDateFilter() {
+    if (!todayOnly && !yesterdayOnly) return;
+
+    enableDateRange = true;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    if (todayOnly && yesterdayOnly) {
+      fromDate = yesterday;
+      toDate = today;
+    } else if (todayOnly) {
+      fromDate = today;
+      toDate = today;
+    } else {
+      fromDate = yesterday;
+      toDate = yesterday;
+    }
+  }
+
   void setEnableAgeFilter(bool val) {
     enableAgeFilter = val;
-    if (val) enableDateRange = false;
+    if (val) {
+      enableDateRange = false;
+      todayOnly = false;
+      yesterdayOnly = false;
+    }
     _saveSettings();
     notifyListeners();
   }
@@ -646,6 +726,8 @@ class TransferFilesProvider with ChangeNotifier {
       );
       _addLog('    outside the source folder.');
     }
+
+    _applyQuickDateFilter();
 
     if (lastScannedDir == null) {
       filesMoved = 0;
@@ -997,13 +1079,7 @@ class TransferFilesProvider with ChangeNotifier {
           file.parent.path,
           from: params.sourcePath,
         );
-        // Only organize into year-based subdirectories when date range is enabled
-        String destDir;
-        if (params.enableDateRange && year.isNotEmpty) {
-          destDir = p.join(params.destPath, year, relativePath);
-        } else {
-          destDir = p.join(params.destPath, relativePath);
-        }
+        String destDir = p.join(params.destPath, relativePath);
         String destFilePath = p.join(destDir, p.basename(file.path));
 
         if (!createdDirs.contains(destDir)) {
@@ -1085,39 +1161,46 @@ class TransferFilesProvider with ChangeNotifier {
       }
     }
 
+    // Pre-compute date filter boundaries
+    late final DateTime from;
+    late final DateTime to;
+    if (params.enableDateRange) {
+      final fd = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
+      final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
+      from = DateTime(fd.year, fd.month, fd.day);
+      to = DateTime(td.year, td.month, td.day);
+    }
+
+    late final DateTime ageThreshold;
+    if (params.enableAgeFilter) {
+      final now = DateTime.now();
+      if (params.ageFilterUnit == 'Days') {
+        ageThreshold = now.subtract(Duration(days: params.ageFilterValue));
+      } else if (params.ageFilterUnit == 'Months') {
+        ageThreshold = DateTime(
+          now.year,
+          now.month - params.ageFilterValue,
+          now.day,
+        );
+      } else {
+        ageThreshold = DateTime(
+          now.year - params.ageFilterValue,
+          now.month,
+          now.day,
+        );
+      }
+    }
+
     Future<void> checkAndMoveFile(File file) async {
       try {
         FileStat stats = await file.stat();
         DateTime modified = stats.modified;
 
         if (params.enableAgeFilter) {
-          DateTime threshold;
-          final now = DateTime.now();
-          if (params.ageFilterUnit == 'Days') {
-            threshold = now.subtract(Duration(days: params.ageFilterValue));
-          } else if (params.ageFilterUnit == 'Months') {
-            threshold = DateTime(
-              now.year,
-              now.month - params.ageFilterValue,
-              now.day,
-            );
-          } else {
-            threshold = DateTime(
-              now.year - params.ageFilterValue,
-              now.month,
-              now.day,
-            );
-          }
-          if (modified.isAfter(threshold)) return;
+          if (modified.isAfter(ageThreshold)) return;
         }
 
         if (params.enableDateRange) {
-          // Date range filter is enabled: check date boundaries and organize by year
-          final fd = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
-          final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
-          final from = DateTime(fd.year, fd.month, fd.day);
-          final to = DateTime(td.year, td.month, td.day);
-
           final fileDate = DateTime(
             modified.year,
             modified.month,
@@ -1131,7 +1214,6 @@ class TransferFilesProvider with ChangeNotifier {
           String monthStr = DateFormat('MMM').format(modified);
           await moveFile(file, yearStr, monthStr, modified: modified);
         } else {
-          // No date range filter: move all files, no year-based organization
           await moveFile(file, '', '', modified: modified);
         }
       } catch (e) {
