@@ -41,8 +41,16 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  tearDownAll(() {
-    if (appRootDir.existsSync()) appRootDir.deleteSync(recursive: true);
+  // Gene - Nov, 22, 2026: Close SQLite handles before deleting temp directory to avoid Windows errno 32 file-lock failures in tearDownAll
+  // tearDownAll(() {
+  //   if (appRootDir.existsSync()) appRootDir.deleteSync(recursive: true);
+  // });
+  tearDownAll(() async {
+    await HistoryService().close();
+    await AppSqliteService().close();
+    try {
+      if (appRootDir.existsSync()) appRootDir.deleteSync(recursive: true);
+    } on FileSystemException catch (_) {}
   });
 
   group('Batterie-matched Neumorphic Theme Tokens', () {

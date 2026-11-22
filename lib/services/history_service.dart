@@ -288,4 +288,18 @@ class HistoryService {
       await db.close();
     } catch (_) {}
   }
+
+  // Gene - Nov, 22, 2026: Expose close() so Windows tests and shutdown paths can release history SQLite file locks before deleting temp directories
+  Future<void> close() async {
+    if (_openingDb != null) {
+      try {
+        await _openingDb;
+      } catch (_) {}
+    }
+    final db = _db;
+    _db = null;
+    if (db != null && db.isOpen) {
+      await db.close();
+    }
+  }
 }

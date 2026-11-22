@@ -137,9 +137,19 @@ void main() {
     await GlobalDbService().init();
   });
 
-  tearDownAll(() {
-    if (appRootDir.existsSync()) appRootDir.deleteSync(recursive: true);
-    if (tempSourcesDir.existsSync()) tempSourcesDir.deleteSync(recursive: true);
+  // Gene - Nov, 22, 2026: Close SQLite handles before deleting temp directories to avoid Windows errno 32 file-lock failures in tearDownAll
+  // tearDownAll(() {
+  //   if (appRootDir.existsSync()) appRootDir.deleteSync(recursive: true);
+  //   if (tempSourcesDir.existsSync()) tempSourcesDir.deleteSync(recursive: true);
+  // });
+  tearDownAll(() async {
+    await HistoryService().close();
+    await AppSqliteService().close();
+    for (final dir in [appRootDir, tempSourcesDir]) {
+      try {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      } on FileSystemException catch (_) {}
+    }
   });
 
   FtpFilesProvider buildProvider({
