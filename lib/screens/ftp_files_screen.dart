@@ -366,92 +366,195 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            key: const Key('ftp_connection_header'),
-            borderRadius: BorderRadius.circular(10),
-            onTap: () =>
-                setState(() => _connectionExpanded = !_connectionExpanded),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(Icons.dns_rounded, size: 17, color: accentColor),
-                  const SizedBox(width: 8),
-                  Text(
-                    'FTP Connection',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: context.textPrimary,
+          //           InkWell(
+          //             key: const Key('ftp_connection_header'),
+          //             borderRadius: BorderRadius.circular(10),
+          //             onTap: () =>
+          //                 setState(() => _connectionExpanded = !_connectionExpanded),
+          //             child: Padding(
+          //               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          //               child: Row(
+          //                 children: [
+          //                   Icon(Icons.dns_rounded, size: 17, color: accentColor),
+          //                   const SizedBox(width: 8),
+          //                   Text(
+          //                     'FTP Connection',
+          //                     style: TextStyle(
+          //                       fontSize: 13,
+          //                       fontWeight: FontWeight.w600,
+          //                       color: context.textPrimary,
+          //                     ),
+          //                   ),
+          //                   const SizedBox(width: 10),
+          //                   Expanded(
+          //                     child: Text(
+          //                       '${provider.protocol.shortLabel} • $hostDisplay',
+          //                       style: TextStyle(fontSize: 12, color: context.textMuted),
+          //                       maxLines: 1,
+          //                       overflow: TextOverflow.ellipsis,
+          //                     ),
+          //                   ),
+          //                   const SizedBox(width: 8),
+          //                   OutlinedButton.icon(
+          //                     key: const Key('ftp_test_connection_btn'),
+          //                     onPressed:
+          //                         (provider.hasValidConnection &&
+          //                             !provider.isTestingConnection &&
+          //                             !provider.isUploading)
+          //                         ? () => _handleTestConnection(provider)
+          //                         : null,
+          //                     icon: provider.isTestingConnection
+          //                         ? SizedBox(
+          //                             width: 13,
+          //                             height: 13,
+          //                             child: CircularProgressIndicator(
+          //                               strokeWidth: 2,
+          //                               color: accentColor,
+          //                             ),
+          //                           )
+          //                         : Icon(
+          //                             Icons.wifi_tethering,
+          //                             size: 15,
+          //                             color: accentColor,
+          //                           ),
+          //                     label: Text(
+          //                       provider.isTestingConnection
+          //                           ? 'Testing...'
+          //                           : 'Test Connection',
+          //                       style: TextStyle(fontSize: 12, color: accentColor),
+          //                     ),
+          //                     //                     style: OutlinedButton.styleFrom(
+          //                     //                       side: BorderSide(color: context.border),
+          //                     //                       padding: const EdgeInsets.symmetric(
+          //                     //                         horizontal: 10,
+          //                     //                         vertical: 6,
+          //                     //                       ),
+          //                     //                       visualDensity: VisualDensity.compact,
+          //                     //                     ),
+          //                     // Gene - Nov, 22, 2026: Tinted Test Connection outline with accentColor.
+          //                     style: OutlinedButton.styleFrom(
+          //                       side: BorderSide(
+          //                         color: accentColor.withValues(alpha: 0.45),
+          //                       ),
+          //                       padding: const EdgeInsets.symmetric(
+          //                         horizontal: 10,
+          //                         vertical: 6,
+          //                       ),
+          //                       visualDensity: VisualDensity.compact,
+          //                     ),
+          //                   ),
+          //                   const SizedBox(width: 6),
+          //                   Icon(
+          //                     _connectionExpanded
+          //                         ? Icons.expand_less_rounded
+          //                         : Icons.expand_more_rounded,
+          //                     color: context.textMuted,
+          //                   ),
+          //                 ],
+          //               ),
+          //             ),
+          //           ),
+          // Gene - Nov, 23, 2026: Move Test Connection button outside the collapsible header InkWell so clicking it never toggles card expansion.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    key: const Key('ftp_connection_header'),
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => setState(
+                      () => _connectionExpanded = !_connectionExpanded,
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      '${provider.protocol.shortLabel} • $hostDisplay',
-                      style: TextStyle(fontSize: 12, color: context.textMuted),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    key: const Key('ftp_test_connection_btn'),
-                    onPressed:
-                        (provider.hasValidConnection &&
-                            !provider.isTestingConnection &&
-                            !provider.isUploading)
-                        ? () => _handleTestConnection(provider)
-                        : null,
-                    icon: provider.isTestingConnection
-                        ? SizedBox(
-                            width: 13,
-                            height: 13,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: accentColor,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Icon(Icons.dns_rounded, size: 17, color: accentColor),
+                          const SizedBox(width: 8),
+                          Text(
+                            'FTP Connection',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: context.textPrimary,
                             ),
-                          )
-                        : Icon(
-                            Icons.wifi_tethering,
-                            size: 15,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '${provider.protocol.shortLabel} • $hostDisplay',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: context.textMuted,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  key: const Key('ftp_test_connection_btn'),
+                  onPressed:
+                      (provider.hasValidConnection &&
+                          !provider.isTestingConnection &&
+                          !provider.isUploading)
+                      ? () => _handleTestConnection(provider)
+                      : null,
+                  icon: provider.isTestingConnection
+                      ? SizedBox(
+                          width: 13,
+                          height: 13,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
                             color: accentColor,
                           ),
-                    label: Text(
-                      provider.isTestingConnection
-                          ? 'Testing...'
-                          : 'Test Connection',
-                      style: TextStyle(fontSize: 12, color: accentColor),
+                        )
+                      : Icon(
+                          Icons.wifi_tethering,
+                          size: 15,
+                          color: accentColor,
+                        ),
+                  label: Text(
+                    provider.isTestingConnection
+                        ? 'Testing...'
+                        : 'Test Connection',
+                    style: TextStyle(fontSize: 12, color: accentColor),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(
+                      color: accentColor.withValues(alpha: 0.45),
                     ),
-                    //                     style: OutlinedButton.styleFrom(
-                    //                       side: BorderSide(color: context.border),
-                    //                       padding: const EdgeInsets.symmetric(
-                    //                         horizontal: 10,
-                    //                         vertical: 6,
-                    //                       ),
-                    //                       visualDensity: VisualDensity.compact,
-                    //                     ),
-                    // Gene - Nov, 22, 2026: Tinted Test Connection outline with accentColor.
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(
-                        color: accentColor.withValues(alpha: 0.45),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                InkWell(
+                  key: const Key('ftp_connection_expand_btn'),
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => setState(
+                    () => _connectionExpanded = !_connectionExpanded,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      _connectionExpanded
+                          ? Icons.expand_less_rounded
+                          : Icons.expand_more_rounded,
+                      color: context.textMuted,
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Icon(
-                    _connectionExpanded
-                        ? Icons.expand_less_rounded
-                        : Icons.expand_more_rounded,
-                    color: context.textMuted,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           if (_connectionExpanded) ...[

@@ -255,4 +255,63 @@ void main() {
       await tester.pumpAndSettle();
     },
   );
+
+  // Gene - Nov, 23, 2026: Verify clicking Test Connection never collapses or expands the FTP Connection card.
+  testWidgets(
+    'Clicking Test Connection does not collapse or expand the FTP Connection card',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 840);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final provider = FtpFilesProvider(
+        clientFactory: (_) => _NoopFtpClient(),
+        persistSettings: false,
+      );
+      addTearDown(provider.dispose);
+
+      await tester.pumpWidget(buildFtpTestApp(provider));
+      await tester.pumpAndSettle();
+
+      // Connection card starts expanded when host is empty.
+      expect(find.byKey(const Key('ftp_host_field')), findsOneWidget);
+
+      // Tapping Test Connection while disabled (host empty) must not collapse the card.
+      await tester.tap(find.byKey(const Key('ftp_test_connection_btn')));
+      await tester.pump();
+      expect(find.byKey(const Key('ftp_host_field')), findsOneWidget);
+
+      // Enter host so Test Connection becomes enabled, tap it, and verify card stays expanded.
+      await tester.enterText(
+        find.byKey(const Key('ftp_host_field')),
+        'ftp.example.com',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('ftp_test_connection_btn')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('ftp_host_field')), findsOneWidget);
+      expect(
+        provider.logs.any((l) => l.contains('Connected (FTP) — CWD: /')),
+        isTrue,
+      );
+      expect(find.textContaining('Connected (FTP) — CWD: /'), findsWidgets);
+
+      // Collapse the card using the dedicated chevron toggle.
+      await tester.tap(find.byKey(const Key('ftp_connection_expand_btn')));
+      await tester.pump();
+      expect(find.byKey(const Key('ftp_host_field')), findsNothing);
+
+      // Tapping Test Connection while collapsed must not expand the card.
+      await tester.tap(find.byKey(const Key('ftp_test_connection_btn')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('ftp_host_field')), findsNothing);
+
+      // Re-expand via the header title area.
+      await tester.tap(find.byKey(const Key('ftp_connection_header')));
+      await tester.pump();
+      expect(find.byKey(const Key('ftp_host_field')), findsOneWidget);
+    },
+  );
 }
