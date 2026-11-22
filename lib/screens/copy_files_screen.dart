@@ -29,7 +29,9 @@ class CopyFilesScreen extends StatelessWidget {
           child: Column(
             children: [
               // App Bar
-              _buildAppBar(context),
+              // _buildAppBar(context),
+              // Gene - Nov, 23, 2026: Pass CopyFilesProvider into _buildAppBar for JSON Import/Export actions.
+              _buildAppBar(context, provider),
 
               // Content
               Expanded(
@@ -331,186 +333,322 @@ class CopyFilesScreen extends StatelessWidget {
                       const SizedBox(height: 10),
 
                       // Actions, Status, and Stats
-                      Row(
-                        children: [
-                          if (!provider.isProcessing) ...[
-                            ElevatedButton.icon(
-                              onPressed: provider.useMultipleDirectories
-                                  ? (provider.directoryPairs.any(
-                                          (p) =>
-                                              p.sourcePath != null &&
-                                              p.destPath != null,
-                                        )
+                      //                       Row(
+                      //                         children: [
+                      //                           if (!provider.isProcessing) ...[
+                      //                             ElevatedButton.icon(
+                      //                               onPressed: provider.useMultipleDirectories
+                      //                                   ? (provider.directoryPairs.any(
+                      //                                           (p) =>
+                      //                                               p.sourcePath != null &&
+                      //                                               p.destPath != null,
+                      //                                         )
+                      //                                         ? provider.startProcessing
+                      //                                         : null)
+                      //                                   : (provider.sourcePath != null &&
+                      //                                         provider.destPath != null)
+                      //                                   ? provider.startProcessing
+                      //                                   : null,
+                      //                               icon: const Icon(Icons.copy),
+                      //                               label: Text(
+                      //                                 provider.hasSavedProgress
+                      //                                     ? 'Resume Copying'
+                      //                                     : 'Start Copying',
+                      //                               ),
+                      //                             ),
+                      //                             const SizedBox(width: 8),
+                      //                             OutlinedButton.icon(
+                      //                               onPressed: () {
+                      //                                 showDialog(
+                      //                                   context: context,
+                      //                                   builder: (ctx) => AlertDialog(
+                      //                                     title: const Text('Clear Progress?'),
+                      //                                     content: const Text(
+                      //                                       'This will clear saved resume progress. The next run will scan all directories from scratch.',
+                      //                                     ),
+                      //                                     actions: [
+                      //                                       TextButton(
+                      //                                         onPressed: () => Navigator.pop(ctx),
+                      //                                         child: const Text('Cancel'),
+                      //                                       ),
+                      //                                       TextButton(
+                      //                                         onPressed: () {
+                      //                                           provider.clearProgress();
+                      //                                           Navigator.pop(ctx);
+                      //                                         },
+                      //                                         child: const Text('Clear'),
+                      //                                       ),
+                      //                                     ],
+                      //                                   ),
+                      //                                 );
+                      //                               },
+                      //                               icon: const Icon(Icons.refresh, size: 18),
+                      //                               label: const Text('Clear Progress'),
+                      //                             ),
+                      //                           ] else
+                      //                             ElevatedButton.icon(
+                      //                               onPressed: provider.stop,
+                      //                               icon: const Icon(Icons.stop),
+                      //                               label: const Text('Stop'),
+                      //                               style: ElevatedButton.styleFrom(
+                      //                                 backgroundColor: AppColors.error,
+                      //                                 foregroundColor: Colors.white,
+                      //                               ),
+                      //                             ),
+                      //                           const SizedBox(width: 16),
+                      //
+                      //                           //                           // Progress indicator
+                      //                           //                           if (provider.isProcessing && !provider.isPaused)
+                      //                           //                             Container(
+                      //                           //                               width: 14,
+                      //                           //                               height: 14,
+                      //                           //                               margin: const EdgeInsets.only(right: 8),
+                      //                           //                               child: const CircularProgressIndicator(
+                      //                           //                                 strokeWidth: 2,
+                      //                           //                                 valueColor: AlwaysStoppedAnimation<Color>(
+                      //                           //                                   AppColors.info,
+                      //                           //                                 ),
+                      //                           //                               ),
+                      //                           //                             ),
+                      //                           //
+                      //                           //                           // Status
+                      //                           //                           Expanded(
+                      //                           //                             child: Text(
+                      //                           //                               provider.currentStatus,
+                      //                           //                               style: TextStyle(
+                      //                           //                                 fontWeight: FontWeight.w600,
+                      //                           //                                 color: context.textPrimary,
+                      //                           //                                 fontSize: 13,
+                      //                           //                               ),
+                      //                           //                               maxLines: 1,
+                      //                           //                               overflow: TextOverflow.ellipsis,
+                      //                           //                             ),
+                      //                           //                           ),
+                      //                           //                           const SizedBox(width: 8),
+                      //                           //
+                      //                           //                           // Stats
+                      //                           //                           StatBadge(
+                      //                           //                             title: 'Copied',
+                      //                           //                             value: provider.filesCopied.toString(),
+                      //                           //                             color: AppColors.info,
+                      //                           //                             icon: Icons.file_copy,
+                      //                           //                           ),
+                      //                           //                           const SizedBox(width: 6),
+                      //                           //                           StatBadge(
+                      //                           //                             title: 'Exist',
+                      //                           //                             value: provider.filesAlreadyExist.toString(),
+                      //                           //                             color: AppColors.accent,
+                      //                           //                             icon: Icons.check_circle_outline,
+                      //                           //                           ),
+                      //                           //                           const SizedBox(width: 6),
+                      //                           //                           StatBadge(
+                      //                           //                             title: 'Skipped',
+                      //                           //                             value: provider.filesSkipped.toString(),
+                      //                           //                             color: AppColors.warning,
+                      //                           //                             icon: Icons.skip_next,
+                      //                           //                           ),
+                      //                           //                           const SizedBox(width: 6),
+                      //                           //                           StatBadge(
+                      //                           //                             title: 'Errors',
+                      //                           //                             value: provider.errors.toString(),
+                      //                           //                             color: AppColors.error,
+                      //                           //                             icon: Icons.error_outline,
+                      //                           //                           ),
+                      //                           // Gene - Nov, 22, 2026: Unified CopyFilesScreen spinner and stat badge colors using theme-aware getters.
+                      //                           // Progress indicator
+                      //                           if (provider.isProcessing && !provider.isPaused)
+                      //                             Container(
+                      //                               width: 14,
+                      //                               height: 14,
+                      //                               margin: const EdgeInsets.only(right: 8),
+                      //                               child: CircularProgressIndicator(
+                      //                                 strokeWidth: 2,
+                      //                                 valueColor: AlwaysStoppedAnimation<Color>(
+                      //                                   context.copyAccent,
+                      //                                 ),
+                      //                               ),
+                      //                             ),
+                      //
+                      //                           // Status
+                      //                           Expanded(
+                      //                             child: Text(
+                      //                               provider.currentStatus,
+                      //                               style: TextStyle(
+                      //                                 fontWeight: FontWeight.w600,
+                      //                                 color: context.textPrimary,
+                      //                                 fontSize: 13,
+                      //                               ),
+                      //                               maxLines: 1,
+                      //                               overflow: TextOverflow.ellipsis,
+                      //                             ),
+                      //                           ),
+                      //                           const SizedBox(width: 8),
+                      //
+                      //                           // Stats
+                      //                           StatBadge(
+                      //                             title: 'Copied',
+                      //                             value: provider.filesCopied.toString(),
+                      //                             color: context.copyAccent,
+                      //                             icon: Icons.file_copy,
+                      //                           ),
+                      //                           const SizedBox(width: 6),
+                      //                           StatBadge(
+                      //                             title: 'Exist',
+                      //                             value: provider.filesAlreadyExist.toString(),
+                      //                             color: context.primaryAccent,
+                      //                             icon: Icons.check_circle_outline,
+                      //                           ),
+                      //                           const SizedBox(width: 6),
+                      //                           StatBadge(
+                      //                             title: 'Skipped',
+                      //                             value: provider.filesSkipped.toString(),
+                      //                             color: context.warningColor,
+                      //                             icon: Icons.skip_next,
+                      //                           ),
+                      //                           const SizedBox(width: 6),
+                      //                           StatBadge(
+                      //                             title: 'Errors',
+                      //                             value: provider.errors.toString(),
+                      //                             color: context.errorColor,
+                      //                             icon: Icons.error_outline,
+                      //                           ),
+                      //                         ],
+                      //                       ),
+                      // Gene - Nov, 23, 2026: Use responsive Wrap for CopyFilesScreen actions, status, and stat badges to prevent overflow at 980x680.
+                      SizedBox(
+                        width: double.infinity,
+                        child: Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.spaceBetween,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (!provider.isProcessing) ...[
+                                  ElevatedButton.icon(
+                                    onPressed: provider.useMultipleDirectories
+                                        ? (provider.directoryPairs.any(
+                                                (p) =>
+                                                    p.sourcePath != null &&
+                                                    p.destPath != null,
+                                              )
+                                              ? provider.startProcessing
+                                              : null)
+                                        : (provider.sourcePath != null &&
+                                              provider.destPath != null)
                                         ? provider.startProcessing
-                                        : null)
-                                  : (provider.sourcePath != null &&
-                                        provider.destPath != null)
-                                  ? provider.startProcessing
-                                  : null,
-                              icon: const Icon(Icons.copy),
-                              label: Text(
-                                provider.hasSavedProgress
-                                    ? 'Resume Copying'
-                                    : 'Start Copying',
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Clear Progress?'),
-                                    content: const Text(
-                                      'This will clear saved resume progress. The next run will scan all directories from scratch.',
+                                        : null,
+                                    icon: const Icon(Icons.copy),
+                                    label: Text(
+                                      provider.hasSavedProgress
+                                          ? 'Resume Copying'
+                                          : 'Start Copying',
                                     ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(ctx),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          provider.clearProgress();
-                                          Navigator.pop(ctx);
-                                        },
-                                        child: const Text('Clear'),
-                                      ),
-                                    ],
                                   ),
-                                );
-                              },
-                              icon: const Icon(Icons.refresh, size: 18),
-                              label: const Text('Clear Progress'),
-                            ),
-                          ] else
-                            ElevatedButton.icon(
-                              onPressed: provider.stop,
-                              icon: const Icon(Icons.stop),
-                              label: const Text('Stop'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.error,
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                          const SizedBox(width: 16),
-
-                          //                           // Progress indicator
-                          //                           if (provider.isProcessing && !provider.isPaused)
-                          //                             Container(
-                          //                               width: 14,
-                          //                               height: 14,
-                          //                               margin: const EdgeInsets.only(right: 8),
-                          //                               child: const CircularProgressIndicator(
-                          //                                 strokeWidth: 2,
-                          //                                 valueColor: AlwaysStoppedAnimation<Color>(
-                          //                                   AppColors.info,
-                          //                                 ),
-                          //                               ),
-                          //                             ),
-                          //
-                          //                           // Status
-                          //                           Expanded(
-                          //                             child: Text(
-                          //                               provider.currentStatus,
-                          //                               style: TextStyle(
-                          //                                 fontWeight: FontWeight.w600,
-                          //                                 color: context.textPrimary,
-                          //                                 fontSize: 13,
-                          //                               ),
-                          //                               maxLines: 1,
-                          //                               overflow: TextOverflow.ellipsis,
-                          //                             ),
-                          //                           ),
-                          //                           const SizedBox(width: 8),
-                          //
-                          //                           // Stats
-                          //                           StatBadge(
-                          //                             title: 'Copied',
-                          //                             value: provider.filesCopied.toString(),
-                          //                             color: AppColors.info,
-                          //                             icon: Icons.file_copy,
-                          //                           ),
-                          //                           const SizedBox(width: 6),
-                          //                           StatBadge(
-                          //                             title: 'Exist',
-                          //                             value: provider.filesAlreadyExist.toString(),
-                          //                             color: AppColors.accent,
-                          //                             icon: Icons.check_circle_outline,
-                          //                           ),
-                          //                           const SizedBox(width: 6),
-                          //                           StatBadge(
-                          //                             title: 'Skipped',
-                          //                             value: provider.filesSkipped.toString(),
-                          //                             color: AppColors.warning,
-                          //                             icon: Icons.skip_next,
-                          //                           ),
-                          //                           const SizedBox(width: 6),
-                          //                           StatBadge(
-                          //                             title: 'Errors',
-                          //                             value: provider.errors.toString(),
-                          //                             color: AppColors.error,
-                          //                             icon: Icons.error_outline,
-                          //                           ),
-                          // Gene - Nov, 22, 2026: Unified CopyFilesScreen spinner and stat badge colors using theme-aware getters.
-                          // Progress indicator
-                          if (provider.isProcessing && !provider.isPaused)
-                            Container(
-                              width: 14,
-                              height: 14,
-                              margin: const EdgeInsets.only(right: 8),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  context.copyAccent,
+                                  const SizedBox(width: 8),
+                                  OutlinedButton.icon(
+                                    onPressed: () {
+                                      showDialog(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          title: const Text('Clear Progress?'),
+                                          content: const Text(
+                                            'This will clear saved resume progress. The next run will scan all directories from scratch.',
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx),
+                                              child: const Text('Cancel'),
+                                            ),
+                                            TextButton(
+                                              onPressed: () {
+                                                provider.clearProgress();
+                                                Navigator.pop(ctx);
+                                              },
+                                              child: const Text('Clear'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.refresh, size: 18),
+                                    label: const Text('Clear Progress'),
+                                  ),
+                                ] else
+                                  ElevatedButton.icon(
+                                    onPressed: provider.stop,
+                                    icon: const Icon(Icons.stop),
+                                    label: const Text('Stop'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.error,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                const SizedBox(width: 12),
+                                if (provider.isProcessing && !provider.isPaused)
+                                  Container(
+                                    width: 14,
+                                    height: 14,
+                                    margin: const EdgeInsets.only(right: 8),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        context.copyAccent,
+                                      ),
+                                    ),
+                                  ),
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 240,
+                                  ),
+                                  child: Text(
+                                    provider.currentStatus,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: context.textPrimary,
+                                      fontSize: 13,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
-
-                          // Status
-                          Expanded(
-                            child: Text(
-                              provider.currentStatus,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: context.textPrimary,
-                                fontSize: 13,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                StatBadge(
+                                  title: 'Copied',
+                                  value: provider.filesCopied.toString(),
+                                  color: context.copyAccent,
+                                  icon: Icons.file_copy,
+                                ),
+                                StatBadge(
+                                  title: 'Exist',
+                                  value: provider.filesAlreadyExist.toString(),
+                                  color: context.primaryAccent,
+                                  icon: Icons.check_circle_outline,
+                                ),
+                                StatBadge(
+                                  title: 'Skipped',
+                                  value: provider.filesSkipped.toString(),
+                                  color: context.warningColor,
+                                  icon: Icons.skip_next,
+                                ),
+                                StatBadge(
+                                  title: 'Errors',
+                                  value: provider.errors.toString(),
+                                  color: context.errorColor,
+                                  icon: Icons.error_outline,
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 8),
-
-                          // Stats
-                          StatBadge(
-                            title: 'Copied',
-                            value: provider.filesCopied.toString(),
-                            color: context.copyAccent,
-                            icon: Icons.file_copy,
-                          ),
-                          const SizedBox(width: 6),
-                          StatBadge(
-                            title: 'Exist',
-                            value: provider.filesAlreadyExist.toString(),
-                            color: context.primaryAccent,
-                            icon: Icons.check_circle_outline,
-                          ),
-                          const SizedBox(width: 6),
-                          StatBadge(
-                            title: 'Skipped',
-                            value: provider.filesSkipped.toString(),
-                            color: context.warningColor,
-                            icon: Icons.skip_next,
-                          ),
-                          const SizedBox(width: 6),
-                          StatBadge(
-                            title: 'Errors',
-                            value: provider.errors.toString(),
-                            color: context.errorColor,
-                            icon: Icons.error_outline,
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 8),
 
@@ -527,7 +665,61 @@ class CopyFilesScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildAppBar(BuildContext context) {
+  //   Widget _buildAppBar(BuildContext context) {
+  //     final currentProfileId = LocalDbService().currentProfileId;
+  //     final currentProfile = GlobalDbService().profiles.firstWhere(
+  //       (p) => p.id == currentProfileId,
+  //       orElse: () => GlobalDbService().profiles.first,
+  //     );
+  //
+  //     return Container(
+  //       padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+  //       child: Row(
+  //         children: [
+  //           IconButton(
+  //             icon: Icon(Icons.arrow_back_rounded, color: context.primaryAccent),
+  //             onPressed: () => Navigator.of(context).pop(),
+  //           ),
+  //           const SizedBox(width: 4),
+  //           //           Icon(
+  //           //             Icons.file_copy_rounded,
+  //           //             color: context.isDarkMode
+  //           //                 ? AppColors.info
+  //           //                 : const Color(0xFF0284C7),
+  //           //             size: 22,
+  //           //           ),
+  //           // Gene - Nov, 22, 2026: Use unified copyAccent for CopyFilesScreen app bar icon.
+  //           Icon(Icons.file_copy_rounded, color: context.copyAccent, size: 22),
+  //           const SizedBox(width: 10),
+  //           Text(
+  //             'Copy Files (${currentProfile.name})',
+  //             style: TextStyle(
+  //               fontSize: 20,
+  //               fontWeight: FontWeight.w600,
+  //               color: context.textPrimary,
+  //             ),
+  //           ),
+  //           const Spacer(),
+  //           const HelpManualButton(topicId: 'copy_files'),
+  //           const SizedBox(width: 4),
+  //           const ThemeToggleButton(),
+  //         ],
+  //       ),
+  //     );
+  //   }
+  // Gene - Nov, 23, 2026: Add JSON Import/Export settings buttons to CopyFilesScreen app bar and SnackBar helper.
+  void _showActionSnackBar(BuildContext context, String message) {
+    final isError = message.startsWith('Failed') || message.startsWith('No ');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.error : AppColors.success,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context, CopyFilesProvider provider) {
     final currentProfileId = LocalDbService().currentProfileId;
     final currentProfile = GlobalDbService().profiles.firstWhere(
       (p) => p.id == currentProfileId,
@@ -543,14 +735,6 @@ class CopyFilesScreen extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 4),
-          //           Icon(
-          //             Icons.file_copy_rounded,
-          //             color: context.isDarkMode
-          //                 ? AppColors.info
-          //                 : const Color(0xFF0284C7),
-          //             size: 22,
-          //           ),
-          // Gene - Nov, 22, 2026: Use unified copyAccent for CopyFilesScreen app bar icon.
           Icon(Icons.file_copy_rounded, color: context.copyAccent, size: 22),
           const SizedBox(width: 10),
           Text(
@@ -562,6 +746,38 @@ class CopyFilesScreen extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          IconButton(
+            key: const Key('copy_import_settings_btn'),
+            icon: Icon(
+              Icons.file_upload_outlined,
+              color: context.copyAccent,
+              size: 20,
+            ),
+            tooltip: 'Import Copy Settings / Pairs (.json)',
+            onPressed: provider.isProcessing
+                ? null
+                : () async {
+                    final message = await provider.importSettingsFromDisk();
+                    if (!context.mounted || message == null) return;
+                    _showActionSnackBar(context, message);
+                  },
+          ),
+          IconButton(
+            key: const Key('copy_export_settings_btn'),
+            icon: Icon(
+              Icons.file_download_outlined,
+              color: context.copyAccent,
+              size: 20,
+            ),
+            tooltip: 'Export Copy Settings (.json)',
+            onPressed: provider.isProcessing
+                ? null
+                : () async {
+                    final message = await provider.exportSettingsToDisk();
+                    if (!context.mounted || message == null) return;
+                    _showActionSnackBar(context, message);
+                  },
+          ),
           const HelpManualButton(topicId: 'copy_files'),
           const SizedBox(width: 4),
           const ThemeToggleButton(),
@@ -669,11 +885,66 @@ class CopyFilesScreen extends StatelessWidget {
                 //                     color: AppColors.cardBorder.withValues(alpha: 0.5),
                 //                   ),
                 // Gene - Nov, 22, 2026: Use theme-aware copyAccent and border in CopyFilesScreen Directory Pairs dialog.
+                //                 children: [
+                //                   Icon(Icons.folder_copy, size: 22, color: context.copyAccent),
+                //                   const SizedBox(width: 8),
+                //                   const Text('Directory Pairs', style: TextStyle(fontSize: 18)),
+                //                   const Spacer(),
+                //                   TextButton.icon(
+                //                     icon: const Icon(Icons.add, size: 18),
+                //                     label: const Text(
+                //                       'Add Pair',
+                //                       style: TextStyle(fontSize: 13),
+                //                     ),
+                //                     onPressed: () {
+                //                       provider.addDirectoryPair();
+                //                       setDialogState(() {});
+                //                     },
+                //                   ),
+                //                 ],
+                // Gene - Nov, 23, 2026: Add Import and Export Directory Pairs actions to Directory Pairs dialog.
                 children: [
                   Icon(Icons.folder_copy, size: 22, color: context.copyAccent),
                   const SizedBox(width: 8),
                   const Text('Directory Pairs', style: TextStyle(fontSize: 18)),
                   const Spacer(),
+                  TextButton.icon(
+                    key: const Key('copy_pairs_import_btn'),
+                    icon: const Icon(Icons.file_upload_outlined, size: 17),
+                    label: const Text('Import', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () async {
+                      final message = await provider
+                          .importDirectoryPairsFromDisk();
+                      if (!context.mounted || message == null) return;
+                      setDialogState(() {});
+                      _showActionSnackBar(context, message);
+                    },
+                  ),
+                  TextButton.icon(
+                    key: const Key('copy_pairs_export_btn'),
+                    icon: const Icon(Icons.file_download_outlined, size: 17),
+                    label: const Text('Export', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () async {
+                      final message = await provider
+                          .exportDirectoryPairsToDisk();
+                      if (!context.mounted || message == null) return;
+                      _showActionSnackBar(context, message);
+                    },
+                  ),
                   TextButton.icon(
                     icon: const Icon(Icons.add, size: 18),
                     label: const Text(

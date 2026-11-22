@@ -978,6 +978,417 @@ class FtpFilesProvider with ChangeNotifier {
     return 'Imported: $summary';
   }
 
+  //   Future<String?> importConfigFromDisk() async {
+  //     final picked = await openFile();
+  //     if (picked == null) return null;
+  //
+  //     try {
+  //       final content = await File(picked.path).readAsString();
+  //       final baseName = p.basename(picked.path).toLowerCase();
+  //       final parentDir = p.dirname(picked.path);
+  //
+  //       String? iniContent;
+  //       String? envContent;
+  //       if (baseName == '.env' || baseName.endsWith('.env')) {
+  //         envContent = content;
+  //         final siblingIni = File(p.join(parentDir, 'config.ini'));
+  //         if (await siblingIni.exists()) {
+  //           iniContent = await siblingIni.readAsString();
+  //         }
+  //       } else {
+  //         iniContent = content;
+  //         final siblingEnv = File(p.join(parentDir, '.env'));
+  //         if (await siblingEnv.exists()) {
+  //           envContent = await siblingEnv.readAsString();
+  //         }
+  //       }
+  //
+  //       final parsed = FtpIniImporter.parse(
+  //         iniContent: iniContent,
+  //         envContent: envContent,
+  //       );
+  //       if (parsed.isEmpty) {
+  //         return 'No recognizable FTP settings found in ${p.basename(picked.path)}.';
+  //       }
+  //       return applyImportedConfig(parsed);
+  //     } catch (e) {
+  //       return 'Failed to import config: ${CredentialObfuscator.redact(e.toString(), password)}';
+  //     }
+  //   }
+  // Gene - Nov, 23, 2026: Add lossless JSON settings & upload sources export/import (without passwords) alongside config.ini/.env support.
+  Map<String, dynamic> exportSettingsJson({DateTime? now}) {
+    final dateFmt = DateFormat('yyyy-MM-dd');
+    return {
+      'app': 'Files Utility',
+      'type': 'ftp_settings',
+      'schemaVersion': 1,
+      'exportedAt': (now ?? _nowProvider()).toIso8601String(),
+      'connection': {
+        'protocol': protocol.storageKey,
+        'host': host,
+        'port': port,
+        'username': username,
+        'transferMode': transferMode.storageKey,
+        'timeoutSeconds': timeoutSeconds,
+      },
+      'sources': {
+        'useMultipleSources': useMultipleSources,
+        'sourcePath': sourcePath,
+        'subfolders': subfolders,
+        'remoteDirectory': remoteDirectory,
+        'uploadSources': uploadSources.map((s) => s.toJson()).toList(),
+      },
+      'filters': {
+        'dateMode': dateMode.name,
+        'daysAgo': daysAgo,
+        'dateType': dateType.name,
+        'specificDate': dateFmt.format(specificDate),
+        'fromDate': dateFmt.format(fromDate),
+        'toDate': dateFmt.format(toDate),
+      },
+      'options': {
+        'includeSubfolders': includeSubfolders,
+        'skipIfExists': skipIfExists,
+        'verifySizeAfterUpload': verifySizeAfterUpload,
+        'dryRun': dryRun,
+        'retryCount': retryCount,
+        'retryDelaySeconds': retryDelaySeconds,
+        'logInterval': logInterval,
+        'logKeepDays': logKeepDays,
+      },
+      'schedule': {
+        'enableSchedule': enableSchedule,
+        'runHour': runTime.hour,
+        'runMinute': runTime.minute,
+        'runDays': {for (int d = 1; d <= 7; d++) '$d': runDays[d] ?? true},
+        'onCompletionAction': onCompletionAction,
+      },
+    };
+  }
+
+  Map<String, dynamic> exportUploadSourcesJson({DateTime? now}) {
+    return {
+      'app': 'Files Utility',
+      'type': 'ftp_sources',
+      'schemaVersion': 1,
+      'exportedAt': (now ?? _nowProvider()).toIso8601String(),
+      'uploadSources': uploadSources.map((s) => s.toJson()).toList(),
+    };
+  }
+
+  String exportSettingsJsonString({DateTime? now}) =>
+      const JsonEncoder.withIndent('  ').convert(exportSettingsJson(now: now));
+
+  String exportUploadSourcesJsonString({DateTime? now}) =>
+      const JsonEncoder.withIndent(
+        '  ',
+      ).convert(exportUploadSourcesJson(now: now));
+
+  List<FtpUploadSource> _parseUploadSourcesList(dynamic rawList) {
+    if (rawList is! List) return const [];
+    final parsed = <FtpUploadSource>[];
+    for (final entry in rawList) {
+      if (entry is! Map) continue;
+      final src = FtpUploadSource.fromJson(Map<String, dynamic>.from(entry));
+      parsed.add(
+        FtpUploadSource(
+          name: src.name.trim(),
+          localPath: _sanitizePath(src.localPath),
+          subfolders: src.subfolders.trim(),
+          ftpDest: src.ftpDest.trim(),
+          runOrder: src.runOrder.clamp(1, 20),
+          enabled: src.enabled,
+        ),
+      );
+    }
+    return parsed;
+  }
+
+  DateTime? _parseIsoCalendarDate(dynamic raw) {
+    if (raw is! String || raw.trim().isEmpty) return null;
+    final parsed = DateTime.tryParse(raw.trim());
+    if (parsed == null) return null;
+    return DateTime(parsed.year, parsed.month, parsed.day);
+  }
+
+  String importFromJsonString(String jsonStr, {bool sourcesOnly = false}) {
+    final dynamic decoded = jsonDecode(jsonStr);
+    if (decoded is List) {
+      final parsedSources = _parseUploadSourcesList(decoded);
+      if (parsedSources.isEmpty) {
+        throw const FormatException('No upload sources found in file.');
+      }
+      uploadSources = parsedSources;
+      useMultipleSources = true;
+      settingsVersion++;
+      _saveSettings();
+      final msg = 'Imported ${parsedSources.length} upload source(s).';
+      _addLog('📥 $msg');
+      notifyListeners();
+      return msg;
+    }
+
+    if (decoded is! Map) {
+      throw const FormatException('Invalid JSON structure.');
+    }
+
+    final map = Map<String, dynamic>.from(decoded);
+    final rawType = map['type'] as String?;
+    if (rawType == 'copy_settings' || rawType == 'copy_pairs') {
+      throw const FormatException(
+        'This file is a Copy Files export, not an FTP export.',
+      );
+    }
+    if (rawType != null &&
+        rawType != 'ftp_settings' &&
+        rawType != 'ftp_sources') {
+      throw FormatException('Unsupported export file type: $rawType');
+    }
+
+    final sourcesMap = map['sources'] is Map
+        ? Map<String, dynamic>.from(map['sources'] as Map)
+        : null;
+    final rawSources = map['uploadSources'] ?? sourcesMap?['uploadSources'];
+    final parsedSources = _parseUploadSourcesList(rawSources);
+
+    if (sourcesOnly || rawType == 'ftp_sources') {
+      if (parsedSources.isEmpty) {
+        throw const FormatException('No upload sources found in file.');
+      }
+      uploadSources = parsedSources;
+      useMultipleSources = true;
+      settingsVersion++;
+      _saveSettings();
+      final msg = 'Imported ${parsedSources.length} upload source(s).';
+      _addLog('📥 $msg');
+      notifyListeners();
+      return msg;
+    }
+
+    if (rawType == null &&
+        map['connection'] == null &&
+        sourcesMap == null &&
+        map['filters'] == null &&
+        map['options'] == null &&
+        map['schedule'] == null &&
+        rawSources == null) {
+      throw const FormatException('Unrecognized FTP JSON structure.');
+    }
+
+    final conn = map['connection'] is Map
+        ? Map<String, dynamic>.from(map['connection'] as Map)
+        : null;
+    if (conn != null) {
+      final previousHost = host.trim();
+      if (conn.containsKey('protocol')) {
+        protocol = FtpProtocol.fromStorage(conn['protocol'] as String?);
+      }
+      if (conn.containsKey('host')) {
+        host = (conn['host'] as String? ?? '').trim();
+      }
+      if (conn.containsKey('port')) {
+        final pVal = (conn['port'] as num?)?.toInt();
+        if (pVal != null && pVal >= 1 && pVal <= 65535) {
+          port = pVal;
+        }
+      }
+      if (conn.containsKey('username')) {
+        username = (conn['username'] as String? ?? '').trim();
+      }
+      if (conn.containsKey('transferMode')) {
+        transferMode = FtpTransferMode.fromStorage(
+          conn['transferMode'] as String?,
+        );
+      }
+      if (conn.containsKey('timeoutSeconds')) {
+        final tVal = (conn['timeoutSeconds'] as num?)?.toInt();
+        if (tVal != null) {
+          timeoutSeconds = tVal.clamp(5, 600);
+        }
+      }
+      // Clear cached password if importing settings for a different server host.
+      if (host.isNotEmpty && previousHost.isNotEmpty && host != previousHost) {
+        password = '';
+      }
+    }
+
+    if (sourcesMap != null) {
+      if (sourcesMap.containsKey('useMultipleSources')) {
+        useMultipleSources =
+            sourcesMap['useMultipleSources'] as bool? ?? useMultipleSources;
+      }
+      if (sourcesMap.containsKey('sourcePath')) {
+        sourcePath = _sanitizePath(sourcesMap['sourcePath'] as String?);
+      }
+      if (sourcesMap.containsKey('subfolders')) {
+        subfolders = (sourcesMap['subfolders'] as String? ?? '').trim();
+      }
+      if (sourcesMap.containsKey('remoteDirectory')) {
+        remoteDirectory = (sourcesMap['remoteDirectory'] as String? ?? '')
+            .trim();
+      }
+    }
+    if (rawSources != null) {
+      uploadSources = parsedSources.isNotEmpty
+          ? parsedSources
+          : [const FtpUploadSource()];
+    }
+
+    final filters = map['filters'] is Map
+        ? Map<String, dynamic>.from(map['filters'] as Map)
+        : null;
+    if (filters != null) {
+      if (filters.containsKey('dateMode')) {
+        dateMode = FtpDateMode.fromStorage(filters['dateMode'] as String?);
+      }
+      if (filters.containsKey('daysAgo')) {
+        final dVal = (filters['daysAgo'] as num?)?.toInt();
+        if (dVal != null) daysAgo = dVal.clamp(0, 365);
+      }
+      if (filters.containsKey('dateType')) {
+        dateType = FtpDateType.fromStorage(filters['dateType'] as String?);
+      }
+      final spec = _parseIsoCalendarDate(filters['specificDate']);
+      if (spec != null) specificDate = spec;
+      final fDate = _parseIsoCalendarDate(filters['fromDate']);
+      if (fDate != null) fromDate = fDate;
+      final tDate = _parseIsoCalendarDate(filters['toDate']);
+      if (tDate != null) toDate = tDate;
+      if (fromDate.isAfter(toDate)) {
+        toDate = fromDate;
+      }
+    }
+
+    final options = map['options'] is Map
+        ? Map<String, dynamic>.from(map['options'] as Map)
+        : null;
+    if (options != null) {
+      if (options.containsKey('includeSubfolders')) {
+        includeSubfolders =
+            options['includeSubfolders'] as bool? ?? includeSubfolders;
+      }
+      if (options.containsKey('skipIfExists')) {
+        skipIfExists = options['skipIfExists'] as bool? ?? skipIfExists;
+      }
+      if (options.containsKey('verifySizeAfterUpload')) {
+        verifySizeAfterUpload =
+            options['verifySizeAfterUpload'] as bool? ?? verifySizeAfterUpload;
+      }
+      if (options.containsKey('dryRun')) {
+        dryRun = options['dryRun'] as bool? ?? dryRun;
+      }
+      if (options.containsKey('retryCount')) {
+        final rVal = (options['retryCount'] as num?)?.toInt();
+        if (rVal != null) retryCount = rVal.clamp(1, 10);
+      }
+      if (options.containsKey('retryDelaySeconds')) {
+        final rdVal = (options['retryDelaySeconds'] as num?)?.toInt();
+        if (rdVal != null) retryDelaySeconds = rdVal.clamp(0, 120);
+      }
+      if (options.containsKey('logInterval')) {
+        final liVal = (options['logInterval'] as num?)?.toInt();
+        const allowedIntervals = [1, 5, 10, 25, 50, 100];
+        if (liVal != null) {
+          logInterval = allowedIntervals.contains(liVal) ? liVal : 1;
+        }
+      }
+      if (options.containsKey('logKeepDays')) {
+        final lkVal = (options['logKeepDays'] as num?)?.toInt();
+        if (lkVal != null) logKeepDays = lkVal.clamp(0, 365);
+      }
+    }
+
+    final schedule = map['schedule'] is Map
+        ? Map<String, dynamic>.from(map['schedule'] as Map)
+        : null;
+    if (schedule != null) {
+      if (schedule.containsKey('enableSchedule')) {
+        enableSchedule = schedule['enableSchedule'] as bool? ?? enableSchedule;
+      }
+      final runHour = (schedule['runHour'] as num?)?.toInt();
+      final runMinute = (schedule['runMinute'] as num?)?.toInt();
+      if (runHour != null && runMinute != null) {
+        runTime = TimeOfDay(
+          hour: runHour.clamp(0, 23),
+          minute: runMinute.clamp(0, 59),
+        );
+      }
+      if (schedule['runDays'] is Map) {
+        final rawDays = Map<String, dynamic>.from(schedule['runDays'] as Map);
+        for (int day = 1; day <= 7; day++) {
+          final val = rawDays['$day'];
+          if (val is bool) {
+            runDays[day] = val;
+          }
+        }
+      }
+      final action = schedule['onCompletionAction'];
+      if (action == 'repeat' || action == 'stop') {
+        onCompletionAction = action as String;
+      }
+    }
+
+    settingsVersion++;
+    _saveSettings();
+    final msg =
+        'Imported FTP settings (${uploadSources.length} source(s)). Re-enter FTP password if needed.';
+    _addLog('📥 $msg');
+    notifyListeners();
+    return msg;
+  }
+
+  Future<String?> _writeJsonExportFile({
+    required String suggestedName,
+    required String jsonContent,
+  }) async {
+    final location = await getSaveLocation(
+      suggestedName: suggestedName,
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'JSON', extensions: ['json']),
+      ],
+    );
+    if (location == null) return null;
+
+    var outPath = location.path;
+    if (!outPath.toLowerCase().endsWith('.json')) {
+      outPath = '$outPath.json';
+    }
+    await File(outPath).writeAsString(jsonContent);
+    return outPath;
+  }
+
+  Future<String?> exportSettingsToDisk() async {
+    try {
+      final outPath = await _writeJsonExportFile(
+        suggestedName: 'ftp_settings.json',
+        jsonContent: exportSettingsJsonString(),
+      );
+      if (outPath == null) return null;
+      _addLog('📤 Exported FTP settings (without password) to $outPath');
+      notifyListeners();
+      return 'Exported FTP settings (without password) to ${p.basename(outPath)}';
+    } catch (e) {
+      return 'Failed to export settings: ${CredentialObfuscator.redact(e.toString(), password)}';
+    }
+  }
+
+  Future<String?> exportUploadSourcesToDisk() async {
+    try {
+      final outPath = await _writeJsonExportFile(
+        suggestedName: 'ftp_upload_sources.json',
+        jsonContent: exportUploadSourcesJsonString(),
+      );
+      if (outPath == null) return null;
+      _addLog(
+        '📤 Exported ${uploadSources.length} upload source(s) to $outPath',
+      );
+      notifyListeners();
+      return 'Exported ${uploadSources.length} upload source(s) to ${p.basename(outPath)}';
+    } catch (e) {
+      return 'Failed to export upload sources: ${CredentialObfuscator.redact(e.toString(), password)}';
+    }
+  }
+
   Future<String?> importConfigFromDisk() async {
     final picked = await openFile();
     if (picked == null) return null;
@@ -985,8 +1396,15 @@ class FtpFilesProvider with ChangeNotifier {
     try {
       final content = await File(picked.path).readAsString();
       final baseName = p.basename(picked.path).toLowerCase();
-      final parentDir = p.dirname(picked.path);
+      final trimmedStart = content.trimLeft();
 
+      if (baseName.endsWith('.json') ||
+          trimmedStart.startsWith('{') ||
+          trimmedStart.startsWith('[')) {
+        return importFromJsonString(content);
+      }
+
+      final parentDir = p.dirname(picked.path);
       String? iniContent;
       String? envContent;
       if (baseName == '.env' || baseName.endsWith('.env')) {
@@ -1013,6 +1431,38 @@ class FtpFilesProvider with ChangeNotifier {
       return applyImportedConfig(parsed);
     } catch (e) {
       return 'Failed to import config: ${CredentialObfuscator.redact(e.toString(), password)}';
+    }
+  }
+
+  Future<String?> importUploadSourcesFromDisk() async {
+    final picked = await openFile();
+    if (picked == null) return null;
+
+    try {
+      final content = await File(picked.path).readAsString();
+      final baseName = p.basename(picked.path).toLowerCase();
+      final trimmedStart = content.trimLeft();
+
+      if (baseName.endsWith('.json') ||
+          trimmedStart.startsWith('{') ||
+          trimmedStart.startsWith('[')) {
+        return importFromJsonString(content, sourcesOnly: true);
+      }
+
+      final parsed = FtpIniImporter.parse(iniContent: content);
+      if (parsed.sources.isEmpty) {
+        return 'No [source.*] sections found in ${p.basename(picked.path)}.';
+      }
+      uploadSources = List<FtpUploadSource>.from(parsed.sources);
+      useMultipleSources = true;
+      settingsVersion++;
+      _saveSettings();
+      final msg = 'Imported ${parsed.sources.length} upload source(s).';
+      _addLog('📥 $msg');
+      notifyListeners();
+      return msg;
+    } catch (e) {
+      return 'Failed to import upload sources: ${CredentialObfuscator.redact(e.toString(), password)}';
     }
   }
 

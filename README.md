@@ -38,6 +38,8 @@ Unlike standard file managers that freeze or lose state during large directory t
   - SMB-friendly concurrency throttling to prevent NAS saturation.
   - Smart collision detection (`skip-if-exists` by exact file name and size matching).
   - Resumable scanning per directory.
+  <!-- Gene - Nov, 23, 2026: Document JSON settings and directory pairs Import/Export for Copy -->
+  - Lossless JSON Import/Export for full Copy settings and multi-directory pair lists.
 - **🗑️ Delete**:
   - Targeted file purging based on modification timestamp matching (selected years and months).
   - Post-delete cleanup passes that automatically prune empty directory trees.
@@ -46,7 +48,8 @@ Unlike standard file managers that freeze or lose state during large directory t
 <!-- Gene - Nov, 23, 2026: Document FTP Upload & Scheduler module in README Features -->
 - **☁️ FTP Upload & Scheduler**:
   - Native FTP, Implicit FTPS, Explicit FTPES, and SSH SFTP uploads with per-profile obfuscated credentials and automatic log/history redaction.
-  - Multi-source run ordering, per-source enable/disable toggles, subfolder filtering, custom remote destination mapping, and `config.ini` / `.env` migration import.
+  <!-- - Multi-source run ordering, per-source enable/disable toggles, subfolder filtering, custom remote destination mapping, and `config.ini` / `.env` migration import. -->
+  - Multi-source run ordering, per-source enable/disable toggles, subfolder filtering, automatic remote folder creation, `config.ini` / `.env` import, and password-free JSON Import/Export for settings and upload sources.
   - Live per-file transfer progress, skip-if-already-on-FTP (matching size) with partial re-upload, post-upload `SIZE` verification, automatic reconnect recovery, dry-run checks, configurable log retention, and weekday/time scheduling.
 - **🔍 Smart Filtering**:
   - Filter by age threshold ("older than $N$ days/months/years") or custom calendar date ranges.

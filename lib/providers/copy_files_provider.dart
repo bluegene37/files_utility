@@ -324,9 +324,27 @@ class CopyFilesProvider with ChangeNotifier {
   final Map<int, List<int>> _pairStats =
       {}; // pairIndex → [copied, skipped, errors]
 
-  CopyFilesProvider() {
-    _loadSettings();
-    LocalDbService().addListener(_onProfileChanged);
+  //   CopyFilesProvider() {
+  //     _loadSettings();
+  //     LocalDbService().addListener(_onProfileChanged);
+  //   }
+  //
+  //   void _onProfileChanged() {
+  //     reloadSettings();
+  //   }
+  //
+  //   @override
+  //   void dispose() {
+  //     LocalDbService().removeListener(_onProfileChanged);
+  // Gene - Nov, 23, 2026: Support optional persistSettings flag for isolated unit and widget tests.
+  final bool _persistSettings;
+
+  CopyFilesProvider({bool persistSettings = true})
+    : _persistSettings = persistSettings {
+    if (_persistSettings) {
+      _loadSettings();
+      LocalDbService().addListener(_onProfileChanged);
+    }
   }
 
   void _onProfileChanged() {
@@ -335,7 +353,9 @@ class CopyFilesProvider with ChangeNotifier {
 
   @override
   void dispose() {
-    LocalDbService().removeListener(_onProfileChanged);
+    if (_persistSettings) {
+      LocalDbService().removeListener(_onProfileChanged);
+    }
     _scheduleTimer?.cancel();
     _completionRescheduleTimer?.cancel();
     for (final worker in _activeWorkers) {
@@ -441,7 +461,11 @@ class CopyFilesProvider with ChangeNotifier {
     await _loadSettings();
   }
 
+  //   Future<void> _saveSettings() async {
+  //     final db = LocalDbService();
+  // Gene - Nov, 23, 2026: Skip DB writes when _persistSettings is false.
   Future<void> _saveSettings() async {
+    if (!_persistSettings) return;
     final db = LocalDbService();
     await db.setOrRemoveString('copy_sourcePath', sourcePath);
     await db.setOrRemoveString('copy_destPath', destPath);
@@ -492,7 +516,7 @@ class CopyFilesProvider with ChangeNotifier {
 
   void setSourcePath(String? path) {
     sourcePath = _sanitizePath(path);
-    if (sourcePath != null) {
+    if (_persistSettings && sourcePath != null) {
       LocalDbService().addRecentDirectory(sourcePath!);
     }
     _saveSettings();
@@ -501,7 +525,7 @@ class CopyFilesProvider with ChangeNotifier {
 
   void setDestPath(String? path) {
     destPath = _sanitizePath(path);
-    if (destPath != null) {
+    if (_persistSettings && destPath != null) {
       LocalDbService().addRecentDirectory(destPath!);
     }
     _saveSettings();
@@ -691,7 +715,7 @@ class CopyFilesProvider with ChangeNotifier {
     if (index < 0 || index >= directoryPairs.length) return;
     final sanitized = _sanitizePath(path);
     directoryPairs[index].sourcePath = sanitized;
-    if (sanitized != null) {
+    if (_persistSettings && sanitized != null) {
       LocalDbService().addRecentDirectory(sanitized);
     }
     _saveSettings();
@@ -702,7 +726,7 @@ class CopyFilesProvider with ChangeNotifier {
     if (index < 0 || index >= directoryPairs.length) return;
     final sanitized = _sanitizePath(path);
     directoryPairs[index].destPath = sanitized;
-    if (sanitized != null) {
+    if (_persistSettings && sanitized != null) {
       LocalDbService().addRecentDirectory(sanitized);
     }
     _saveSettings();
@@ -714,6 +738,350 @@ class CopyFilesProvider with ChangeNotifier {
       directoryPairs[index].runOrder = order.clamp(1, 10);
       _saveSettings();
       notifyListeners();
+    }
+  }
+
+  // Gene - Nov, 23, 2026: JSON export and import for Copy Files settings and multi-directory pairs.
+  Map<String, dynamic> exportSettingsJson({DateTime? now}) {
+    final dateFmt = DateFormat('yyyy-MM-dd');
+    return {
+      'app': 'Files Utility',
+      'type': 'copy_settings',
+      'schemaVersion': 1,
+      'exportedAt': (now ?? DateTime.now()).toIso8601String(),
+      'directories': {
+        'useMultipleDirectories': useMultipleDirectories,
+        'sourcePath': sourcePath,
+        'destPath': destPath,
+        'directoryPairs': directoryPairs.map((pair) => pair.toJson()).toList(),
+      },
+      'filters': {
+        'enableAgeFilter': enableAgeFilter,
+        'ageFilterUnit': ageFilterUnit,
+        'ageFilterValue': ageFilterValue,
+        'enableDateRange': enableDateRange,
+        'fromDate': dateFmt.format(fromDate),
+        'toDate': dateFmt.format(toDate),
+        'todayOnly': todayOnly,
+        'yesterdayOnly': yesterdayOnly,
+      },
+      'options': {'logInterval': logInterval},
+      'schedule': {
+        'enableTimeWindow': enableTimeWindow,
+        'runFromHour': runFromTime.hour,
+        'runFromMinute': runFromTime.minute,
+        'runToHour': runToTime.hour,
+        'runToMinute': runToTime.minute,
+        'runDays': {for (int d = 1; d <= 7; d++) '$d': runDays[d] ?? false},
+        'onCompletionAction': onCompletionAction,
+      },
+    };
+  }
+
+  Map<String, dynamic> exportDirectoryPairsJson({DateTime? now}) {
+    return {
+      'app': 'Files Utility',
+      'type': 'copy_pairs',
+      'schemaVersion': 1,
+      'exportedAt': (now ?? DateTime.now()).toIso8601String(),
+      'directoryPairs': directoryPairs.map((pair) => pair.toJson()).toList(),
+    };
+  }
+
+  String exportSettingsJsonString({DateTime? now}) =>
+      const JsonEncoder.withIndent('  ').convert(exportSettingsJson(now: now));
+
+  String exportDirectoryPairsJsonString({DateTime? now}) =>
+      const JsonEncoder.withIndent(
+        '  ',
+      ).convert(exportDirectoryPairsJson(now: now));
+
+  List<DirectoryPair> _parseDirectoryPairsList(dynamic rawList) {
+    if (rawList is! List) return const [];
+    final parsed = <DirectoryPair>[];
+    for (final entry in rawList) {
+      if (entry is! Map) continue;
+      final pair = DirectoryPair.fromJson(Map<String, dynamic>.from(entry));
+      parsed.add(
+        DirectoryPair(
+          sourcePath: _sanitizePath(pair.sourcePath),
+          destPath: _sanitizePath(pair.destPath),
+          runOrder: pair.runOrder.clamp(1, 10),
+        ),
+      );
+    }
+    return parsed;
+  }
+
+  DateTime? _parseIsoCalendarDate(dynamic raw) {
+    if (raw is! String || raw.trim().isEmpty) return null;
+    final parsed = DateTime.tryParse(raw.trim());
+    if (parsed == null) return null;
+    return DateTime(parsed.year, parsed.month, parsed.day);
+  }
+
+  String importFromJsonString(String jsonStr, {bool pairsOnly = false}) {
+    final dynamic decoded = jsonDecode(jsonStr);
+    if (decoded is List) {
+      final parsedPairs = _parseDirectoryPairsList(decoded);
+      if (parsedPairs.isEmpty) {
+        throw const FormatException('No directory pairs found in file.');
+      }
+      directoryPairs = parsedPairs;
+      useMultipleDirectories = true;
+      _saveSettings();
+      final msg = 'Imported ${parsedPairs.length} directory pair(s).';
+      _addLog('📥 $msg');
+      notifyListeners();
+      return msg;
+    }
+
+    if (decoded is! Map) {
+      throw const FormatException('Invalid JSON structure.');
+    }
+
+    final map = Map<String, dynamic>.from(decoded);
+    final rawType = map['type'] as String?;
+    if (rawType == 'ftp_settings' || rawType == 'ftp_sources') {
+      throw const FormatException(
+        'This file is an FTP export, not Copy Files settings.',
+      );
+    }
+    if (rawType != null &&
+        rawType != 'copy_settings' &&
+        rawType != 'copy_pairs') {
+      throw FormatException('Unsupported export file type: $rawType');
+    }
+
+    final dirsMap = map['directories'] is Map
+        ? Map<String, dynamic>.from(map['directories'] as Map)
+        : null;
+    final rawPairs = map['directoryPairs'] ?? dirsMap?['directoryPairs'];
+    final parsedPairs = _parseDirectoryPairsList(rawPairs);
+
+    if (pairsOnly || rawType == 'copy_pairs') {
+      if (parsedPairs.isEmpty) {
+        throw const FormatException('No directory pairs found in file.');
+      }
+      directoryPairs = parsedPairs;
+      useMultipleDirectories = true;
+      _saveSettings();
+      final msg = 'Imported ${parsedPairs.length} directory pair(s).';
+      _addLog('📥 $msg');
+      notifyListeners();
+      return msg;
+    }
+
+    if (rawType == null &&
+        dirsMap == null &&
+        map['filters'] == null &&
+        map['options'] == null &&
+        map['schedule'] == null &&
+        rawPairs == null) {
+      throw const FormatException('Unrecognized Copy Files JSON structure.');
+    }
+
+    if (dirsMap != null) {
+      if (dirsMap.containsKey('useMultipleDirectories')) {
+        useMultipleDirectories =
+            dirsMap['useMultipleDirectories'] as bool? ??
+            useMultipleDirectories;
+      }
+      if (dirsMap.containsKey('sourcePath')) {
+        sourcePath = _sanitizePath(dirsMap['sourcePath'] as String?);
+      }
+      if (dirsMap.containsKey('destPath')) {
+        destPath = _sanitizePath(dirsMap['destPath'] as String?);
+      }
+    }
+    if (rawPairs != null) {
+      directoryPairs = parsedPairs.isNotEmpty ? parsedPairs : [DirectoryPair()];
+    }
+
+    final filters = map['filters'] is Map
+        ? Map<String, dynamic>.from(map['filters'] as Map)
+        : null;
+    if (filters != null) {
+      if (filters.containsKey('enableAgeFilter')) {
+        enableAgeFilter =
+            filters['enableAgeFilter'] as bool? ?? enableAgeFilter;
+      }
+      final unit = filters['ageFilterUnit'];
+      if (unit == 'Days' || unit == 'Months' || unit == 'Years') {
+        ageFilterUnit = unit as String;
+      }
+      final ageVal = (filters['ageFilterValue'] as num?)?.toInt();
+      if (ageVal != null) {
+        ageFilterValue = ageVal.clamp(1, 31);
+      }
+
+      if (filters.containsKey('enableDateRange')) {
+        enableDateRange =
+            filters['enableDateRange'] as bool? ?? enableDateRange;
+      }
+      if (filters.containsKey('todayOnly')) {
+        todayOnly = filters['todayOnly'] as bool? ?? todayOnly;
+      }
+      if (filters.containsKey('yesterdayOnly')) {
+        yesterdayOnly = filters['yesterdayOnly'] as bool? ?? yesterdayOnly;
+      }
+
+      final fDate = _parseIsoCalendarDate(filters['fromDate']);
+      if (fDate != null) fromDate = fDate;
+      final tDate = _parseIsoCalendarDate(filters['toDate']);
+      if (tDate != null) toDate = tDate;
+      if (fromDate.isAfter(toDate)) {
+        toDate = fromDate;
+      }
+
+      if (enableAgeFilter) {
+        enableDateRange = false;
+        todayOnly = false;
+        yesterdayOnly = false;
+      } else if (todayOnly || yesterdayOnly) {
+        _applyQuickDateFilter();
+      }
+    }
+
+    final options = map['options'] is Map
+        ? Map<String, dynamic>.from(map['options'] as Map)
+        : null;
+    if (options != null && options.containsKey('logInterval')) {
+      final liVal = (options['logInterval'] as num?)?.toInt();
+      const allowedIntervals = [1, 5, 10, 25, 50, 100];
+      if (liVal != null) {
+        logInterval = allowedIntervals.contains(liVal) ? liVal : 100;
+      }
+    }
+
+    final schedule = map['schedule'] is Map
+        ? Map<String, dynamic>.from(map['schedule'] as Map)
+        : null;
+    if (schedule != null) {
+      if (schedule.containsKey('enableTimeWindow')) {
+        enableTimeWindow =
+            schedule['enableTimeWindow'] as bool? ?? enableTimeWindow;
+      }
+      final fromHour = (schedule['runFromHour'] as num?)?.toInt();
+      final fromMinute = (schedule['runFromMinute'] as num?)?.toInt();
+      if (fromHour != null && fromMinute != null) {
+        runFromTime = TimeOfDay(
+          hour: fromHour.clamp(0, 23),
+          minute: fromMinute.clamp(0, 59),
+        );
+      }
+      final toHour = (schedule['runToHour'] as num?)?.toInt();
+      final toMinute = (schedule['runToMinute'] as num?)?.toInt();
+      if (toHour != null && toMinute != null) {
+        runToTime = TimeOfDay(
+          hour: toHour.clamp(0, 23),
+          minute: toMinute.clamp(0, 59),
+        );
+      }
+      if (schedule['runDays'] is Map) {
+        final rawDays = Map<String, dynamic>.from(schedule['runDays'] as Map);
+        for (int day = 1; day <= 7; day++) {
+          final val = rawDays['$day'];
+          if (val is bool) {
+            runDays[day] = val;
+          }
+        }
+      }
+      final action = schedule['onCompletionAction'];
+      if (action == 'pause' || action == 'stop') {
+        onCompletionAction = action as String;
+      }
+    }
+
+    _saveSettings();
+    final msg = 'Imported Copy settings (${directoryPairs.length} pair(s)).';
+    _addLog('📥 $msg');
+    notifyListeners();
+    _evaluateSchedule();
+    return msg;
+  }
+
+  Future<String?> _writeJsonExportFile({
+    required String suggestedName,
+    required String jsonContent,
+  }) async {
+    final location = await getSaveLocation(
+      suggestedName: suggestedName,
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'JSON', extensions: ['json']),
+      ],
+    );
+    if (location == null) return null;
+
+    var outPath = location.path;
+    if (!outPath.toLowerCase().endsWith('.json')) {
+      outPath = '$outPath.json';
+    }
+    await File(outPath).writeAsString(jsonContent);
+    return outPath;
+  }
+
+  Future<String?> exportSettingsToDisk() async {
+    try {
+      final outPath = await _writeJsonExportFile(
+        suggestedName: 'copy_settings.json',
+        jsonContent: exportSettingsJsonString(),
+      );
+      if (outPath == null) return null;
+      _addLog('📤 Exported Copy settings to $outPath');
+      notifyListeners();
+      return 'Exported Copy settings to ${p.basename(outPath)}';
+    } catch (e) {
+      return 'Failed to export settings: $e';
+    }
+  }
+
+  Future<String?> exportDirectoryPairsToDisk() async {
+    try {
+      final outPath = await _writeJsonExportFile(
+        suggestedName: 'copy_directory_pairs.json',
+        jsonContent: exportDirectoryPairsJsonString(),
+      );
+      if (outPath == null) return null;
+      _addLog(
+        '📤 Exported ${directoryPairs.length} directory pair(s) to $outPath',
+      );
+      notifyListeners();
+      return 'Exported ${directoryPairs.length} directory pair(s) to ${p.basename(outPath)}';
+    } catch (e) {
+      return 'Failed to export directory pairs: $e';
+    }
+  }
+
+  Future<String?> importSettingsFromDisk() async {
+    final picked = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'JSON', extensions: ['json']),
+      ],
+    );
+    if (picked == null) return null;
+
+    try {
+      final content = await File(picked.path).readAsString();
+      return importFromJsonString(content);
+    } catch (e) {
+      return 'Failed to import settings: $e';
+    }
+  }
+
+  Future<String?> importDirectoryPairsFromDisk() async {
+    final picked = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'JSON', extensions: ['json']),
+      ],
+    );
+    if (picked == null) return null;
+
+    try {
+      final content = await File(picked.path).readAsString();
+      return importFromJsonString(content, pairsOnly: true);
+    } catch (e) {
+      return 'Failed to import directory pairs: $e';
     }
   }
 

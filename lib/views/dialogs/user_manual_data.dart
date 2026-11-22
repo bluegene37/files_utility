@@ -180,9 +180,20 @@ class UserManualData {
             'Use the up/down arrows or order selector to assign execution priority (e.g., Run 1, Run 2, Run 3).',
             'Click Start to process all configured pairs in sequence.',
           ],
+          //           tip:
+          //               'Multi-directory pairs are saved automatically to your active profile for repeated daily or weekly executions.',
+          //           tags: ['multi-directory', 'run-order', 'automation'],
+          //         ),
+          // Gene - Nov, 23, 2026: Document JSON Import/Export for Copy settings and multi-directory pairs.
           tip:
-              'Multi-directory pairs are saved automatically to your active profile for repeated daily or weekly executions.',
-          tags: ['multi-directory', 'run-order', 'automation'],
+              'Multi-directory pairs are saved automatically to your active profile, and you can use the Export/Import buttons (in the top bar or Directory Pairs dialog) to back up or reuse JSON templates across machines.',
+          tags: [
+            'multi-directory',
+            'run-order',
+            'automation',
+            'import',
+            'export',
+          ],
         ),
         ManualSection(
           title: 'Date Range & Metadata Preservation',
@@ -372,9 +383,21 @@ class UserManualData {
             'Expand the FTP Connection card and select the protocol (defaulting to Plain FTP on port 21).',
             'Enter your server host (e.g., ftp.example.com), port, username, and password.',
             'Click Test Connection to verify connectivity and check access to your optional Remote Folder before running.',
-            'Migrating from myFLO_FTP_automation.py? Click the Import config.ini / .env icon in the top bar to load connection settings, retention days, and [source.*] entries (including a paired .env or config.ini in the same folder).',
+            //             'Migrating from myFLO_FTP_automation.py? Click the Import config.ini / .env icon in the top bar to load connection settings, retention days, and [source.*] entries (including a paired .env or config.ini in the same folder).',
+            //           ],
+            //           tags: ['ftp', 'ftps', 'sftp', 'credentials', 'security', 'import'],
+            // Gene - Nov, 23, 2026: Document JSON Settings & Upload Sources Import/Export (excluding passwords) alongside config.ini/.env import.
+            'Export or reuse setups easily: click Export FTP Settings (.json) in the top bar to save connection, filters, sources, and schedule to a shareable JSON file (FTP passwords are always excluded for security), or click Import Settings to load a .json export or legacy myFLO_FTP_automation.py config.ini / .env files.',
           ],
-          tags: ['ftp', 'ftps', 'sftp', 'credentials', 'security', 'import'],
+          tags: [
+            'ftp',
+            'ftps',
+            'sftp',
+            'credentials',
+            'security',
+            'import',
+            'export',
+          ],
         ),
         ManualSection(
           title: 'Upload Sources & Remote Path Mapping',
@@ -385,9 +408,13 @@ class UserManualData {
             'Example 2 — DB Backups (custom folder): Subfolders = "ETS-East" with FTP Dest = "DB_BackUp" maps \\ETS-East\\backup.bak -> /DB_BackUp/ETS-East/backup.bak.',
             'Each subfolder is scanned and uploaded immediately (scan-then-upload) with automatic reconnect recovery if the control socket drops between subfolders.',
           ],
+          //           tip:
+          //               'Use the checkbox next to each source in Upload Sources to temporarily pause a job (like a commented-out [source.*] block) without deleting its paths.',
+          //           tags: ['sources', 'subfolders', 'remote-path', 'mapping'],
+          // Gene - Nov, 23, 2026: Mention Upload Sources dialog Import/Export buttons and remote auto-folder creation.
           tip:
-              'Use the checkbox next to each source in Upload Sources to temporarily pause a job (like a commented-out [source.*] block) without deleting its paths.',
-          tags: ['sources', 'subfolders', 'remote-path', 'mapping'],
+              'Missing remote folders and subfolders are created automatically on FTP/FTPS/FTPES/SFTP during upload. Use the checkbox next to each source to pause it, or use Import/Export in the Upload Sources dialog to save or reuse your multi-directory list as JSON.',
+          tags: ['sources', 'subfolders', 'remote-path', 'mapping', 'export'],
         ),
         ManualSection(
           title: 'Skip-if-Exists Matrix, Progress & Log Retention',

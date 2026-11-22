@@ -91,19 +91,31 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     );
   }
 
-  // Gene - Nov, 23, 2026: Import myFLO_FTP_automation config.ini / .env settings from disk.
+  //   // Gene - Nov, 23, 2026: Import myFLO_FTP_automation config.ini / .env settings from disk.
+  //   Future<void> _handleImportConfig(FtpFilesProvider provider) async {
+  //     final message = await provider.importConfigFromDisk();
+  //     if (!mounted || message == null) return;
+  //     final isError =
+  //         message.startsWith('Failed') || message.startsWith('No recognizable');
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(
+  //         content: Text(message),
+  //         backgroundColor: isError ? AppColors.error : AppColors.success,
+  //         duration: const Duration(seconds: 4),
+  //       ),
+  //     );
+  //   }
+  // Gene - Nov, 23, 2026: Import/Export handlers for FTP settings (.json / config.ini / .env).
   Future<void> _handleImportConfig(FtpFilesProvider provider) async {
     final message = await provider.importConfigFromDisk();
     if (!mounted || message == null) return;
-    final isError =
-        message.startsWith('Failed') || message.startsWith('No recognizable');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? AppColors.error : AppColors.success,
-        duration: const Duration(seconds: 4),
-      ),
-    );
+    _showFtpActionSnackBar(context, message);
+  }
+
+  Future<void> _handleExportSettings(FtpFilesProvider provider) async {
+    final message = await provider.exportSettingsToDisk();
+    if (!mounted || message == null) return;
+    _showFtpActionSnackBar(context, message);
   }
 
   @override
@@ -262,6 +274,19 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
             ),
           ),
           const Spacer(),
+          //           IconButton(
+          //             key: const Key('ftp_import_ini_btn'),
+          //             icon: Icon(
+          //               Icons.file_upload_outlined,
+          //               color: accentColor,
+          //               size: 20,
+          //             ),
+          //             tooltip: 'Import config.ini / .env',
+          //             onPressed: provider.isProcessing
+          //                 ? null
+          //                 : () => _handleImportConfig(provider),
+          //           ),
+          // Gene - Nov, 23, 2026: Support JSON/.ini/.env import and JSON settings export (excluding password) in FTP app bar.
           IconButton(
             key: const Key('ftp_import_ini_btn'),
             icon: Icon(
@@ -269,10 +294,22 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
               color: accentColor,
               size: 20,
             ),
-            tooltip: 'Import config.ini / .env',
+            tooltip: 'Import Settings (.json / config.ini / .env)',
             onPressed: provider.isProcessing
                 ? null
                 : () => _handleImportConfig(provider),
+          ),
+          IconButton(
+            key: const Key('ftp_export_settings_btn'),
+            icon: Icon(
+              Icons.file_download_outlined,
+              color: accentColor,
+              size: 20,
+            ),
+            tooltip: 'Export FTP Settings (.json, without password)',
+            onPressed: provider.isProcessing
+                ? null
+                : () => _handleExportSettings(provider),
           ),
           IconButton(
             key: const Key('ftp_open_logs_btn'),
@@ -2001,6 +2038,18 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
   }
 }
 
+// Gene - Nov, 23, 2026: Shared SnackBar helper for FTP import/export notifications.
+void _showFtpActionSnackBar(BuildContext context, String message) {
+  final isError = message.startsWith('Failed') || message.startsWith('No ');
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      backgroundColor: isError ? AppColors.error : AppColors.success,
+      duration: const Duration(seconds: 4),
+    ),
+  );
+}
+
 class _FtpUploadSourcesDialog extends StatefulWidget {
   final FtpFilesProvider provider;
 
@@ -2060,12 +2109,59 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
     final accentColor = context.ftpAccent;
 
     return AlertDialog(
+      //       title: Row(
+      //         children: [
+      //           Icon(Icons.folder_copy, size: 22, color: accentColor),
+      //           const SizedBox(width: 8),
+      //           const Text('Upload Sources', style: TextStyle(fontSize: 18)),
+      //           const Spacer(),
+      //           TextButton.icon(
+      //             icon: const Icon(Icons.add, size: 18),
+      //             label: const Text('Add Source', style: TextStyle(fontSize: 13)),
+      //             onPressed: () {
+      //               widget.provider.addUploadSource();
+      //               setState(_rebuildControllers);
+      //             },
+      //           ),
+      //         ],
+      //       ),
+      // Gene - Nov, 23, 2026: Add Import and Export Upload Sources actions to Upload Sources dialog title bar.
       title: Row(
         children: [
           Icon(Icons.folder_copy, size: 22, color: accentColor),
           const SizedBox(width: 8),
           const Text('Upload Sources', style: TextStyle(fontSize: 18)),
           const Spacer(),
+          TextButton.icon(
+            key: const Key('ftp_sources_import_btn'),
+            icon: const Icon(Icons.file_upload_outlined, size: 17),
+            label: const Text('Import', style: TextStyle(fontSize: 12)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: () async {
+              final message = await widget.provider
+                  .importUploadSourcesFromDisk();
+              if (!context.mounted || message == null) return;
+              setState(_rebuildControllers);
+              _showFtpActionSnackBar(context, message);
+            },
+          ),
+          TextButton.icon(
+            key: const Key('ftp_sources_export_btn'),
+            icon: const Icon(Icons.file_download_outlined, size: 17),
+            label: const Text('Export', style: TextStyle(fontSize: 12)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: () async {
+              final message = await widget.provider.exportUploadSourcesToDisk();
+              if (!context.mounted || message == null) return;
+              _showFtpActionSnackBar(context, message);
+            },
+          ),
           TextButton.icon(
             icon: const Icon(Icons.add, size: 18),
             label: const Text('Add Source', style: TextStyle(fontSize: 13)),

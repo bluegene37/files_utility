@@ -340,8 +340,9 @@ void main() {
       await tester.pumpWidget(buildFtpTestApp(provider));
       await tester.pumpAndSettle();
 
-      // App bar buttons present.
+      // App bar buttons present (including JSON export).
       expect(find.byKey(const Key('ftp_import_ini_btn')), findsOneWidget);
+      expect(find.byKey(const Key('ftp_export_settings_btn')), findsOneWidget);
       expect(find.byKey(const Key('ftp_open_logs_btn')), findsOneWidget);
 
       // Advanced Settings -> Log Retention dropdown (scroll into view on 980x680 viewport).
@@ -374,6 +375,8 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('Edit Sources'));
       await tester.pumpAndSettle();
+      expect(find.byKey(const Key('ftp_sources_import_btn')), findsOneWidget);
+      expect(find.byKey(const Key('ftp_sources_export_btn')), findsOneWidget);
       await tester.tap(find.text('Add Source'));
       await tester.pump();
       expect(find.byKey(const Key('ftp_source_enabled_0')), findsOneWidget);
