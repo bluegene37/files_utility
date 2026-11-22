@@ -253,18 +253,22 @@ void main() {
         Directory(p.join(rootA.path, 'FolderB')).createSync();
         Directory(p.join(rootA.path, 'IgnoredFolder')).createSync();
 
-        File(p.join(rootA.path, 'FolderA', 'doc1.pdf'))
-            .writeAsBytesSync([10, 20]);
-        File(p.join(rootA.path, 'FolderB', 'img1.jpg'))
-            .writeAsBytesSync([30, 40]);
-        File(p.join(rootA.path, 'IgnoredFolder', 'skip.txt'))
-            .writeAsBytesSync([50]);
+        File(
+          p.join(rootA.path, 'FolderA', 'doc1.pdf'),
+        ).writeAsBytesSync([10, 20]);
+        File(
+          p.join(rootA.path, 'FolderB', 'img1.jpg'),
+        ).writeAsBytesSync([30, 40]);
+        File(
+          p.join(rootA.path, 'IgnoredFolder', 'skip.txt'),
+        ).writeAsBytesSync([50]);
 
         final rootB = Directory(p.join(tempSourcesDir.path, 'multi_b'))
           ..createSync(recursive: true);
         Directory(p.join(rootB.path, 'Sub1')).createSync();
-        File(p.join(rootB.path, 'Sub1', 'backup.bak'))
-            .writeAsBytesSync([99, 100, 101]);
+        File(
+          p.join(rootB.path, 'Sub1', 'backup.bak'),
+        ).writeAsBytesSync([99, 100, 101]);
 
         final server = FakeRemoteServerState();
         final provider = buildProvider(server: server);
@@ -313,8 +317,9 @@ void main() {
         final src = Directory(p.join(tempSourcesDir.path, 'skip_case'))
           ..createSync(recursive: true);
         File(p.join(src.path, 'same.bin')).writeAsBytesSync([1, 2, 3, 4]);
-        File(p.join(src.path, 'partial.bin'))
-            .writeAsBytesSync([10, 20, 30, 40, 50]);
+        File(
+          p.join(src.path, 'partial.bin'),
+        ).writeAsBytesSync([10, 20, 30, 40, 50]);
 
         final server = FakeRemoteServerState();
         server.seedFile('Target', 'same.bin', [1, 2, 3, 4]); // exact 4 bytes
@@ -335,10 +340,7 @@ void main() {
         expect(provider.filesSkipped, 1);
         expect(provider.filesUploaded, 1);
         expect(server.uploadCalls, ['Target/partial.bin']);
-        expect(
-          server.getFile('Target', 'partial.bin'),
-          [10, 20, 30, 40, 50],
-        );
+        expect(server.getFile('Target', 'partial.bin'), [10, 20, 30, 40, 50]);
       },
     );
 
@@ -452,10 +454,7 @@ void main() {
         expect(failResult.success, isFalse);
         expect(failResult.message, isNot(contains('test_pass_123')));
         expect(failResult.message, contains('***'));
-        expect(
-          provider.logs.any((l) => l.contains('test_pass_123')),
-          isFalse,
-        );
+        expect(provider.logs.any((l) => l.contains('test_pass_123')), isFalse);
       },
     );
 

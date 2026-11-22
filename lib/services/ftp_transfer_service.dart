@@ -102,7 +102,9 @@ class FtpConnectionConfig {
   String displayEndpoint([String? remoteDir]) {
     final trimmedHost = host.trim();
     final cleanDir = remoteDir == null ? '' : joinRemotePath(remoteDir, '');
-    final strippedDir = cleanDir.startsWith('/') ? cleanDir.substring(1) : cleanDir;
+    final strippedDir = cleanDir.startsWith('/')
+        ? cleanDir.substring(1)
+        : cleanDir;
     final base = '${protocol.scheme}://$trimmedHost:$port';
     if (strippedDir.isEmpty) return base;
     return '$base/$strippedDir';
@@ -227,7 +229,9 @@ class FtpConnectAdapter implements FtpClientAdapter {
         _initialDirectory = await currentDirectory();
       }
     } catch (e) {
-      throw Exception(CredentialObfuscator.redact(e.toString(), config.password));
+      throw Exception(
+        CredentialObfuscator.redact(e.toString(), config.password),
+      );
     }
   }
 
@@ -333,10 +337,9 @@ class FtpConnectAdapter implements FtpClientAdapter {
 
   @override
   Future<bool> uploadFile(File localFile, {String? remoteName}) async {
-    final targetName =
-        (remoteName != null && remoteName.isNotEmpty)
-            ? remoteName
-            : p.basename(localFile.path);
+    final targetName = (remoteName != null && remoteName.isNotEmpty)
+        ? remoteName
+        : p.basename(localFile.path);
     return _client.uploadFile(localFile, sRemoteName: targetName);
   }
 }

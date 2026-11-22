@@ -69,11 +69,16 @@ Precompiled release packages are published on the [GitHub Releases](https://gith
 | **Linux (Debian/Ubuntu)** | Debian Package | `files-utility_<version>_amd64.deb` | Installs to `/usr/lib/files_utility` with a launcher entry. Requires `libgtk-3-0` and `libsqlite3-0`. |
 | **Linux (portable)** | Compressed Bundle | `files_utility-<version>-linux-x64.tar.gz` | Extract anywhere and run `./files_utility`. |
 
+<!-- Gene - Nov, 22, 2026: Updated macOS Gatekeeper note to reflect Apple Developer ID signing and notarization -->
+<!--
 > [!NOTE]
 > **macOS First-Launch**: Until an Apple Developer ID signature is attached, Gatekeeper will flag the app on first run. To open: Right-click the app in `/Applications` > select **Open**, or run:
 > ```bash
 > xattr -dr com.apple.quarantine "/Applications/Files Utility.app"
 > ```
+-->
+> [!NOTE]
+> **macOS First-Launch**: Official macOS `.dmg` releases are signed with an Apple Developer ID certificate and notarized by Apple, so Gatekeeper verifies the app out of the box without manual quarantine overrides.
 
 ---
 

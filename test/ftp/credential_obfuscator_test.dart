@@ -71,22 +71,25 @@ void main() {
       );
     });
 
-    test('redact replaces non-empty secrets and ignores empty/null secrets', () {
-      expect(
-        CredentialObfuscator.redact(
-          'Login failed for user with test_pass_123 at host (test_pass_123)',
-          'test_pass_123',
-        ),
-        'Login failed for user with *** at host (***)',
-      );
-      expect(
-        CredentialObfuscator.redact('Plain message', ''),
-        'Plain message',
-      );
-      expect(
-        CredentialObfuscator.redact('Plain message', null),
-        'Plain message',
-      );
-    });
+    test(
+      'redact replaces non-empty secrets and ignores empty/null secrets',
+      () {
+        expect(
+          CredentialObfuscator.redact(
+            'Login failed for user with test_pass_123 at host (test_pass_123)',
+            'test_pass_123',
+          ),
+          'Login failed for user with *** at host (***)',
+        );
+        expect(
+          CredentialObfuscator.redact('Plain message', ''),
+          'Plain message',
+        );
+        expect(
+          CredentialObfuscator.redact('Plain message', null),
+          'Plain message',
+        );
+      },
+    );
   });
 }

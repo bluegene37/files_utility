@@ -17,13 +17,21 @@ class WindowService {
     try {
       await windowManager.ensureInitialized();
 
+      // Gene - Nov, 22, 2026: Omit backgroundColor and titleBarStyle from WindowOptions so window_manager does not set isOpaque=false and NSColor.clear on macOS (fixes transparent header bar)
+      // const windowOptions = WindowOptions(
+      //   size: Size(1280, 840),
+      //   minimumSize: Size(980, 680),
+      //   center: true,
+      //   backgroundColor: Colors.transparent,
+      //   skipTaskbar: false,
+      //   titleBarStyle: TitleBarStyle.normal,
+      //   title: AppInfo.appName,
+      // );
       const windowOptions = WindowOptions(
         size: Size(1280, 840),
         minimumSize: Size(980, 680),
         center: true,
-        backgroundColor: Colors.transparent,
         skipTaskbar: false,
-        titleBarStyle: TitleBarStyle.normal,
         title: AppInfo.appName,
       );
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<!-- Gene - Nov, 22, 2026: Added v1.2.0 changelog entry -->
+## [1.2.0] - 2026-11-22
+
+### Added
+- **FTP Upload Module**: Native FTP/FTPS/FTPES/SFTP upload support (`ftpconnect`) with V1 automation, obfuscated credential storage, per-profile settings, and operational window scheduler.
+- **Transfer Quick Presets**: Quick date-range presets for configuring file transfer filters faster.
+- **Signed & Notarized macOS Packaging**: Apple Developer ID code signing, Hardened Runtime entitlements, and automated Apple Notarization & stapling in `scripts/build_macos_dmg.sh`.
+
+### Changed
+- **Modern Soft Neumorphism Theme**: Upgraded light and dark themes across all screens, cards, inputs, tables, and dialogs to a Batterie-matched Soft Slate & Dark Slate neumorphic palette.
+
+### Fixed
+- **Opaque macOS Header Bar**: Stopped passing `backgroundColor: Colors.transparent` and `titleBarStyle: TitleBarStyle.normal` to `WindowOptions` and explicitly enforced `isOpaque = true`, `titlebarAppearsTransparent = false`, and `NSColor.windowBackgroundColor` in `MainFlutterWindow.swift`.
+- **Transfer Date Filter & Update Cache**: Fixed Transfer date filter path nesting and defaults, and ensured corrupt cached release JSON no longer breaks startup update checks.
+
 ## [1.1.0] - 2026-08-30
 
 ### Added
@@ -47,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Complete offline design: zero external network dependencies, zero telemetry, and local-only data persistence in `Documents/FilesUtility/`.
 
-[Unreleased]: https://github.com/bluegene37/files_utility/compare/v1.1.0...HEAD
+<!-- Gene - Nov, 22, 2026: Updated changelog comparison links for v1.2.0 -->
+<!-- [Unreleased]: https://github.com/bluegene37/files_utility/compare/v1.1.0...HEAD -->
+[Unreleased]: https://github.com/bluegene37/files_utility/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/bluegene37/files_utility/compare/v1.1.2...v1.2.0
 [1.1.0]: https://github.com/bluegene37/files_utility/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/bluegene37/files_utility/releases/tag/v1.0.0

@@ -4,9 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:files_utility/providers/ftp_files_provider.dart';
 
 Map<int, bool> _days({List<int> enabled = const []}) {
-  return {
-    for (int d = 1; d <= 7; d++) d: enabled.contains(d),
-  };
+  return {for (int d = 1; d <= 7; d++) d: enabled.contains(d)};
 }
 
 void main() {

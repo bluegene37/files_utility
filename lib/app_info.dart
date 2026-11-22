@@ -10,5 +10,7 @@ class AppInfo {
   AppInfo._();
 
   static const String appName = 'Files Utility';
-  static const String appVersion = '1.1.2';
+  // Gene - Nov, 22, 2026: Bump appVersion to 1.2.0 to stay synchronized with pubspec.yaml
+  // static const String appVersion = '1.1.2';
+  static const String appVersion = '1.2.0';
 }

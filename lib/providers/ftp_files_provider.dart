@@ -327,7 +327,9 @@ class FtpFilesProvider with ChangeNotifier {
     username = db.getString('ftp_username') ?? '';
     final storedPass = db.getString('ftp_password') ?? '';
     password = CredentialObfuscator.decode(storedPass, profileId: profileId);
-    transferMode = FtpTransferMode.fromStorage(db.getString('ftp_transferMode'));
+    transferMode = FtpTransferMode.fromStorage(
+      db.getString('ftp_transferMode'),
+    );
     timeoutSeconds = db.getInt('ftp_timeoutSeconds') ?? 30;
 
     useMultipleSources = db.getBool('ftp_useMultipleSources') ?? false;
@@ -610,15 +612,15 @@ class FtpFilesProvider with ChangeNotifier {
   }
 
   void addUploadSource() {
-    uploadSources.add(
-      FtpUploadSource(runOrder: uploadSources.length + 1),
-    );
+    uploadSources.add(FtpUploadSource(runOrder: uploadSources.length + 1));
     _saveSettings();
     notifyListeners();
   }
 
   void removeUploadSource(int index) {
-    if (uploadSources.length > 1 && index >= 0 && index < uploadSources.length) {
+    if (uploadSources.length > 1 &&
+        index >= 0 &&
+        index < uploadSources.length) {
       uploadSources.removeAt(index);
       _saveSettings();
       notifyListeners();
@@ -664,9 +666,7 @@ class FtpFilesProvider with ChangeNotifier {
 
   void setSourceFtpDestAt(int index, String value) {
     if (index < 0 || index >= uploadSources.length) return;
-    uploadSources[index] = uploadSources[index].copyWith(
-      ftpDest: value.trim(),
-    );
+    uploadSources[index] = uploadSources[index].copyWith(ftpDest: value.trim());
     _saveSettings();
     notifyListeners();
   }
@@ -1131,7 +1131,10 @@ class FtpFilesProvider with ChangeNotifier {
       errors++;
       final safeErr = CredentialObfuscator.redact(e.toString(), password);
       _addLog('⚠️ Failed scanning ${item.localDir}: $safeErr');
-      await _fileLogger.error('FTP', 'Failed scanning ${item.localDir}: $safeErr');
+      await _fileLogger.error(
+        'FTP',
+        'Failed scanning ${item.localDir}: $safeErr',
+      );
       return [];
     }
 
@@ -1408,9 +1411,7 @@ class FtpFilesProvider with ChangeNotifier {
                   await _fileLogger.error('FTP', warnMsg);
                   notifyListeners();
 
-                  await _cancellableDelay(
-                    Duration(seconds: retryDelaySeconds),
-                  );
+                  await _cancellableDelay(Duration(seconds: retryDelaySeconds));
                   if (_stopRequested) break;
 
                   // Reconnect before retrying in case the socket dropped mid-transfer.

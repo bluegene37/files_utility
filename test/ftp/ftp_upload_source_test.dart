@@ -42,10 +42,7 @@ void main() {
     });
 
     test('copyWith(clearLocalPath: true) clears localPath', () {
-      const source = FtpUploadSource(
-        name: 'Docs',
-        localPath: '/tmp/docs',
-      );
+      const source = FtpUploadSource(name: 'Docs', localPath: '/tmp/docs');
       final cleared = source.copyWith(clearLocalPath: true);
       expect(cleared.localPath, isNull);
       expect(cleared.isValid, isFalse);
