@@ -282,6 +282,62 @@ class UserManualData {
     ),
 
     // Gene - Nov, 21, 2026: Add User Manual topic for FTP Upload automation, settings, and scheduler
+    //     // 5b. FTP Upload
+    //     const ManualTopic(
+    //       id: 'ftp_files',
+    //       title: 'FTP Upload & Scheduler',
+    //       subtitle:
+    //           'Automated FTP, FTPS, FTPES, and SFTP uploads with per-profile credentials and scheduling',
+    //       icon: Icons.cloud_upload_rounded,
+    //       badge: 'Core Tool',
+    //       keywords: [
+    //         'ftp',
+    //         'ftps',
+    //         'ftpes',
+    //         'sftp',
+    //         'upload',
+    //         'schedule',
+    //         'scheduler',
+    //         'dry run',
+    //         'retry',
+    //         'remote',
+    //         'subfolders',
+    //       ],
+    //       sections: [
+    //         ManualSection(
+    //           title: 'Server Connection & Security',
+    //           description:
+    //               'Configure your server protocol (Plain FTP, Implicit FTPS, Explicit FTPES, or SSH SFTP), Host, Port, Username, and Password inside the collapsible FTP Connection panel. Credentials are saved per App Profile with password obfuscation at rest and automatic redaction from logs and run history.',
+    //           steps: [
+    //             'Expand the FTP Connection card and select the protocol (defaulting to Plain FTP on port 21).',
+    //             'Enter your server host (e.g., ftp.example.com), port, username, and password.',
+    //             'Click Test Connection to verify connectivity and check access to your optional Remote Folder before running.',
+    //           ],
+    //           tags: ['ftp', 'ftps', 'sftp', 'credentials', 'security'],
+    //         ),
+    //         ManualSection(
+    //           title: 'Single & Multiple Upload Sources',
+    //           description:
+    //               'Upload from a single local/network directory or enable Multiple Sources to configure ordered upload jobs with optional comma-separated Subfolders filters (e.g., FolderA, FolderB) and custom FTP Destination folders (e.g., Backups). Each subfolder is scanned and uploaded immediately over one persistent connection to prevent server idle timeouts.',
+    //           tags: ['sources', 'subfolders', 'remote-path'],
+    //         ),
+    //         ManualSection(
+    //           title: 'Date Filters, Reliability & Dry-Run Mode',
+    //           description:
+    //               'Open Advanced Settings to pick a Date Filter Mode (Yesterday, Today, N Days Ago, Specific Date, Date Range, or All Files) matched against Creation Date or Modified Date. Skip-if-exists (matching size), post-upload size verification, configurable retries, and Dry-Run simulation help protect large backups.',
+    //           tip:
+    //               'Run with Dry-Run mode enabled first when setting up new subfolder or date filters to confirm which files would upload or skip without transferring data.',
+    //           tags: ['date-filter', 'dry-run', 'retry', 'verification'],
+    //         ),
+    //         ManualSection(
+    //           title: 'Weekday & Time Scheduler',
+    //           description:
+    //               'Enable Schedule in Advanced Settings, choose a Run At time, select the target weekdays (Mon–Sun), and choose Repeat or Stop on completion. Click Start Schedule to arm the timer while leaving Run Now available for immediate manual runs anytime.',
+    //           tags: ['scheduler', 'automation', 'weekdays'],
+    //         ),
+    //       ],
+    //     ),
+    // Gene - Nov, 23, 2026: Expand ftp_files manual topic with remote path mapping examples, 3-case skip matrix, config.ini import, log retention, and troubleshooting.
     // 5b. FTP Upload
     const ManualTopic(
       id: 'ftp_files',
@@ -302,38 +358,68 @@ class UserManualData {
         'retry',
         'remote',
         'subfolders',
+        'config.ini',
+        '.env',
+        'retention',
+        'troubleshooting',
       ],
       sections: [
         ManualSection(
-          title: 'Server Connection & Security',
+          title: 'Server Connection, Security & Legacy Config Import',
           description:
-              'Configure your server protocol (Plain FTP, Implicit FTPS, Explicit FTPES, or SSH SFTP), Host, Port, Username, and Password inside the collapsible FTP Connection panel. Credentials are saved per App Profile with password obfuscation at rest and automatic redaction from logs and run history.',
+              'Configure your server protocol (Plain FTP on 21, Implicit FTPS on 990, Explicit FTPES on 21, or SSH SFTP on 22), Host, Port, Username, and Password inside the collapsible FTP Connection panel. Credentials are saved per App Profile with password obfuscation at rest and automatic redaction from logs and run history.',
           steps: [
             'Expand the FTP Connection card and select the protocol (defaulting to Plain FTP on port 21).',
             'Enter your server host (e.g., ftp.example.com), port, username, and password.',
             'Click Test Connection to verify connectivity and check access to your optional Remote Folder before running.',
+            'Migrating from myFLO_FTP_automation.py? Click the Import config.ini / .env icon in the top bar to load connection settings, retention days, and [source.*] entries (including a paired .env or config.ini in the same folder).',
           ],
-          tags: ['ftp', 'ftps', 'sftp', 'credentials', 'security'],
+          tags: ['ftp', 'ftps', 'sftp', 'credentials', 'security', 'import'],
         ),
         ManualSection(
-          title: 'Single & Multiple Upload Sources',
+          title: 'Upload Sources & Remote Path Mapping',
           description:
-              'Upload from a single local/network directory or enable Multiple Sources to configure ordered upload jobs with optional comma-separated Subfolders filters (e.g., FolderA, FolderB) and custom FTP Destination folders (e.g., Backups). Each subfolder is scanned and uploaded immediately over one persistent connection to prevent server idle timeouts.',
-          tags: ['sources', 'subfolders', 'remote-path'],
-        ),
-        ManualSection(
-          title: 'Date Filters, Reliability & Dry-Run Mode',
-          description:
-              'Open Advanced Settings to pick a Date Filter Mode (Yesterday, Today, N Days Ago, Specific Date, Date Range, or All Files) matched against Creation Date or Modified Date. Skip-if-exists (matching size), post-upload size verification, configurable retries, and Dry-Run simulation help protect large backups.',
+              'Upload from a single local/network directory or enable Multiple Sources to configure ordered upload jobs with per-source Enable/Disable checkboxes, optional comma-separated Subfolders filters, and custom FTP Destination folders. Leave Subfolders blank for root-only files, or enable "Include nested subfolders" in Advanced Settings to scan and mirror all nested directories.',
+          steps: [
+            'Example 1 — Job Files (FTP root): Subfolders = "JobImages, JobDocuments, JobInvoice" with FTP Dest left blank maps \\JobImages\\photo.jpg -> /JobImages/photo.jpg.',
+            'Example 2 — DB Backups (custom folder): Subfolders = "ETS-East" with FTP Dest = "DB_BackUp" maps \\ETS-East\\backup.bak -> /DB_BackUp/ETS-East/backup.bak.',
+            'Each subfolder is scanned and uploaded immediately (scan-then-upload) with automatic reconnect recovery if the control socket drops between subfolders.',
+          ],
           tip:
-              'Run with Dry-Run mode enabled first when setting up new subfolder or date filters to confirm which files would upload or skip without transferring data.',
-          tags: ['date-filter', 'dry-run', 'retry', 'verification'],
+              'Use the checkbox next to each source in Upload Sources to temporarily pause a job (like a commented-out [source.*] block) without deleting its paths.',
+          tags: ['sources', 'subfolders', 'remote-path', 'mapping'],
+        ),
+        ManualSection(
+          title: 'Skip-if-Exists Matrix, Progress & Log Retention',
+          description:
+              'Open Advanced Settings to pick a Date Filter Mode (Yesterday, Today, N Days Ago, Specific Date, Date Range, or All Files) matched against Creation Date or Modified Date. Live byte progress and transfer speed appear in the UI bar for large backups without cluttering log files.',
+          steps: [
+            'Not on FTP -> Uploads normally and verifies remote byte size afterward when Verify Size is enabled.',
+            'Exists on FTP with matching byte size -> Skips transfer and logs "Skipped (already on FTP)".',
+            'Exists on FTP with different byte size (partial/interrupted upload) -> Logs "Size differs" and re-uploads cleanly.',
+            'Configure Log Retention (default 30 days, or Forever) in Advanced Settings; expired FTP log files are pruned automatically on each run, and you can open the folder anytime from the Open Logs Folder button.',
+          ],
+          tip:
+              'Run with Dry-Run mode enabled first when setting up new subfolder or date filters to check the resolved target date and per-folder matched counts without transferring data.',
+          tags: ['date-filter', 'dry-run', 'retry', 'verification', 'logs'],
         ),
         ManualSection(
           title: 'Weekday & Time Scheduler',
           description:
               'Enable Schedule in Advanced Settings, choose a Run At time, select the target weekdays (Mon–Sun), and choose Repeat or Stop on completion. Click Start Schedule to arm the timer while leaving Run Now available for immediate manual runs anytime.',
           tags: ['scheduler', 'automation', 'weekdays'],
+        ),
+        ManualSection(
+          title: 'Troubleshooting FTP Uploads',
+          description:
+              'Common fixes when a scheduled or manual FTP run skips files or reports errors.',
+          steps: [
+            'No files matched: Check the resolved target date in the run log and confirm whether files match Creation Date vs. Modified Date.',
+            'Source directory not found: Verify UNC/NAS paths (e.g. \\\\server\\share\\folder) are mounted and readable by the account running Files Utility.',
+            'Connection times out or drops on large files: Increase Timeout (s) (e.g. 60–300s) and Retry Count in Advanced Settings, and ensure firewall rules allow Passive FTP data ports.',
+            'Large upload interrupted or cancelled: Simply re-run with "Skip if already on FTP (matching size)" enabled — completed files are skipped and partial files re-upload automatically.',
+          ],
+          tags: ['troubleshooting', 'unc', 'timeout', 'resume', 'permissions'],
         ),
       ],
     ),

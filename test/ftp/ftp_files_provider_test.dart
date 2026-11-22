@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:files_utility/providers/ftp_files_provider.dart';
 import 'package:files_utility/services/app_sqlite_service.dart';
+// Gene - Nov, 23, 2026: Import FileLogger to verify retention pruning and error footer output.
+import 'package:files_utility/services/file_logger.dart';
 import 'package:files_utility/services/ftp_transfer_service.dart';
 import 'package:files_utility/services/global_db_service.dart';
 import 'package:files_utility/services/history_service.dart';
@@ -23,6 +25,12 @@ class FakeRemoteServerState {
   int failUploadAttemptsRemaining = 0;
   String? failUploadErrorMessage;
   int wrongReportedSizeAttemptsRemaining = 0;
+  // Gene - Nov, 23, 2026: Test hooks for idle disconnect recovery, null SIZE, and upload progress ticks.
+  int? failEnsureDirOnCallNumber;
+  int ensureDirCallCount = 0;
+  bool returnNullRemoteSize = false;
+  List<({double percent, int sent, int total})> simulatedProgressTicks =
+      const [];
 
   String _norm(String raw) {
     final clean = joinRemotePath(raw, '');
@@ -74,6 +82,10 @@ class FakeFtpClientAdapter implements FtpClientAdapter {
 
   @override
   Future<bool> ensureRemoteDirectory(String remotePath) async {
+    state.ensureDirCallCount++;
+    if (state.failEnsureDirOnCallNumber == state.ensureDirCallCount) {
+      throw Exception('Simulated idle disconnect before $remotePath');
+    }
     final norm = state._norm(remotePath);
     state.ensuredDirs.add(norm);
     state.dirs.putIfAbsent(norm, () => {});
@@ -89,6 +101,7 @@ class FakeFtpClientAdapter implements FtpClientAdapter {
 
   @override
   Future<int?> getRemoteFileSize(String remoteName) async {
+    if (state.returnNullRemoteSize) return null;
     if (state.wrongReportedSizeAttemptsRemaining > 0) {
       state.wrongReportedSizeAttemptsRemaining--;
       return 1;
@@ -96,8 +109,30 @@ class FakeFtpClientAdapter implements FtpClientAdapter {
     return state.dirs[_cwd]?[remoteName]?.length;
   }
 
+  //   @override
+  //   Future<bool> uploadFile(File localFile, {String? remoteName}) async {
+  //     final name = remoteName ?? p.basename(localFile.path);
+  //     final fullRemote = _cwd.isEmpty ? name : '$_cwd/$name';
+  //     state.uploadCalls.add(fullRemote);
+  //
+  //     if (state.failUploadAttemptsRemaining > 0) {
+  //       state.failUploadAttemptsRemaining--;
+  //       throw Exception(
+  //         state.failUploadErrorMessage ?? 'Simulated socket drop during upload',
+  //       );
+  //     }
+  //
+  //     final bytes = await localFile.readAsBytes();
+  //     state.dirs.putIfAbsent(_cwd, () => {})[name] = bytes;
+  //     return true;
+  //   }
+  // Gene - Nov, 23, 2026: Support FtpUploadProgressCallback in FakeFtpClientAdapter.
   @override
-  Future<bool> uploadFile(File localFile, {String? remoteName}) async {
+  Future<bool> uploadFile(
+    File localFile, {
+    String? remoteName,
+    FtpUploadProgressCallback? onProgress,
+  }) async {
     final name = remoteName ?? p.basename(localFile.path);
     final fullRemote = _cwd.isEmpty ? name : '$_cwd/$name';
     state.uploadCalls.add(fullRemote);
@@ -107,6 +142,12 @@ class FakeFtpClientAdapter implements FtpClientAdapter {
       throw Exception(
         state.failUploadErrorMessage ?? 'Simulated socket drop during upload',
       );
+    }
+
+    if (onProgress != null) {
+      for (final tick in state.simulatedProgressTicks) {
+        onProgress(tick.percent, tick.sent, tick.total);
+      }
     }
 
     final bytes = await localFile.readAsBytes();
@@ -584,6 +625,298 @@ void main() {
         expect(provider.host, 'ftp.example.com');
         expect(provider.port, 2121);
         expect(provider.password, 'test_pass_123');
+      },
+    );
+
+    // Gene - Nov, 23, 2026: Unit tests for live upload progress, idle reconnect recovery, error status, null SIZE warning, source toggle, audit logs, and log retention pruning.
+    test(
+      'live upload progress updates UI state without polluting logs and formatByteSize formats units',
+      () async {
+        await LocalDbService().init('ftp_test_progress');
+        HistoryService().init('ftp_test_progress');
+
+        expect(FtpFilesProvider.formatByteSize(512), '512 B');
+        expect(FtpFilesProvider.formatByteSize(1536), '1.5 KB');
+        expect(FtpFilesProvider.formatByteSize(5 * 1024 * 1024), '5.0 MB');
+        expect(
+          FtpFilesProvider.formatByteSize(2 * 1024 * 1024 * 1024),
+          '2.0 GB',
+        );
+
+        final src = Directory(p.join(tempSourcesDir.path, 'progress_case'))
+          ..createSync(recursive: true);
+        File(
+          p.join(src.path, 'big.bak'),
+        ).writeAsBytesSync(List<int>.filled(10, 42));
+
+        final server = FakeRemoteServerState()
+          ..simulatedProgressTicks = const [
+            (percent: 50.0, sent: 5, total: 10),
+            (percent: 100.0, sent: 10, total: 10),
+          ];
+
+        final provider = buildProvider(server: server);
+        addTearDown(provider.dispose);
+
+        final observedProgress = <double>[];
+        final observedStatuses = <String>[];
+        provider.addListener(() {
+          if (provider.activeUploadProgress != null) {
+            observedProgress.add(provider.activeUploadProgress!);
+            observedStatuses.add(provider.currentStatus);
+          }
+        });
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setSourcePath(src.path)
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(false);
+
+        await provider.runNow();
+
+        expect(observedProgress, containsAll([0.5, 1.0]));
+        expect(
+          observedStatuses.any((s) => s.contains('50.0%') && s.contains('5 B')),
+          isTrue,
+        );
+        expect(provider.activeUploadProgress, isNull);
+        expect(provider.activeUploadFileName, isNull);
+        expect(provider.logs.any((l) => l.contains('50.0%')), isFalse);
+      },
+    );
+
+    test(
+      'recovers from idle disconnect between subfolders via automatic reconnect',
+      () async {
+        await LocalDbService().init('ftp_test_idle_reconn');
+        HistoryService().init('ftp_test_idle_reconn');
+
+        final src = Directory(p.join(tempSourcesDir.path, 'idle_reconn_case'))
+          ..createSync(recursive: true);
+        Directory(p.join(src.path, 'SubA')).createSync();
+        Directory(p.join(src.path, 'SubB')).createSync();
+        File(p.join(src.path, 'SubA', 'a.txt')).writeAsBytesSync([1, 2]);
+        File(p.join(src.path, 'SubB', 'b.txt')).writeAsBytesSync([3, 4]);
+
+        // Call #1 succeeds for SubA; call #2 simulates idle drop entering SubB;
+        // call #3 succeeds after reconnect.
+        final server = FakeRemoteServerState()..failEnsureDirOnCallNumber = 2;
+        final provider = buildProvider(server: server);
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setSourcePath(src.path)
+          ..setSubfolders('SubA, SubB')
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(false);
+
+        await provider.runNow();
+
+        expect(provider.errors, 0);
+        expect(provider.filesUploaded, 2);
+        expect(server.connectCount, 2);
+        expect(server.uploadCalls, ['SubA/a.txt', 'SubB/b.txt']);
+        expect(
+          provider.logs.any((l) => l.contains('Connection interrupted')),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'records Error status in History, UI status, and FileLogger footer when errors > 0',
+      () async {
+        await LocalDbService().init('ftp_test_err_status');
+        HistoryService().init('ftp_test_err_status');
+        await HistoryService().clearHistory(allProfiles: false);
+
+        final src = Directory(p.join(tempSourcesDir.path, 'err_status_case'))
+          ..createSync(recursive: true);
+        Directory(p.join(src.path, 'Existing')).createSync();
+        File(p.join(src.path, 'Existing', 'ok.txt')).writeAsBytesSync([1, 2]);
+
+        final server = FakeRemoteServerState();
+        final provider = buildProvider(server: server);
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setSourcePath(src.path)
+          ..setSubfolders('Existing, MissingSub')
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(false);
+
+        await provider.runNow();
+
+        expect(provider.filesUploaded, 1);
+        expect(provider.errors, 1);
+        expect(provider.currentStatus, contains('Completed with 1 error(s)'));
+
+        final records = await HistoryService().loadHistory(
+          operation: 'FTP',
+          allProfiles: false,
+        );
+        expect(records, hasLength(1));
+        expect(records.first.status, 'Error');
+        expect(records.first.errors, 1);
+
+        final logFiles =
+            Directory(FileLogger().logDirectoryPath)
+                .listSync()
+                .whereType<File>()
+                .where((f) => p.basename(f.path).startsWith('FTP_'))
+                .toList()
+              ..sort(
+                (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
+              );
+        expect(logFiles, isNotEmpty);
+        final latestLogContent = logFiles.first.readAsStringSync();
+        expect(latestLogContent, contains('COMPLETED WITH ERRORS (1)'));
+      },
+    );
+
+    test(
+      'logs warning when post-upload SIZE verification returns null',
+      () async {
+        await LocalDbService().init('ftp_test_null_size');
+        HistoryService().init('ftp_test_null_size');
+
+        final src = Directory(p.join(tempSourcesDir.path, 'null_size_case'))
+          ..createSync(recursive: true);
+        File(p.join(src.path, 'doc.pdf')).writeAsBytesSync([1, 2, 3]);
+
+        final server = FakeRemoteServerState()..returnNullRemoteSize = true;
+        final provider = buildProvider(server: server);
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setSourcePath(src.path)
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(false)
+          ..setVerifySizeAfterUpload(true);
+
+        await provider.runNow();
+
+        expect(provider.errors, 0);
+        expect(provider.filesUploaded, 1);
+        expect(
+          provider.logs.any((l) => l.contains('Size verification unavailable')),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'skips disabled sources in multi-source mode and logs audit date and zero-match scans',
+      () async {
+        await LocalDbService().init('ftp_test_disabled_src');
+        HistoryService().init('ftp_test_disabled_src');
+
+        final rootDisabled = Directory(
+          p.join(tempSourcesDir.path, 'disabled_src'),
+        )..createSync(recursive: true);
+        File(p.join(rootDisabled.path, 'skip_me.txt')).writeAsBytesSync([9, 9]);
+
+        final rootActive = Directory(p.join(tempSourcesDir.path, 'active_src'))
+          ..createSync(recursive: true);
+        final oldFile = File(p.join(rootActive.path, 'old.txt'))
+          ..writeAsBytesSync([1, 2]);
+        oldFile.setLastModifiedSync(DateTime(2026, 11, 10, 9, 0));
+
+        final server = FakeRemoteServerState();
+        final provider = buildProvider(
+          server: server,
+          nowProvider: () => DateTime(2026, 11, 23, 10, 0),
+        );
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setUseMultipleSources(true)
+          ..setDateType(FtpDateType.modified)
+          ..setDateMode(FtpDateMode.yesterday);
+
+        provider.addUploadSource();
+        provider
+          ..setSourceNameAt(0, 'DisabledTesting')
+          ..setSourcePathAt(0, rootDisabled.path)
+          ..setSourceEnabledAt(0, false)
+          ..setSourceNameAt(1, 'ActiveSource')
+          ..setSourcePathAt(1, rootActive.path)
+          ..setSourceEnabledAt(1, true);
+
+        await provider.runNow();
+
+        expect(provider.filesUploaded, 0);
+        expect(provider.filesChecked, 1);
+        expect(server.uploadCalls, isEmpty);
+        // Never connected because 0 files matched across active sources.
+        expect(server.connectCount, 0);
+        expect(
+          provider.logs.any(
+            (l) => l.contains('Skipping 1 disabled upload source'),
+          ),
+          isTrue,
+        );
+        expect(
+          provider.logs.any(
+            (l) =>
+                l.contains('Target date resolved to: 2026-11-22 (Yesterday)'),
+          ),
+          isTrue,
+        );
+        expect(
+          provider.logs.any((l) => l.contains('1 checked, 0 matched')),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'FileLogger.pruneOldLogs deletes expired matching logs and respects keepDays == 0',
+      () async {
+        final logsDir = Directory(FileLogger().logDirectoryPath)
+          ..createSync(recursive: true);
+        final now = DateTime(2026, 11, 23, 12, 0);
+
+        final oldFtp = File(p.join(logsDir.path, 'FTP_2026-10-01_OLD.log'))
+          ..writeAsStringSync('old ftp');
+        final recentFtp = File(p.join(logsDir.path, 'FTP_2026-11-20_NEW.log'))
+          ..writeAsStringSync('recent ftp');
+        final oldTransfer = File(
+          p.join(logsDir.path, 'TRANSFER_2026-10-01_OTHER.log'),
+        )..writeAsStringSync('old transfer');
+
+        oldFtp.setLastModifiedSync(now.subtract(const Duration(days: 40)));
+        recentFtp.setLastModifiedSync(now.subtract(const Duration(days: 3)));
+        oldTransfer.setLastModifiedSync(now.subtract(const Duration(days: 40)));
+
+        addTearDown(() {
+          for (final f in [oldFtp, recentFtp, oldTransfer]) {
+            if (f.existsSync()) f.deleteSync();
+          }
+        });
+
+        final foreverCount = await FileLogger().pruneOldLogs(
+          keepDays: 0,
+          operationPrefix: 'FTP',
+          now: now,
+        );
+        expect(foreverCount, 0);
+        expect(oldFtp.existsSync(), isTrue);
+
+        final pruned = await FileLogger().pruneOldLogs(
+          keepDays: 30,
+          operationPrefix: 'FTP',
+          now: now,
+        );
+        expect(pruned, 1);
+        expect(oldFtp.existsSync(), isFalse);
+        expect(recentFtp.existsSync(), isTrue);
+        expect(oldTransfer.existsSync(), isTrue);
       },
     );
   });

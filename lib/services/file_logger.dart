@@ -42,6 +42,9 @@ class FileLogger {
   /// Whether the log directory has been verified to exist.
   bool _directoryVerified = false;
 
+  // Gene - Nov, 23, 2026: Expose log directory path for UI shortcuts and retention checks.
+  String get logDirectoryPath => _logDirectory;
+
   /// Ensures the log directory exists (cached after first check).
   Future<void> _ensureDirectory() async {
     if (_directoryVerified) return;
@@ -240,8 +243,19 @@ class FileLogger {
     if (throughput != null) {
       await info(operation, '║  Throughput:        $throughput');
     }
+    //     if (wasStopped) {
+    //       await info(operation, '║  Status:           ⛔ STOPPED BY USER');
+    //     } else {
+    //       await info(operation, '║  Status:           ✅ COMPLETED SUCCESSFULLY');
+    //     }
+    // Gene - Nov, 23, 2026: Surface non-zero errors in the run summary footer instead of reporting pure success.
     if (wasStopped) {
       await info(operation, '║  Status:           ⛔ STOPPED BY USER');
+    } else if (errors > 0) {
+      await error(
+        operation,
+        '║  Status:           ⚠️ COMPLETED WITH ERRORS ($errors)',
+      );
     } else {
       await info(operation, '║  Status:           ✅ COMPLETED SUCCESSFULLY');
     }
@@ -284,4 +298,78 @@ class FileLogger {
 
   /// Gets the start time for an active operation (for elapsed time display).
   DateTime? getStartTime(String operation) => _runStartTimes[operation];
+
+  // Gene - Nov, 23, 2026: Prune expired .log files older than keepDays while protecting active run files.
+  Future<int> pruneOldLogs({
+    required int keepDays,
+    String? operationPrefix,
+    DateTime? now,
+  }) async {
+    if (keepDays <= 0) return 0;
+    final dir = Directory(_logDirectory);
+    if (!await dir.exists()) return 0;
+
+    final cutoff = (now ?? DateTime.now()).subtract(Duration(days: keepDays));
+    final activePaths = _activeRunFiles.values.map((f) => f.path).toSet();
+    final safePrefix = operationPrefix?.replaceAll(
+      RegExp(r'[<>:"/\\|?*]'),
+      '_',
+    );
+    int deleted = 0;
+
+    try {
+      await for (final entity in dir.list(
+        recursive: false,
+        followLinks: false,
+      )) {
+        if (entity is! File) continue;
+        if (activePaths.contains(entity.path)) continue;
+
+        final name = p.basename(entity.path);
+        if (!name.toLowerCase().endsWith('.log')) continue;
+        if (safePrefix != null && !name.startsWith('${safePrefix}_')) continue;
+
+        try {
+          final stat = await entity.stat();
+          if (stat.modified.isBefore(cutoff)) {
+            await entity.delete();
+            deleted++;
+          }
+        } catch (_) {
+          // Ignore locked or inaccessible log files.
+        }
+      }
+    } catch (_) {
+      // Ignore directory listing failures.
+    }
+    return deleted;
+  }
+
+  // Gene - Nov, 23, 2026: Open the application logs folder in the OS file explorer.
+  Future<bool> openLogDirectory() async {
+    try {
+      await _ensureDirectory();
+      if (Platform.isMacOS) {
+        await Process.start('open', [
+          _logDirectory,
+        ], mode: ProcessStartMode.detached);
+        return true;
+      }
+      if (Platform.isWindows) {
+        await Process.start('explorer.exe', [
+          _logDirectory,
+        ], mode: ProcessStartMode.detached);
+        return true;
+      }
+      if (Platform.isLinux) {
+        await Process.start('xdg-open', [
+          _logDirectory,
+        ], mode: ProcessStartMode.detached);
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
 }

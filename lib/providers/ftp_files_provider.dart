@@ -12,6 +12,8 @@ import '../models/run_record.dart';
 import '../services/credential_obfuscator.dart';
 import '../services/file_creation_date.dart';
 import '../services/file_logger.dart';
+// Gene - Nov, 23, 2026: Import config.ini / .env parser for FTP automation configuration imports.
+import '../services/ftp_ini_importer.dart';
 import '../services/ftp_transfer_service.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
@@ -70,6 +72,17 @@ class _QueuedUploadFile {
   const _QueuedUploadFile({required this.file, required this.size});
 }
 
+// Gene - Nov, 23, 2026: Holds both checked file count and matched files from a subfolder scan.
+class _SubfolderScanResult {
+  final int checkedCount;
+  final List<_QueuedUploadFile> matched;
+
+  const _SubfolderScanResult({
+    required this.checkedCount,
+    required this.matched,
+  });
+}
+
 class FtpFilesProvider with ChangeNotifier {
   final Logger _log = Logger('FtpFilesProvider');
   final FileLogger _fileLogger = FileLogger();
@@ -110,6 +123,8 @@ class FtpFilesProvider with ChangeNotifier {
   int retryCount = 3;
   int retryDelaySeconds = 5;
   int logInterval = 1;
+  // Gene - Nov, 23, 2026: Configurable FTP log retention window in days (0 = keep forever).
+  int logKeepDays = 30;
 
   // Schedule settings
   bool enableSchedule = false;
@@ -139,12 +154,21 @@ class FtpFilesProvider with ChangeNotifier {
   int filesChecked = 0;
   int errors = 0;
 
+  // Gene - Nov, 23, 2026: Live per-file transfer progress fields for UI display only.
+  String? activeUploadFileName;
+  int activeUploadSentBytes = 0;
+  int activeUploadTotalBytes = 0;
+  double? activeUploadProgress;
+  double activeUploadBytesPerSecond = 0;
+
   int settingsVersion = 0;
 
   bool _stopRequested = false;
   bool _disposed = false;
   Timer? _scheduleTimer;
   FtpClientAdapter? _activeClient;
+  DateTime? _uploadFileStartTime;
+  DateTime? _lastProgressNotifyAt;
   bool _saveInFlight = false;
   bool _savePending = false;
   Completer<void>? _saveIdleCompleter;
@@ -192,9 +216,16 @@ class FtpFilesProvider with ChangeNotifier {
   bool get hasValidConnection =>
       host.trim().isNotEmpty && port >= 1 && port <= 65535;
 
+  //   bool get hasValidSources {
+  //     if (useMultipleSources) {
+  //       return uploadSources.any((s) => s.isValid);
+  //     }
+  //     return sourcePath != null && sourcePath!.trim().isNotEmpty;
+  //   }
+  // Gene - Nov, 23, 2026: Require at least one enabled and valid source when Multiple Sources is active.
   bool get hasValidSources {
     if (useMultipleSources) {
-      return uploadSources.any((s) => s.isValid);
+      return uploadSources.any((s) => s.enabled && s.isValid);
     }
     return sourcePath != null && sourcePath!.trim().isNotEmpty;
   }
@@ -301,6 +332,69 @@ class FtpFilesProvider with ChangeNotifier {
     }
   }
 
+  // Gene - Nov, 23, 2026: Human-readable byte size formatting and resolved target date description helpers.
+  static String formatByteSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    if (bytes < 1024 * 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024 * 1024)).toStringAsFixed(2)} TB';
+  }
+
+  static String describeTargetDate({
+    required FtpDateMode dateMode,
+    required DateTime referenceNow,
+    required int daysAgo,
+    required DateTime specificDate,
+    required DateTime fromDate,
+    required DateTime toDate,
+  }) {
+    final fmt = DateFormat('yyyy-MM-dd');
+    final refDay = DateTime(
+      referenceNow.year,
+      referenceNow.month,
+      referenceNow.day,
+    );
+    switch (dateMode) {
+      case FtpDateMode.today:
+        return '${fmt.format(refDay)} (Today)';
+      case FtpDateMode.yesterday:
+        return '${fmt.format(refDay.subtract(const Duration(days: 1)))} (Yesterday)';
+      case FtpDateMode.daysAgo:
+        final safeDays = daysAgo < 0 ? 0 : daysAgo;
+        return '${fmt.format(refDay.subtract(Duration(days: safeDays)))} ($safeDays days ago)';
+      case FtpDateMode.specificDate:
+        final spec = DateTime(
+          specificDate.year,
+          specificDate.month,
+          specificDate.day,
+        );
+        return '${fmt.format(spec)} (Specific Date)';
+      case FtpDateMode.dateRange:
+        final from = DateTime(fromDate.year, fromDate.month, fromDate.day);
+        final to = DateTime(toDate.year, toDate.month, toDate.day);
+        return '${fmt.format(from)} to ${fmt.format(to)}';
+      case FtpDateMode.allFiles:
+        return 'All dates';
+    }
+  }
+
+  void _clearActiveUploadProgress() {
+    activeUploadFileName = null;
+    activeUploadSentBytes = 0;
+    activeUploadTotalBytes = 0;
+    activeUploadProgress = null;
+    activeUploadBytesPerSecond = 0;
+    _uploadFileStartTime = null;
+    _lastProgressNotifyAt = null;
+  }
+
   // --- Logging ---
 
   void _addLog(String message) {
@@ -391,6 +485,8 @@ class FtpFilesProvider with ChangeNotifier {
     retryCount = db.getInt('ftp_retryCount') ?? 3;
     retryDelaySeconds = db.getInt('ftp_retryDelaySeconds') ?? 5;
     logInterval = db.getInt('ftp_logInterval') ?? 1;
+    // Gene - Nov, 23, 2026: Load persisted FTP log retention days (default 30).
+    logKeepDays = (db.getInt('ftp_logKeepDays') ?? 30).clamp(0, 365);
 
     enableSchedule = db.getBool('ftp_enableSchedule') ?? false;
     final runHour = db.getInt('ftp_runHour');
@@ -447,6 +543,25 @@ class FtpFilesProvider with ChangeNotifier {
     if (_saveIdleCompleter != null) {
       await _saveIdleCompleter!.future;
     }
+  }
+
+  // Gene - Nov, 23, 2026: Test hook to drive live upload progress UI state in widget tests without real disk/SQLite I/O.
+  @visibleForTesting
+  void setUploadProgressForTest({
+    required bool uploading,
+    String? fileName,
+    int sentBytes = 0,
+    int totalBytes = 0,
+    double? progress,
+    double bytesPerSecond = 0,
+  }) {
+    isUploading = uploading;
+    activeUploadFileName = fileName;
+    activeUploadSentBytes = sentBytes;
+    activeUploadTotalBytes = totalBytes;
+    activeUploadProgress = progress;
+    activeUploadBytesPerSecond = bytesPerSecond;
+    notifyListeners();
   }
 
   Future<void> _writeSettings() async {
@@ -506,6 +621,8 @@ class FtpFilesProvider with ChangeNotifier {
     await db.setInt('ftp_retryCount', retryCount);
     await db.setInt('ftp_retryDelaySeconds', retryDelaySeconds);
     await db.setInt('ftp_logInterval', logInterval);
+    // Gene - Nov, 23, 2026: Persist FTP log retention days.
+    await db.setInt('ftp_logKeepDays', logKeepDays);
 
     await db.setBool('ftp_enableSchedule', enableSchedule);
     await db.setInt('ftp_runHour', runTime.hour);
@@ -680,6 +797,14 @@ class FtpFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Gene - Nov, 23, 2026: Toggle individual source active state without removing its configuration.
+  void setSourceEnabledAt(int index, bool enabled) {
+    if (index < 0 || index >= uploadSources.length) return;
+    uploadSources[index] = uploadSources[index].copyWith(enabled: enabled);
+    _saveSettings();
+    notifyListeners();
+  }
+
   void setDateMode(FtpDateMode mode) {
     dateMode = mode;
     _saveSettings();
@@ -763,6 +888,135 @@ class FtpFilesProvider with ChangeNotifier {
     _saveSettings();
     notifyListeners();
   }
+
+  // Gene - Nov, 23, 2026: Log retention setter, config.ini/.env importer, and OS logs folder launcher.
+  void setLogKeepDays(int days) {
+    logKeepDays = days.clamp(0, 365);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  String applyImportedConfig(FtpIniImportResult imported) {
+    final changes = <String>[];
+
+    if (imported.host != null) {
+      host = imported.host!;
+      changes.add('host');
+    }
+    if (imported.protocol != null) {
+      protocol = imported.protocol!;
+      if (imported.port == null) {
+        port = protocol.defaultPort;
+      }
+      changes.add('protocol (${protocol.shortLabel})');
+    }
+    if (imported.port != null) {
+      port = imported.port!;
+      changes.add('port $port');
+    }
+    if (imported.username != null) {
+      username = imported.username!;
+      changes.add('username');
+    }
+    if (imported.password != null) {
+      password = imported.password!;
+      changes.add('password');
+    }
+    if (imported.daysAgo != null) {
+      final d = imported.daysAgo!;
+      if (d == 0) {
+        dateMode = FtpDateMode.today;
+      } else if (d == 1) {
+        dateMode = FtpDateMode.yesterday;
+      } else {
+        dateMode = FtpDateMode.daysAgo;
+        daysAgo = d.clamp(0, 365);
+      }
+      changes.add('daysAgo=$d');
+    }
+    if (imported.timeoutSeconds != null) {
+      timeoutSeconds = imported.timeoutSeconds!.clamp(5, 600);
+    }
+    if (imported.retryCount != null) {
+      retryCount = imported.retryCount!.clamp(1, 10);
+    }
+    if (imported.retryDelaySeconds != null) {
+      retryDelaySeconds = imported.retryDelaySeconds!.clamp(0, 120);
+    }
+    if (imported.dryRun != null) {
+      dryRun = imported.dryRun!;
+    }
+    if (imported.logKeepDays != null) {
+      logKeepDays = imported.logKeepDays!.clamp(0, 365);
+      changes.add('logKeepDays=$logKeepDays');
+    }
+
+    if (imported.sources.isNotEmpty) {
+      if (imported.sources.length > 1) {
+        useMultipleSources = true;
+        uploadSources = List<FtpUploadSource>.from(imported.sources);
+      } else {
+        final single = imported.sources.first;
+        useMultipleSources = false;
+        sourcePath = single.localPath;
+        subfolders = single.subfolders;
+        remoteDirectory = single.ftpDest;
+        uploadSources = List<FtpUploadSource>.from(imported.sources);
+      }
+      if (imported.sources.any((s) => s.parsedSubfolders.isEmpty)) {
+        includeSubfolders = true;
+      }
+      changes.add('${imported.sources.length} source(s)');
+    }
+
+    settingsVersion++;
+    _saveSettings();
+
+    final summary = changes.isEmpty ? 'settings updated' : changes.join(', ');
+    _addLog('📥 Imported configuration: $summary');
+    notifyListeners();
+    return 'Imported: $summary';
+  }
+
+  Future<String?> importConfigFromDisk() async {
+    final picked = await openFile();
+    if (picked == null) return null;
+
+    try {
+      final content = await File(picked.path).readAsString();
+      final baseName = p.basename(picked.path).toLowerCase();
+      final parentDir = p.dirname(picked.path);
+
+      String? iniContent;
+      String? envContent;
+      if (baseName == '.env' || baseName.endsWith('.env')) {
+        envContent = content;
+        final siblingIni = File(p.join(parentDir, 'config.ini'));
+        if (await siblingIni.exists()) {
+          iniContent = await siblingIni.readAsString();
+        }
+      } else {
+        iniContent = content;
+        final siblingEnv = File(p.join(parentDir, '.env'));
+        if (await siblingEnv.exists()) {
+          envContent = await siblingEnv.readAsString();
+        }
+      }
+
+      final parsed = FtpIniImporter.parse(
+        iniContent: iniContent,
+        envContent: envContent,
+      );
+      if (parsed.isEmpty) {
+        return 'No recognizable FTP settings found in ${p.basename(picked.path)}.';
+      }
+      return applyImportedConfig(parsed);
+    } catch (e) {
+      return 'Failed to import config: ${CredentialObfuscator.redact(e.toString(), password)}';
+    }
+  }
+
+  Future<bool> openLogsFolder() => _fileLogger.openLogDirectory();
 
   void setEnableSchedule(bool val) {
     enableSchedule = val;
@@ -953,6 +1207,29 @@ class FtpFilesProvider with ChangeNotifier {
 
   // --- Upload Engine ---
 
+  //   List<FtpUploadSource> _getOrderedSources() {
+  //     if (!useMultipleSources) {
+  //       return [
+  //         FtpUploadSource(
+  //           name: 'Default',
+  //           localPath: sourcePath,
+  //           subfolders: subfolders,
+  //           ftpDest: remoteDirectory,
+  //           runOrder: 1,
+  //         ),
+  //       ];
+  //     }
+  //
+  //     final valid = uploadSources.where((s) => s.isValid).toList();
+  //     // Sort stably by runOrder while preserving insertion order for ties.
+  //     final indexed = valid.asMap().entries.toList()
+  //       ..sort((a, b) {
+  //         final cmp = a.value.runOrder.compareTo(b.value.runOrder);
+  //         return cmp != 0 ? cmp : a.key.compareTo(b.key);
+  //       });
+  //     return indexed.map((e) => e.value).toList();
+  //   }
+  // Gene - Nov, 23, 2026: Skip disabled multi-source entries while preserving runOrder sorting.
   List<FtpUploadSource> _getOrderedSources() {
     if (!useMultipleSources) {
       return [
@@ -966,7 +1243,7 @@ class FtpFilesProvider with ChangeNotifier {
       ];
     }
 
-    final valid = uploadSources.where((s) => s.isValid).toList();
+    final valid = uploadSources.where((s) => s.enabled && s.isValid).toList();
     // Sort stably by runOrder while preserving insertion order for ties.
     final indexed = valid.asMap().entries.toList()
       ..sort((a, b) {
@@ -1099,7 +1376,80 @@ class FtpFilesProvider with ChangeNotifier {
     }
   }
 
-  Future<List<_QueuedUploadFile>> _scanSubfolderFiles(
+  //   Future<List<_QueuedUploadFile>> _scanSubfolderFiles(
+  //     _SubfolderWorkItem item,
+  //     DateTime referenceNow,
+  //   ) async {
+  //     final candidateFiles = <File>[];
+  //     final statsByPath = <String, FileStat>{};
+  //
+  //     try {
+  //       await for (final entity in Directory(
+  //         item.localDir,
+  //       ).list(recursive: false, followLinks: false)) {
+  //         if (_stopRequested) break;
+  //         if (entity is File) {
+  //           if (!await resolvesWithinRoot(item.rootPath, entity.path)) {
+  //             continue;
+  //           }
+  //           try {
+  //             final stats = await entity.stat();
+  //             if (stats.type == FileSystemEntityType.file) {
+  //               candidateFiles.add(entity);
+  //               statsByPath[entity.path] = stats;
+  //             }
+  //           } catch (e) {
+  //             errors++;
+  //             _addLog('⚠️ Failed to stat ${entity.path}: $e');
+  //           }
+  //         }
+  //       }
+  //     } catch (e) {
+  //       errors++;
+  //       final safeErr = CredentialObfuscator.redact(e.toString(), password);
+  //       _addLog('⚠️ Failed scanning ${item.localDir}: $safeErr');
+  //       await _fileLogger.error(
+  //         'FTP',
+  //         'Failed scanning ${item.localDir}: $safeErr',
+  //       );
+  //       return [];
+  //     }
+  //
+  //     if (candidateFiles.isEmpty) return [];
+  //
+  //     Map<String, DateTime> creationDates = const {};
+  //     if (dateType == FtpDateType.creation) {
+  //       creationDates = await getCreationDatesForFiles(
+  //         candidateFiles,
+  //         statsByPath,
+  //       );
+  //     }
+  //
+  //     final matched = <_QueuedUploadFile>[];
+  //     for (final file in candidateFiles) {
+  //       if (_stopRequested) break;
+  //       final stats = statsByPath[file.path]!;
+  //       filesChecked++;
+  //       final fileDate = dateType == FtpDateType.creation
+  //           ? (creationDates[file.path] ?? stats.changed)
+  //           : stats.modified;
+  //
+  //       if (matchesDateFilter(
+  //         fileDate: fileDate,
+  //         dateMode: dateMode,
+  //         referenceNow: referenceNow,
+  //         daysAgo: daysAgo,
+  //         specificDate: specificDate,
+  //         fromDate: fromDate,
+  //         toDate: toDate,
+  //       )) {
+  //         matched.add(_QueuedUploadFile(file: file, size: stats.size));
+  //       }
+  //     }
+  //     return matched;
+  //   }
+  // Gene - Nov, 23, 2026: Return per-subfolder checked counts alongside matched files for clearer audit logs.
+  Future<_SubfolderScanResult> _scanSubfolderFiles(
     _SubfolderWorkItem item,
     DateTime referenceNow,
   ) async {
@@ -1135,10 +1485,12 @@ class FtpFilesProvider with ChangeNotifier {
         'FTP',
         'Failed scanning ${item.localDir}: $safeErr',
       );
-      return [];
+      return const _SubfolderScanResult(checkedCount: 0, matched: []);
     }
 
-    if (candidateFiles.isEmpty) return [];
+    if (candidateFiles.isEmpty) {
+      return const _SubfolderScanResult(checkedCount: 0, matched: []);
+    }
 
     Map<String, DateTime> creationDates = const {};
     if (dateType == FtpDateType.creation) {
@@ -1148,10 +1500,12 @@ class FtpFilesProvider with ChangeNotifier {
       );
     }
 
+    int checkedInFolder = 0;
     final matched = <_QueuedUploadFile>[];
     for (final file in candidateFiles) {
       if (_stopRequested) break;
       final stats = statsByPath[file.path]!;
+      checkedInFolder++;
       filesChecked++;
       final fileDate = dateType == FtpDateType.creation
           ? (creationDates[file.path] ?? stats.changed)
@@ -1169,7 +1523,435 @@ class FtpFilesProvider with ChangeNotifier {
         matched.add(_QueuedUploadFile(file: file, size: stats.size));
       }
     }
-    return matched;
+    return _SubfolderScanResult(
+      checkedCount: checkedInFolder,
+      matched: matched,
+    );
+  }
+
+  //   Future<void> _executeUploadPass({required bool isScheduledRun}) async {
+  //     if (isUploading) return;
+  //
+  //     _stopRequested = false;
+  //     isUploading = true;
+  //     filesUploaded = 0;
+  //     filesSkipped = 0;
+  //     filesChecked = 0;
+  //     errors = 0;
+  //
+  //     final startTime = _nowProvider();
+  //     final runRefNow = startTime;
+  //     final config = connectionConfig;
+  //     final sources = _getOrderedSources();
+  //
+  //     currentStatus = dryRun
+  //         ? '🧪 Dry run: connecting to ${config.host}...'
+  //         : '🔌 Connecting to ${config.host}...';
+  //
+  //     final sourceSummary = useMultipleSources
+  //         ? '${sources.length} sources (${sources.first.displayName}...)'
+  //         : (sourcePath ?? '');
+  //     final endpointSummary = useMultipleSources
+  //         ? config.displayEndpoint()
+  //         : config.displayEndpoint(remoteDirectory);
+  //
+  //     await _fileLogger.logRunStart(
+  //       operation: 'FTP',
+  //       sourcePath: sourceSummary,
+  //       destPath: endpointSummary,
+  //     );
+  //
+  //     _addLog(
+  //       dryRun
+  //           ? '🧪 Starting DRY RUN -> $endpointSummary (Mode: ${dateMode.label}, Date: ${dateType.label})'
+  //           : '🚀 Starting FTP upload -> $endpointSummary (Mode: ${dateMode.label}, Date: ${dateType.label})',
+  //     );
+  //     notifyListeners();
+  //
+  //     bool hadFatalError = false;
+  //     int foldersProcessed = 0;
+  //     FtpClientAdapter? client;
+  //
+  //     try {
+  //       final needsConnection = !dryRun || skipIfExists;
+  //       if (needsConnection) {
+  //         client = _clientFactory(config);
+  //         _activeClient = client;
+  //         await client.connect();
+  //         _addLog('✅ Connected to ${config.displayEndpoint()}');
+  //         await _fileLogger.info(
+  //           'FTP',
+  //           'Connected to ${config.displayEndpoint()}',
+  //         );
+  //       }
+  //
+  //       for (final source in sources) {
+  //         if (_stopRequested) break;
+  //         final workItems = await _buildWorkItems(source);
+  //
+  //         for (final workItem in workItems) {
+  //           if (_stopRequested) break;
+  //           foldersProcessed++;
+  //           currentStatus = dryRun
+  //               ? '🧪 Scanning ${p.basename(workItem.localDir)}...'
+  //               : '⏳ Scanning ${p.basename(workItem.localDir)}...';
+  //           notifyListeners();
+  //
+  //           // Step A: Local scan of current subfolder.
+  //           final miniQueue = await _scanSubfolderFiles(workItem, runRefNow);
+  //           if (miniQueue.isEmpty || _stopRequested) {
+  //             continue;
+  //           }
+  //
+  //           final remoteDisplay = workItem.remoteDir.isEmpty
+  //               ? '/'
+  //               : '/${workItem.remoteDir.startsWith('/') ? workItem.remoteDir.substring(1) : workItem.remoteDir}';
+  //           _addLog(
+  //             '📂 ${workItem.localDir} -> ${miniQueue.length} file(s) matched (target: $remoteDisplay)',
+  //           );
+  //           await _fileLogger.info(
+  //             'FTP',
+  //             '${workItem.localDir} -> ${miniQueue.length} matched for $remoteDisplay',
+  //           );
+  //
+  //           // Step B: Prepare remote directory and upload mini queue immediately.
+  //           Map<String, int?>? remoteSizes;
+  //           if (needsConnection && client == null) {
+  //             client = _clientFactory(config);
+  //             _activeClient = client;
+  //             await client.connect();
+  //           }
+  //           if (client != null) {
+  //             if (!dryRun) {
+  //               final dirReady = await client.ensureRemoteDirectory(
+  //                 workItem.remoteDir,
+  //               );
+  //               if (!dirReady) {
+  //                 errors++;
+  //                 final msg =
+  //                     '❌ Cannot access or create remote directory "$remoteDisplay"';
+  //                 _addLog(msg);
+  //                 await _fileLogger.error('FTP', msg);
+  //                 continue;
+  //               }
+  //               if (skipIfExists) {
+  //                 remoteSizes = await client.listRemoteFileSizes();
+  //               }
+  //             } else if (skipIfExists) {
+  //               final dirExists = await client.changeDirectory(
+  //                 workItem.remoteDir,
+  //               );
+  //               remoteSizes = dirExists
+  //                   ? await client.listRemoteFileSizes()
+  //                   : <String, int?>{};
+  //             }
+  //           }
+  //
+  //           for (final item in miniQueue) {
+  //             if (_stopRequested) break;
+  //             final fileName = p.basename(item.file.path);
+  //
+  //             if (skipIfExists && client != null) {
+  //               bool existsRemotely = false;
+  //               int? existingSize;
+  //
+  //               if (remoteSizes != null) {
+  //                 existsRemotely = remoteSizes.containsKey(fileName);
+  //                 existingSize = remoteSizes[fileName];
+  //                 if (existsRemotely && existingSize == null) {
+  //                   existingSize = await client.getRemoteFileSize(fileName);
+  //                 }
+  //               } else {
+  //                 existingSize = await client.getRemoteFileSize(fileName);
+  //                 existsRemotely = existingSize != null;
+  //               }
+  //
+  //               if (existsRemotely) {
+  //                 if (existingSize == item.size) {
+  //                   filesSkipped++;
+  //                   final skipMsg = dryRun
+  //                       ? '🧪 [DRY RUN] Would skip (already on FTP): $fileName'
+  //                       : '⏭ Skipped (already on FTP): $fileName';
+  //                   if (dryRun ||
+  //                       logInterval <= 1 ||
+  //                       filesSkipped % logInterval == 0) {
+  //                     _addLog(skipMsg);
+  //                   }
+  //                   await _fileLogger.info('FTP', skipMsg);
+  //                   notifyListeners();
+  //                   continue;
+  //                 } else {
+  //                   final diffMsg = dryRun
+  //                       ? '🧪 [DRY RUN] Would re-upload (size differs: remote=${existingSize ?? "?"}, local=${item.size}): $fileName'
+  //                       : '🔄 Size differs (remote=${existingSize ?? "?"}, local=${item.size}) — re-uploading: $fileName';
+  //                   _addLog(diffMsg);
+  //                   await _fileLogger.info('FTP', diffMsg);
+  //                 }
+  //               }
+  //             }
+  //
+  //             if (dryRun) {
+  //               filesUploaded++;
+  //               final dryMsg =
+  //                   '🧪 [DRY RUN] Would upload: $fileName (${_numFmt.format(item.size)} bytes) -> $remoteDisplay';
+  //               _addLog(dryMsg);
+  //               await _fileLogger.info('FTP', dryMsg);
+  //               notifyListeners();
+  //               continue;
+  //             }
+  //
+  //             currentStatus = '⬆️ Uploading $fileName...';
+  //             notifyListeners();
+  //
+  //             final maxAttempts = retryCount.clamp(1, 10);
+  //             for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+  //               if (_stopRequested) break;
+  //               try {
+  //                 if (client == null) {
+  //                   final freshClient = _clientFactory(config);
+  //                   _activeClient = freshClient;
+  //                   await freshClient.connect();
+  //                   final dirOk = await freshClient.ensureRemoteDirectory(
+  //                     workItem.remoteDir,
+  //                   );
+  //                   if (!dirOk) {
+  //                     await freshClient.disconnect();
+  //                     throw Exception(
+  //                       'Failed to enter remote folder "$remoteDisplay" after reconnect',
+  //                     );
+  //                   }
+  //                   client = freshClient;
+  //                 }
+  //
+  //                 final uploaded = await client.uploadFile(
+  //                   item.file,
+  //                   remoteName: fileName,
+  //                 );
+  //                 if (!uploaded) {
+  //                   throw Exception('Server rejected upload of $fileName');
+  //                 }
+  //
+  //                 if (verifySizeAfterUpload) {
+  //                   final remoteSize = await client.getRemoteFileSize(fileName);
+  //                   if (remoteSize != null &&
+  //                       remoteSize >= 0 &&
+  //                       remoteSize != item.size) {
+  //                     throw Exception(
+  //                       'Size verification mismatch for $fileName (local=${item.size}, remote=$remoteSize)',
+  //                     );
+  //                   }
+  //                 }
+  //
+  //                 filesUploaded++;
+  //                 if (logInterval <= 1 || filesUploaded % logInterval == 0) {
+  //                   _addLog(
+  //                     '✅ Uploaded ($filesUploaded): $fileName (${_numFmt.format(item.size)} bytes)',
+  //                   );
+  //                 }
+  //                 await _fileLogger.info(
+  //                   'FTP',
+  //                   'Uploaded $fileName (${item.size} bytes) to $remoteDisplay',
+  //                 );
+  //                 notifyListeners();
+  //                 break;
+  //               } catch (e) {
+  //                 if (_stopRequested) break;
+  //                 final safeErr = CredentialObfuscator.redact(
+  //                   e.toString(),
+  //                   password,
+  //                 );
+  //
+  //                 if (attempt < maxAttempts) {
+  //                   final warnMsg =
+  //                       '⚠️ Attempt $attempt/$maxAttempts failed for $fileName: $safeErr. Retrying in ${retryDelaySeconds}s...';
+  //                   _addLog(warnMsg);
+  //                   await _fileLogger.error('FTP', warnMsg);
+  //                   notifyListeners();
+  //
+  //                   await _cancellableDelay(Duration(seconds: retryDelaySeconds));
+  //                   if (_stopRequested) break;
+  //
+  //                   // Reconnect before retrying in case the socket dropped mid-transfer.
+  //                   await client?.disconnect();
+  //                   client = null;
+  //                   _activeClient = null;
+  //                   try {
+  //                     final nextClient = _clientFactory(config);
+  //                     _activeClient = nextClient;
+  //                     await nextClient.connect();
+  //                     final dirOk = await nextClient.ensureRemoteDirectory(
+  //                       workItem.remoteDir,
+  //                     );
+  //                     if (!dirOk) {
+  //                       await nextClient.disconnect();
+  //                       throw Exception(
+  //                         'Failed to re-enter remote folder "$remoteDisplay" after reconnect',
+  //                       );
+  //                     }
+  //                     client = nextClient;
+  //                   } catch (reconnectErr) {
+  //                     final safeReconnectErr = CredentialObfuscator.redact(
+  //                       reconnectErr.toString(),
+  //                       password,
+  //                     );
+  //                     final reconnectMsg =
+  //                         '⚠️ Reconnect failed before attempt ${attempt + 1}: $safeReconnectErr';
+  //                     _addLog(reconnectMsg);
+  //                     await _fileLogger.error('FTP', reconnectMsg);
+  //                     client = null;
+  //                     _activeClient = null;
+  //                   }
+  //                 } else {
+  //                   errors++;
+  //                   final failMsg =
+  //                       '❌ Failed uploading $fileName after $maxAttempts attempt(s): $safeErr';
+  //                   _addLog(failMsg);
+  //                   await _fileLogger.error('FTP', failMsg);
+  //                   notifyListeners();
+  //                 }
+  //               }
+  //             }
+  //           }
+  //         }
+  //       }
+  //     } catch (e, stack) {
+  //       if (!_stopRequested) {
+  //         hadFatalError = true;
+  //         errors++;
+  //         final safeErr = CredentialObfuscator.redact(e.toString(), password);
+  //         _log.severe('FTP upload critical error: $safeErr', stack);
+  //         _addLog('❌ FTP Error: $safeErr');
+  //         await _fileLogger.error('FTP', 'Critical Error: $safeErr');
+  //       }
+  //     } finally {
+  //       _activeClient = null;
+  //       await client?.disconnect();
+  //       isUploading = false;
+  //
+  //       final endTime = _nowProvider();
+  //       final runId = _fileLogger.getRunId('FTP') ?? 'RUN-FTP';
+  //       await _fileLogger.logRunEnd(
+  //         operation: 'FTP',
+  //         filesProcessed: filesUploaded,
+  //         errors: errors,
+  //         wasStopped: _stopRequested,
+  //       );
+  //
+  //       final statusLabel = _stopRequested
+  //           ? 'Stopped'
+  //           : (hadFatalError ? 'Error' : 'Completed');
+  //       final summaryPrefix = dryRun ? '[DRY RUN] ' : '';
+  //       final configSummary =
+  //           '$summaryPrefix${config.protocol.shortLabel} | Date: ${dateMode.label} (${dateType.label}) | Checked: ${_numFmt.format(filesChecked)} | Skipped: ${_numFmt.format(filesSkipped)}';
+  //
+  //       await HistoryService().saveRecord(
+  //         RunRecord(
+  //           id: runId,
+  //           operation: 'FTP',
+  //           startTime: startTime,
+  //           endTime: endTime,
+  //           filesProcessed: filesUploaded,
+  //           foldersProcessed: foldersProcessed,
+  //           errors: errors,
+  //           status: statusLabel,
+  //           configSummary: configSummary,
+  //           sourcePath: sourceSummary,
+  //           destPath: endpointSummary,
+  //         ),
+  //       );
+  //
+  //       if (_stopRequested) {
+  //         _scheduleTimer?.cancel();
+  //         _scheduleTimer = null;
+  //         isScheduleArmed = false;
+  //         nextScheduledRun = null;
+  //         currentStatus = '⛔ Stopped';
+  //         _addLog(
+  //           '⛔ Run stopped. Uploaded: ${_numFmt.format(filesUploaded)}, Skipped: ${_numFmt.format(filesSkipped)}, Errors: ${_numFmt.format(errors)}.',
+  //         );
+  //       } else if (isScheduledRun) {
+  //         if (onCompletionAction == 'repeat' &&
+  //             enableSchedule &&
+  //             hasCheckedScheduleDays) {
+  //           final next = computeNextScheduledRun(
+  //             now: _nowProvider(),
+  //             runTime: runTime,
+  //             runDays: runDays,
+  //           );
+  //           nextScheduledRun = next;
+  //           if (next != null) {
+  //             final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+  //             currentStatus = '🏁 Completed. Next run at $formatted';
+  //             _addLog(
+  //               '🏁 ${dryRun ? "Dry run" : "Upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted.',
+  //             );
+  //             _ensureScheduleTimerRunning();
+  //           } else {
+  //             isScheduleArmed = false;
+  //             _scheduleTimer?.cancel();
+  //             _scheduleTimer = null;
+  //             currentStatus = hadFatalError ? '❌ Error' : '✅ Completed';
+  //           }
+  //         } else {
+  //           isScheduleArmed = false;
+  //           nextScheduledRun = null;
+  //           _scheduleTimer?.cancel();
+  //           _scheduleTimer = null;
+  //           currentStatus = hadFatalError ? '❌ Error' : '✅ Completed';
+  //           _addLog(
+  //             '✅ Scheduled ${dryRun ? "dry run" : "upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+  //           );
+  //         }
+  //       } else {
+  //         if (isScheduleArmed) {
+  //           final next = computeNextScheduledRun(
+  //             now: _nowProvider(),
+  //             runTime: runTime,
+  //             runDays: runDays,
+  //           );
+  //           nextScheduledRun = next;
+  //           if (next != null) {
+  //             final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+  //             currentStatus = '⏰ Scheduled — Next run: $formatted';
+  //             _addLog(
+  //               '✅ Manual run finished (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Schedule remains armed for $formatted.',
+  //             );
+  //           }
+  //         } else {
+  //           currentStatus = hadFatalError
+  //               ? '❌ Error'
+  //               : (dryRun ? '✅ Dry Run Completed' : '✅ Completed');
+  //           _addLog(
+  //             '✅ ${dryRun ? "Dry run" : "Upload"} finished! Checked: $filesChecked, Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors.',
+  //           );
+  //         }
+  //       }
+  //
+  //       notifyListeners();
+  //     }
+  //   }
+  // Gene - Nov, 23, 2026: Added log retention pruning, audit date/scan logging, lazy connect + idle reconnect recovery, live progress, SIZE warning, and error status tracking.
+  Future<({bool ok, Map<String, int?>? sizes})> _prepareRemoteFolder(
+    FtpClientAdapter activeClient,
+    String remoteDir,
+  ) async {
+    if (!dryRun) {
+      final dirReady = await activeClient.ensureRemoteDirectory(remoteDir);
+      if (!dirReady) {
+        return (ok: false, sizes: null);
+      }
+      final sizes = skipIfExists
+          ? await activeClient.listRemoteFileSizes()
+          : null;
+      return (ok: true, sizes: sizes);
+    } else if (skipIfExists) {
+      final dirExists = await activeClient.changeDirectory(remoteDir);
+      final sizes = dirExists
+          ? await activeClient.listRemoteFileSizes()
+          : <String, int?>{};
+      return (ok: true, sizes: sizes);
+    }
+    return (ok: true, sizes: null);
   }
 
   Future<void> _executeUploadPass({required bool isScheduledRun}) async {
@@ -1181,6 +1963,7 @@ class FtpFilesProvider with ChangeNotifier {
     filesSkipped = 0;
     filesChecked = 0;
     errors = 0;
+    _clearActiveUploadProgress();
 
     final startTime = _nowProvider();
     final runRefNow = startTime;
@@ -1188,11 +1971,13 @@ class FtpFilesProvider with ChangeNotifier {
     final sources = _getOrderedSources();
 
     currentStatus = dryRun
-        ? '🧪 Dry run: connecting to ${config.host}...'
-        : '🔌 Connecting to ${config.host}...';
+        ? '🧪 Dry run: scanning sources...'
+        : '⏳ Scanning sources...';
 
     final sourceSummary = useMultipleSources
-        ? '${sources.length} sources (${sources.first.displayName}...)'
+        ? (sources.isEmpty
+              ? '0 active sources'
+              : '${sources.length} sources (${sources.first.displayName}...)')
         : (sourcePath ?? '');
     final endpointSummary = useMultipleSources
         ? config.displayEndpoint()
@@ -1204,11 +1989,48 @@ class FtpFilesProvider with ChangeNotifier {
       destPath: endpointSummary,
     );
 
+    final prunedLogs = await _fileLogger.pruneOldLogs(
+      keepDays: logKeepDays,
+      operationPrefix: 'FTP',
+      now: startTime,
+    );
+    if (prunedLogs > 0) {
+      final pruneMsg =
+          '🧹 Pruned $prunedLogs old FTP log file(s) older than $logKeepDays day(s).';
+      _addLog(pruneMsg);
+      await _fileLogger.info('FTP', pruneMsg);
+    }
+
     _addLog(
       dryRun
           ? '🧪 Starting DRY RUN -> $endpointSummary (Mode: ${dateMode.label}, Date: ${dateType.label})'
           : '🚀 Starting FTP upload -> $endpointSummary (Mode: ${dateMode.label}, Date: ${dateType.label})',
     );
+
+    final resolvedDateDesc = describeTargetDate(
+      dateMode: dateMode,
+      referenceNow: runRefNow,
+      daysAgo: daysAgo,
+      specificDate: specificDate,
+      fromDate: fromDate,
+      toDate: toDate,
+    );
+    final targetDateMsg =
+        '📅 Target date resolved to: $resolvedDateDesc (${dateType.label})';
+    _addLog(targetDateMsg);
+    await _fileLogger.info('FTP', targetDateMsg);
+
+    if (useMultipleSources) {
+      final disabledCount = uploadSources
+          .where((s) => !s.enabled && s.isValid)
+          .length;
+      if (disabledCount > 0) {
+        final skipSrcMsg =
+            '⏭ Skipping $disabledCount disabled upload source(s).';
+        _addLog(skipSrcMsg);
+        await _fileLogger.info('FTP', skipSrcMsg);
+      }
+    }
     notifyListeners();
 
     bool hadFatalError = false;
@@ -1217,19 +2039,24 @@ class FtpFilesProvider with ChangeNotifier {
 
     try {
       final needsConnection = !dryRun || skipIfExists;
-      if (needsConnection) {
-        client = _clientFactory(config);
-        _activeClient = client;
-        await client.connect();
-        _addLog('✅ Connected to ${config.displayEndpoint()}');
-        await _fileLogger.info(
-          'FTP',
-          'Connected to ${config.displayEndpoint()}',
-        );
-      }
 
       for (final source in sources) {
         if (_stopRequested) break;
+
+        final subFilterLabel = source.parsedSubfolders.isEmpty
+            ? (includeSubfolders ? 'ALL (nested)' : 'Root only')
+            : source.parsedSubfolders.join(', ');
+        final destLabel = source.ftpDest.trim().isEmpty
+            ? '/'
+            : '/${joinRemotePath(source.ftpDest, '').replaceFirst(RegExp(r'^/'), '')}';
+        _addLog(
+          '─── Source: ${source.displayName} (${source.localPath}) [Subfolders: $subFilterLabel -> $destLabel] ───',
+        );
+        await _fileLogger.info(
+          'FTP',
+          'Source ${source.displayName} (${source.localPath}) | Subfolders: $subFilterLabel | Dest: $destLabel',
+        );
+
         final workItems = await _buildWorkItems(source);
 
         for (final workItem in workItems) {
@@ -1241,8 +2068,15 @@ class FtpFilesProvider with ChangeNotifier {
           notifyListeners();
 
           // Step A: Local scan of current subfolder.
-          final miniQueue = await _scanSubfolderFiles(workItem, runRefNow);
-          if (miniQueue.isEmpty || _stopRequested) {
+          final scanResult = await _scanSubfolderFiles(workItem, runRefNow);
+          if (_stopRequested) break;
+
+          final miniQueue = scanResult.matched;
+          if (miniQueue.isEmpty) {
+            final emptyMsg =
+                '📂 ${workItem.localDir} -> ${scanResult.checkedCount} checked, 0 matched — skipping';
+            _addLog(emptyMsg);
+            await _fileLogger.info('FTP', emptyMsg);
             continue;
           }
 
@@ -1250,43 +2084,93 @@ class FtpFilesProvider with ChangeNotifier {
               ? '/'
               : '/${workItem.remoteDir.startsWith('/') ? workItem.remoteDir.substring(1) : workItem.remoteDir}';
           _addLog(
-            '📂 ${workItem.localDir} -> ${miniQueue.length} file(s) matched (target: $remoteDisplay)',
+            '📂 ${workItem.localDir} -> ${scanResult.checkedCount} checked, ${miniQueue.length} matched (target: $remoteDisplay)',
           );
           await _fileLogger.info(
             'FTP',
-            '${workItem.localDir} -> ${miniQueue.length} matched for $remoteDisplay',
+            '${workItem.localDir} -> ${scanResult.checkedCount} checked, ${miniQueue.length} matched for $remoteDisplay',
           );
 
-          // Step B: Prepare remote directory and upload mini queue immediately.
+          // Step B: Connect lazily if needed, prepare remote directory (with 1-time reconnect recovery), and upload immediately.
           Map<String, int?>? remoteSizes;
-          if (needsConnection && client == null) {
-            client = _clientFactory(config);
-            _activeClient = client;
-            await client.connect();
-          }
-          if (client != null) {
-            if (!dryRun) {
-              final dirReady = await client.ensureRemoteDirectory(
+          if (needsConnection) {
+            if (client == null) {
+              currentStatus = dryRun
+                  ? '🧪 Dry run: connecting to ${config.host}...'
+                  : '🔌 Connecting to ${config.host}...';
+              notifyListeners();
+              client = _clientFactory(config);
+              _activeClient = client;
+              await client.connect();
+              _addLog('✅ Connected to ${config.displayEndpoint()}');
+              await _fileLogger.info(
+                'FTP',
+                'Connected to ${config.displayEndpoint()}',
+              );
+            }
+
+            bool folderReady = false;
+            try {
+              final prep = await _prepareRemoteFolder(
+                client,
                 workItem.remoteDir,
               );
-              if (!dirReady) {
-                errors++;
+              if (!prep.ok) {
+                throw Exception(
+                  'Cannot access or create remote directory "$remoteDisplay"',
+                );
+              }
+              remoteSizes = prep.sizes;
+              folderReady = true;
+            } catch (dirErr) {
+              if (_stopRequested) break;
+              final safeDirErr = CredentialObfuscator.redact(
+                dirErr.toString(),
+                password,
+              );
+              final reconnWarn =
+                  '⚠️ Connection interrupted before "$remoteDisplay" ($safeDirErr) — reconnecting...';
+              _addLog(reconnWarn);
+              await _fileLogger.error('FTP', reconnWarn);
+
+              await client.disconnect();
+              client = null;
+              _activeClient = null;
+
+              try {
+                final freshClient = _clientFactory(config);
+                _activeClient = freshClient;
+                await freshClient.connect();
+                client = freshClient;
+                final retryPrep = await _prepareRemoteFolder(
+                  client,
+                  workItem.remoteDir,
+                );
+                if (!retryPrep.ok) {
+                  throw Exception(
+                    'Cannot access or create remote directory "$remoteDisplay"',
+                  );
+                }
+                remoteSizes = retryPrep.sizes;
+                folderReady = true;
+              } catch (retryErr) {
+                final safeRetryErr = CredentialObfuscator.redact(
+                  retryErr.toString(),
+                  password,
+                );
                 final msg =
-                    '❌ Cannot access or create remote directory "$remoteDisplay"';
+                    '❌ Cannot access or create remote directory "$remoteDisplay": $safeRetryErr';
                 _addLog(msg);
                 await _fileLogger.error('FTP', msg);
-                continue;
+                await client?.disconnect();
+                client = null;
+                _activeClient = null;
+                errors++;
               }
-              if (skipIfExists) {
-                remoteSizes = await client.listRemoteFileSizes();
-              }
-            } else if (skipIfExists) {
-              final dirExists = await client.changeDirectory(
-                workItem.remoteDir,
-              );
-              remoteSizes = dirExists
-                  ? await client.listRemoteFileSizes()
-                  : <String, int?>{};
+            }
+
+            if (!folderReady || _stopRequested) {
+              continue;
             }
           }
 
@@ -1343,116 +2227,171 @@ class FtpFilesProvider with ChangeNotifier {
               continue;
             }
 
+            activeUploadFileName = fileName;
+            activeUploadSentBytes = 0;
+            activeUploadTotalBytes = item.size;
+            activeUploadProgress = item.size == 0 ? 1.0 : 0.0;
+            activeUploadBytesPerSecond = 0;
+            _uploadFileStartTime = DateTime.now();
+            _lastProgressNotifyAt = null;
             currentStatus = '⬆️ Uploading $fileName...';
             notifyListeners();
 
-            final maxAttempts = retryCount.clamp(1, 10);
-            for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-              if (_stopRequested) break;
-              try {
-                if (client == null) {
-                  final freshClient = _clientFactory(config);
-                  _activeClient = freshClient;
-                  await freshClient.connect();
-                  final dirOk = await freshClient.ensureRemoteDirectory(
-                    workItem.remoteDir,
-                  );
-                  if (!dirOk) {
-                    await freshClient.disconnect();
-                    throw Exception(
-                      'Failed to enter remote folder "$remoteDisplay" after reconnect',
-                    );
-                  }
-                  client = freshClient;
-                }
-
-                final uploaded = await client.uploadFile(
-                  item.file,
-                  remoteName: fileName,
-                );
-                if (!uploaded) {
-                  throw Exception('Server rejected upload of $fileName');
-                }
-
-                if (verifySizeAfterUpload) {
-                  final remoteSize = await client.getRemoteFileSize(fileName);
-                  if (remoteSize != null &&
-                      remoteSize >= 0 &&
-                      remoteSize != item.size) {
-                    throw Exception(
-                      'Size verification mismatch for $fileName (local=${item.size}, remote=$remoteSize)',
-                    );
-                  }
-                }
-
-                filesUploaded++;
-                if (logInterval <= 1 || filesUploaded % logInterval == 0) {
-                  _addLog(
-                    '✅ Uploaded ($filesUploaded): $fileName (${_numFmt.format(item.size)} bytes)',
-                  );
-                }
-                await _fileLogger.info(
-                  'FTP',
-                  'Uploaded $fileName (${item.size} bytes) to $remoteDisplay',
-                );
-                notifyListeners();
-                break;
-              } catch (e) {
+            try {
+              final maxAttempts = retryCount.clamp(1, 10);
+              for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                 if (_stopRequested) break;
-                final safeErr = CredentialObfuscator.redact(
-                  e.toString(),
-                  password,
-                );
-
-                if (attempt < maxAttempts) {
-                  final warnMsg =
-                      '⚠️ Attempt $attempt/$maxAttempts failed for $fileName: $safeErr. Retrying in ${retryDelaySeconds}s...';
-                  _addLog(warnMsg);
-                  await _fileLogger.error('FTP', warnMsg);
-                  notifyListeners();
-
-                  await _cancellableDelay(Duration(seconds: retryDelaySeconds));
-                  if (_stopRequested) break;
-
-                  // Reconnect before retrying in case the socket dropped mid-transfer.
-                  await client?.disconnect();
-                  client = null;
-                  _activeClient = null;
-                  try {
-                    final nextClient = _clientFactory(config);
-                    _activeClient = nextClient;
-                    await nextClient.connect();
-                    final dirOk = await nextClient.ensureRemoteDirectory(
+                try {
+                  if (client == null) {
+                    final freshClient = _clientFactory(config);
+                    _activeClient = freshClient;
+                    await freshClient.connect();
+                    final dirOk = await freshClient.ensureRemoteDirectory(
                       workItem.remoteDir,
                     );
                     if (!dirOk) {
-                      await nextClient.disconnect();
+                      await freshClient.disconnect();
                       throw Exception(
-                        'Failed to re-enter remote folder "$remoteDisplay" after reconnect',
+                        'Failed to enter remote folder "$remoteDisplay" after reconnect',
                       );
                     }
-                    client = nextClient;
-                  } catch (reconnectErr) {
-                    final safeReconnectErr = CredentialObfuscator.redact(
-                      reconnectErr.toString(),
-                      password,
+                    client = freshClient;
+                  }
+
+                  _uploadFileStartTime = DateTime.now();
+                  _lastProgressNotifyAt = null;
+                  final uploaded = await client.uploadFile(
+                    item.file,
+                    remoteName: fileName,
+                    onProgress: (percent, sent, total) {
+                      if (_stopRequested) return;
+                      final effectiveTotal = total > 0 ? total : item.size;
+                      final normalizedProgress = effectiveTotal > 0
+                          ? (sent / effectiveTotal).clamp(0.0, 1.0)
+                          : (percent / 100.0).clamp(0.0, 1.0);
+                      final elapsedMs = _uploadFileStartTime == null
+                          ? 0
+                          : DateTime.now()
+                                .difference(_uploadFileStartTime!)
+                                .inMilliseconds;
+                      final bps = elapsedMs > 0
+                          ? (sent * 1000.0) / elapsedMs
+                          : 0.0;
+
+                      activeUploadFileName = fileName;
+                      activeUploadSentBytes = sent;
+                      activeUploadTotalBytes = effectiveTotal;
+                      activeUploadProgress = normalizedProgress;
+                      activeUploadBytesPerSecond = bps;
+
+                      final pctLabel = (normalizedProgress * 100)
+                          .toStringAsFixed(1);
+                      currentStatus =
+                          '⬆️ Uploading $fileName ($pctLabel% • ${formatByteSize(sent)} / ${formatByteSize(effectiveTotal)})';
+
+                      final nowTick = DateTime.now();
+                      final shouldNotify =
+                          _lastProgressNotifyAt == null ||
+                          sent >= effectiveTotal ||
+                          nowTick.difference(_lastProgressNotifyAt!) >=
+                              const Duration(milliseconds: 200);
+                      if (shouldNotify) {
+                        _lastProgressNotifyAt = nowTick;
+                        notifyListeners();
+                      }
+                    },
+                  );
+                  if (!uploaded) {
+                    throw Exception('Server rejected upload of $fileName');
+                  }
+
+                  if (verifySizeAfterUpload) {
+                    final remoteSize = await client.getRemoteFileSize(fileName);
+                    if (remoteSize == null) {
+                      final warnMsg =
+                          '⚠️ Size verification unavailable for $fileName (server did not return remote size)';
+                      _addLog(warnMsg);
+                      await _fileLogger.info('FTP', warnMsg);
+                    } else if (remoteSize >= 0 && remoteSize != item.size) {
+                      throw Exception(
+                        'Size verification mismatch for $fileName (local=${item.size}, remote=$remoteSize)',
+                      );
+                    }
+                  }
+
+                  filesUploaded++;
+                  if (logInterval <= 1 || filesUploaded % logInterval == 0) {
+                    _addLog(
+                      '✅ Uploaded ($filesUploaded): $fileName (${_numFmt.format(item.size)} bytes)',
                     );
-                    final reconnectMsg =
-                        '⚠️ Reconnect failed before attempt ${attempt + 1}: $safeReconnectErr';
-                    _addLog(reconnectMsg);
-                    await _fileLogger.error('FTP', reconnectMsg);
+                  }
+                  await _fileLogger.info(
+                    'FTP',
+                    'Uploaded $fileName (${item.size} bytes) to $remoteDisplay',
+                  );
+                  notifyListeners();
+                  break;
+                } catch (e) {
+                  if (_stopRequested) break;
+                  final safeErr = CredentialObfuscator.redact(
+                    e.toString(),
+                    password,
+                  );
+
+                  if (attempt < maxAttempts) {
+                    final warnMsg =
+                        '⚠️ Attempt $attempt/$maxAttempts failed for $fileName: $safeErr. Retrying in ${retryDelaySeconds}s...';
+                    _addLog(warnMsg);
+                    await _fileLogger.error('FTP', warnMsg);
+                    notifyListeners();
+
+                    await _cancellableDelay(
+                      Duration(seconds: retryDelaySeconds),
+                    );
+                    if (_stopRequested) break;
+
+                    // Reconnect before retrying in case the socket dropped mid-transfer.
+                    await client?.disconnect();
                     client = null;
                     _activeClient = null;
+                    try {
+                      final nextClient = _clientFactory(config);
+                      _activeClient = nextClient;
+                      await nextClient.connect();
+                      final dirOk = await nextClient.ensureRemoteDirectory(
+                        workItem.remoteDir,
+                      );
+                      if (!dirOk) {
+                        await nextClient.disconnect();
+                        throw Exception(
+                          'Failed to re-enter remote folder "$remoteDisplay" after reconnect',
+                        );
+                      }
+                      client = nextClient;
+                    } catch (reconnectErr) {
+                      final safeReconnectErr = CredentialObfuscator.redact(
+                        reconnectErr.toString(),
+                        password,
+                      );
+                      final reconnectMsg =
+                          '⚠️ Reconnect failed before attempt ${attempt + 1}: $safeReconnectErr';
+                      _addLog(reconnectMsg);
+                      await _fileLogger.error('FTP', reconnectMsg);
+                      client = null;
+                      _activeClient = null;
+                    }
+                  } else {
+                    errors++;
+                    final failMsg =
+                        '❌ Failed uploading $fileName after $maxAttempts attempt(s): $safeErr';
+                    _addLog(failMsg);
+                    await _fileLogger.error('FTP', failMsg);
+                    notifyListeners();
                   }
-                } else {
-                  errors++;
-                  final failMsg =
-                      '❌ Failed uploading $fileName after $maxAttempts attempt(s): $safeErr';
-                  _addLog(failMsg);
-                  await _fileLogger.error('FTP', failMsg);
-                  notifyListeners();
                 }
               }
+            } finally {
+              _clearActiveUploadProgress();
             }
           }
         }
@@ -1467,6 +2406,7 @@ class FtpFilesProvider with ChangeNotifier {
         await _fileLogger.error('FTP', 'Critical Error: $safeErr');
       }
     } finally {
+      _clearActiveUploadProgress();
       _activeClient = null;
       await client?.disconnect();
       isUploading = false;
@@ -1480,9 +2420,10 @@ class FtpFilesProvider with ChangeNotifier {
         wasStopped: _stopRequested,
       );
 
+      final hasErrors = hadFatalError || errors > 0;
       final statusLabel = _stopRequested
           ? 'Stopped'
-          : (hadFatalError ? 'Error' : 'Completed');
+          : (hasErrors ? 'Error' : 'Completed');
       final summaryPrefix = dryRun ? '[DRY RUN] ' : '';
       final configSummary =
           '$summaryPrefix${config.protocol.shortLabel} | Date: ${dateMode.label} (${dateType.label}) | Checked: ${_numFmt.format(filesChecked)} | Skipped: ${_numFmt.format(filesSkipped)}';
@@ -1524,7 +2465,9 @@ class FtpFilesProvider with ChangeNotifier {
           nextScheduledRun = next;
           if (next != null) {
             final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-            currentStatus = '🏁 Completed. Next run at $formatted';
+            currentStatus = hasErrors
+                ? '⚠️ Completed with $errors error(s). Next run at $formatted'
+                : '🏁 Completed. Next run at $formatted';
             _addLog(
               '🏁 ${dryRun ? "Dry run" : "Upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted.',
             );
@@ -1533,14 +2476,22 @@ class FtpFilesProvider with ChangeNotifier {
             isScheduleArmed = false;
             _scheduleTimer?.cancel();
             _scheduleTimer = null;
-            currentStatus = hadFatalError ? '❌ Error' : '✅ Completed';
+            currentStatus = hadFatalError
+                ? '❌ Error'
+                : (errors > 0
+                      ? '⚠️ Completed with $errors error(s)'
+                      : '✅ Completed');
           }
         } else {
           isScheduleArmed = false;
           nextScheduledRun = null;
           _scheduleTimer?.cancel();
           _scheduleTimer = null;
-          currentStatus = hadFatalError ? '❌ Error' : '✅ Completed';
+          currentStatus = hadFatalError
+              ? '❌ Error'
+              : (errors > 0
+                    ? '⚠️ Completed with $errors error(s)'
+                    : '✅ Completed');
           _addLog(
             '✅ Scheduled ${dryRun ? "dry run" : "upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
           );
@@ -1555,7 +2506,9 @@ class FtpFilesProvider with ChangeNotifier {
           nextScheduledRun = next;
           if (next != null) {
             final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-            currentStatus = '⏰ Scheduled — Next run: $formatted';
+            currentStatus = hasErrors
+                ? '⚠️ Finished with $errors error(s) — Next run: $formatted'
+                : '⏰ Scheduled — Next run: $formatted';
             _addLog(
               '✅ Manual run finished (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Schedule remains armed for $formatted.',
             );
@@ -1563,7 +2516,9 @@ class FtpFilesProvider with ChangeNotifier {
         } else {
           currentStatus = hadFatalError
               ? '❌ Error'
-              : (dryRun ? '✅ Dry Run Completed' : '✅ Completed');
+              : (errors > 0
+                    ? '⚠️ Completed with $errors error(s)'
+                    : (dryRun ? '✅ Dry Run Completed' : '✅ Completed'));
           _addLog(
             '✅ ${dryRun ? "Dry run" : "Upload"} finished! Checked: $filesChecked, Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors.',
           );

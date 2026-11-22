@@ -4,7 +4,9 @@
 
 # Files Utility
 
-**Robust, high-throughput desktop utility for moving, copying, counting, and cleaning up files across network shares, SMB mounts, local drives, and NAS storage.**
+<!-- Gene - Nov, 23, 2026: Include FTP/FTPS/FTPES/SFTP uploads in README overview -->
+<!-- **Robust, high-throughput desktop utility for moving, copying, counting, and cleaning up files across network shares, SMB mounts, local drives, and NAS storage.** -->
+**Robust, high-throughput desktop utility for moving, copying, counting, cleaning up, and FTP/SFTP-uploading files across network shares, SMB mounts, local drives, and NAS storage.**
 
 [![CI](https://github.com/bluegene37/files_utility/actions/workflows/ci.yml/badge.svg)](https://github.com/bluegene37/files_utility/actions/workflows/ci.yml)
 [![Release](https://github.com/bluegene37/files_utility/actions/workflows/release.yml/badge.svg)](https://github.com/bluegene37/files_utility/actions/workflows/release.yml)
@@ -41,6 +43,11 @@ Unlike standard file managers that freeze or lose state during large directory t
   - Post-delete cleanup passes that automatically prune empty directory trees.
 - **📊 Count & Audit**:
   - Rapid dry-run traversal to calculate total file counts, directory depth, and storage consumption without modifying files.
+<!-- Gene - Nov, 23, 2026: Document FTP Upload & Scheduler module in README Features -->
+- **☁️ FTP Upload & Scheduler**:
+  - Native FTP, Implicit FTPS, Explicit FTPES, and SSH SFTP uploads with per-profile obfuscated credentials and automatic log/history redaction.
+  - Multi-source run ordering, per-source enable/disable toggles, subfolder filtering, custom remote destination mapping, and `config.ini` / `.env` migration import.
+  - Live per-file transfer progress, skip-if-already-on-FTP (matching size) with partial re-upload, post-upload `SIZE` verification, automatic reconnect recovery, dry-run checks, configurable log retention, and weekday/time scheduling.
 - **🔍 Smart Filtering**:
   - Filter by age threshold ("older than $N$ days/months/years") or custom calendar date ranges.
   - Option to skip recursive subfolders (shallow scans).

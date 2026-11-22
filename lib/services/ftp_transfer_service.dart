@@ -139,6 +139,20 @@ String joinRemotePath(String prefix, String subPath) {
   return hasLeadingSlash ? '/$joined' : joined;
 }
 
+// abstract class FtpClientAdapter {
+//   Future<void> connect();
+//   Future<void> disconnect();
+//   Future<String> currentDirectory();
+//   Future<bool> changeDirectory(String remotePath);
+//   Future<bool> ensureRemoteDirectory(String remotePath);
+//   Future<Map<String, int?>?> listRemoteFileSizes();
+//   Future<int?> getRemoteFileSize(String remoteName);
+//   Future<bool> uploadFile(File localFile, {String? remoteName});
+// }
+// Gene - Nov, 23, 2026: Add FtpUploadProgressCallback to report byte-level transfer progress without polluting logs.
+typedef FtpUploadProgressCallback =
+    void Function(double percent, int sentBytes, int totalBytes);
+
 abstract class FtpClientAdapter {
   Future<void> connect();
   Future<void> disconnect();
@@ -147,7 +161,11 @@ abstract class FtpClientAdapter {
   Future<bool> ensureRemoteDirectory(String remotePath);
   Future<Map<String, int?>?> listRemoteFileSizes();
   Future<int?> getRemoteFileSize(String remoteName);
-  Future<bool> uploadFile(File localFile, {String? remoteName});
+  Future<bool> uploadFile(
+    File localFile, {
+    String? remoteName,
+    FtpUploadProgressCallback? onProgress,
+  });
 }
 
 class FtpConnectAdapter implements FtpClientAdapter {
@@ -335,11 +353,27 @@ class FtpConnectAdapter implements FtpClientAdapter {
     }
   }
 
+  //   @override
+  //   Future<bool> uploadFile(File localFile, {String? remoteName}) async {
+  //     final targetName = (remoteName != null && remoteName.isNotEmpty)
+  //         ? remoteName
+  //         : p.basename(localFile.path);
+  //     return _client.uploadFile(localFile, sRemoteName: targetName);
+  //   }
+  // Gene - Nov, 23, 2026: Forward byte-level upload progress callback to ftpconnect client.
   @override
-  Future<bool> uploadFile(File localFile, {String? remoteName}) async {
+  Future<bool> uploadFile(
+    File localFile, {
+    String? remoteName,
+    FtpUploadProgressCallback? onProgress,
+  }) async {
     final targetName = (remoteName != null && remoteName.isNotEmpty)
         ? remoteName
         : p.basename(localFile.path);
-    return _client.uploadFile(localFile, sRemoteName: targetName);
+    return _client.uploadFile(
+      localFile,
+      sRemoteName: targetName,
+      onProgress: onProgress,
+    );
   }
 }

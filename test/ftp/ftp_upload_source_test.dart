@@ -48,5 +48,29 @@ void main() {
       expect(cleared.isValid, isFalse);
       expect(cleared.name, 'Docs');
     });
+
+    // Gene - Nov, 23, 2026: Verify enabled flag default, copyWith, serialization, and backwards-compatible JSON decoding.
+    test(
+      'enabled defaults to true, toggles via copyWith, and decodes legacy JSON',
+      () {
+        const defaultSrc = FtpUploadSource(localPath: '/tmp/a');
+        expect(defaultSrc.enabled, isTrue);
+
+        final disabled = defaultSrc.copyWith(enabled: false);
+        expect(disabled.enabled, isFalse);
+
+        final decodedDisabled = FtpUploadSource.fromJson(disabled.toJson());
+        expect(decodedDisabled.enabled, isFalse);
+
+        final legacyDecoded = FtpUploadSource.fromJson({
+          'name': 'Legacy',
+          'localPath': '/tmp/legacy',
+          'subfolders': 'Sub1',
+          'ftpDest': 'Dest',
+          'runOrder': 2,
+        });
+        expect(legacyDecoded.enabled, isTrue);
+      },
+    );
   });
 }

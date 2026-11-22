@@ -91,6 +91,21 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     );
   }
 
+  // Gene - Nov, 23, 2026: Import myFLO_FTP_automation config.ini / .env settings from disk.
+  Future<void> _handleImportConfig(FtpFilesProvider provider) async {
+    final message = await provider.importConfigFromDisk();
+    if (!mounted || message == null) return;
+    final isError =
+        message.startsWith('Failed') || message.startsWith('No recognizable');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.error : AppColors.success,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<FtpFilesProvider>(context);
@@ -110,7 +125,9 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
           decoration: AppDecorations.gradientBackground(context),
           child: Column(
             children: [
-              _buildAppBar(context, accentColor),
+              //               _buildAppBar(context, accentColor),
+              // Gene - Nov, 23, 2026: Pass provider into _buildAppBar for Import Config and Open Logs Folder actions.
+              _buildAppBar(context, provider, accentColor),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -160,6 +177,12 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                       ),
                       const SizedBox(height: 8),
                       _buildActionAndStatsRow(context, provider, accentColor),
+                      // Gene - Nov, 23, 2026: Render live per-file upload progress bar while transferring.
+                      if (provider.isUploading &&
+                          provider.activeUploadProgress != null) ...[
+                        const SizedBox(height: 8),
+                        _buildUploadProgressBar(context, provider, accentColor),
+                      ],
                       const SizedBox(height: 8),
                       Expanded(child: LogConsole(logs: provider.logs)),
                     ],
@@ -173,7 +196,46 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     );
   }
 
-  Widget _buildAppBar(BuildContext context, Color accentColor) {
+  //   Widget _buildAppBar(BuildContext context, Color accentColor) {
+  //     final currentProfileId = LocalDbService().currentProfileId;
+  //     final currentProfile = GlobalDbService().profiles.firstWhere(
+  //       (p) => p.id == currentProfileId,
+  //       orElse: () => GlobalDbService().profiles.first,
+  //     );
+  //
+  //     return Container(
+  //       padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+  //       child: Row(
+  //         children: [
+  //           IconButton(
+  //             icon: Icon(Icons.arrow_back_rounded, color: accentColor),
+  //             onPressed: () => Navigator.of(context).pop(),
+  //           ),
+  //           const SizedBox(width: 4),
+  //           Icon(Icons.cloud_upload_rounded, color: accentColor, size: 22),
+  //           const SizedBox(width: 10),
+  //           Text(
+  //             'FTP Upload (${currentProfile.name})',
+  //             style: TextStyle(
+  //               fontSize: 20,
+  //               fontWeight: FontWeight.w600,
+  //               color: context.textPrimary,
+  //             ),
+  //           ),
+  //           const Spacer(),
+  //           const HelpManualButton(topicId: 'ftp_files'),
+  //           const SizedBox(width: 4),
+  //           const ThemeToggleButton(),
+  //         ],
+  //       ),
+  //     );
+  //   }
+  // Gene - Nov, 23, 2026: Add Import config.ini/.env and Open Logs Folder buttons to FTP app bar.
+  Widget _buildAppBar(
+    BuildContext context,
+    FtpFilesProvider provider,
+    Color accentColor,
+  ) {
     final currentProfileId = LocalDbService().currentProfileId;
     final currentProfile = GlobalDbService().profiles.firstWhere(
       (p) => p.id == currentProfileId,
@@ -200,6 +262,24 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
             ),
           ),
           const Spacer(),
+          IconButton(
+            key: const Key('ftp_import_ini_btn'),
+            icon: Icon(
+              Icons.file_upload_outlined,
+              color: accentColor,
+              size: 20,
+            ),
+            tooltip: 'Import config.ini / .env',
+            onPressed: provider.isProcessing
+                ? null
+                : () => _handleImportConfig(provider),
+          ),
+          IconButton(
+            key: const Key('ftp_open_logs_btn'),
+            icon: Icon(Icons.folder_open_rounded, color: accentColor, size: 20),
+            tooltip: 'Open Logs Folder',
+            onPressed: () => provider.openLogsFolder(),
+          ),
           const HelpManualButton(topicId: 'ftp_files'),
           const SizedBox(width: 4),
           const ThemeToggleButton(),
@@ -247,9 +327,28 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
               const SizedBox(width: 16),
               Icon(Icons.folder_copy, size: 16, color: context.textMuted),
               const SizedBox(width: 6),
-              Text(
-                '${provider.uploadSources.length} source${provider.uploadSources.length == 1 ? '' : 's'} configured',
-                style: TextStyle(fontSize: 13, color: context.textSecondary),
+              //               Text(
+              //                 '${provider.uploadSources.length} source${provider.uploadSources.length == 1 ? '' : 's'} configured',
+              //                 style: TextStyle(fontSize: 13, color: context.textSecondary),
+              //               ),
+              // Gene - Nov, 23, 2026: Show active vs total source counts when some sources are disabled.
+              Builder(
+                builder: (_) {
+                  final total = provider.uploadSources.length;
+                  final active = provider.uploadSources
+                      .where((s) => s.enabled)
+                      .length;
+                  final label = active == total
+                      ? '$total source${total == 1 ? '' : 's'} configured'
+                      : '$active/$total sources active';
+                  return Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: context.textSecondary,
+                    ),
+                  );
+                },
               ),
               const SizedBox(width: 10),
               ElevatedButton.icon(
@@ -295,18 +394,38 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                 ),
               ),
               Expanded(
-                child: TextField(
-                  controller: _subfoldersController,
-                  enabled: !provider.isProcessing,
-                  onChanged: provider.setSubfolders,
-                  style: TextStyle(color: context.textPrimary, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Optional: FolderA, FolderB',
-                    hintStyle: TextStyle(color: context.textMuted),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
+                //                 child: TextField(
+                //                   controller: _subfoldersController,
+                //                   enabled: !provider.isProcessing,
+                //                   onChanged: provider.setSubfolders,
+                //                   style: TextStyle(color: context.textPrimary, fontSize: 13),
+                //                   decoration: InputDecoration(
+                //                     hintText: 'Optional: FolderA, FolderB',
+                //                     hintStyle: TextStyle(color: context.textMuted),
+                //                     isDense: true,
+                //                     contentPadding: const EdgeInsets.symmetric(
+                //                       horizontal: 12,
+                //                       vertical: 10,
+                //                     ),
+                //                   ),
+                //                 ),
+                // Gene - Nov, 23, 2026: Clarify blank Subfolders behavior with hint and Tooltip.
+                child: Tooltip(
+                  message:
+                      'Comma-separated subfolder names to upload. Leave blank to upload root files (or all subfolders when "Include nested subfolders" is enabled).',
+                  child: TextField(
+                    controller: _subfoldersController,
+                    enabled: !provider.isProcessing,
+                    onChanged: provider.setSubfolders,
+                    style: TextStyle(color: context.textPrimary, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Blank = root (or all if nested on)',
+                      hintStyle: TextStyle(color: context.textMuted),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                     ),
                   ),
                 ),
@@ -1115,6 +1234,75 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     );
   }
 
+  // Gene - Nov, 23, 2026: Compact live transfer progress bar for active uploads (UI-only).
+  Widget _buildUploadProgressBar(
+    BuildContext context,
+    FtpFilesProvider provider,
+    Color accentColor,
+  ) {
+    final progress = (provider.activeUploadProgress ?? 0.0).clamp(0.0, 1.0);
+    final pct = (progress * 100).toStringAsFixed(1);
+    final fileName = provider.activeUploadFileName ?? '';
+    final sentStr = FtpFilesProvider.formatByteSize(
+      provider.activeUploadSentBytes,
+    );
+    final totalStr = FtpFilesProvider.formatByteSize(
+      provider.activeUploadTotalBytes,
+    );
+    final speedStr = provider.activeUploadBytesPerSecond > 0
+        ? ' • ${FtpFilesProvider.formatByteSize(provider.activeUploadBytesPerSecond.round())}/s'
+        : '';
+
+    return Container(
+      key: const Key('ftp_upload_progress_bar'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: NeumorphicTheme.recessedDecoration(context, radius: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.cloud_upload_outlined, size: 14, color: accentColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  fileName,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: context.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '$pct% ($sentStr / $totalStr$speedStr)',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: context.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 5,
+              backgroundColor: context.border.withValues(alpha: 0.4),
+              valueColor: AlwaysStoppedAnimation<Color>(accentColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showUploadSourcesDialog(
     BuildContext context,
     FtpFilesProvider provider,
@@ -1305,13 +1493,23 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                         // ── Upload & Reliability ──
                         _sectionLabel(context, '📁 Upload & Reliability'),
                         const SizedBox(height: 6),
+                        //                         _buildOptionCheckbox(
+                        //                           context,
+                        //                           value: provider.includeSubfolders,
+                        //                           enabled: !provider.isProcessing,
+                        //                           label: 'Include nested subfolders',
+                        //                           subtitle:
+                        //                               'Recursively scan subdirectories and mirror relative folders remotely',
+                        //                           onChanged: provider.setIncludeSubfolders,
+                        //                         ),
+                        // Gene - Nov, 23, 2026: Clarify Include nested subfolders behavior when Subfolders filter is blank.
                         _buildOptionCheckbox(
                           context,
                           value: provider.includeSubfolders,
                           enabled: !provider.isProcessing,
                           label: 'Include nested subfolders',
                           subtitle:
-                              'Recursively scan subdirectories and mirror relative folders remotely',
+                              'When Subfolders is blank, scans and mirrors all subfolders remotely',
                           onChanged: provider.setIncludeSubfolders,
                         ),
                         _buildOptionCheckbox(
@@ -1370,6 +1568,18 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                               options: const [1, 3, 5, 10, 15, 30],
                               enabled: !provider.isProcessing,
                               onChanged: provider.setRetryDelaySeconds,
+                            ),
+                            // Gene - Nov, 23, 2026: Add Log Retention dropdown matching LOG_KEEP_DAYS behavior.
+                            _intDropdown(
+                              context,
+                              key: const Key('ftp_log_retention_dropdown'),
+                              label: 'Log Retention',
+                              value: provider.logKeepDays,
+                              options: const [0, 7, 14, 30, 60, 90, 180, 365],
+                              enabled: !provider.isProcessing,
+                              width: 145,
+                              itemLabel: (v) => v == 0 ? 'Forever' : '$v days',
+                              onChanged: provider.setLogKeepDays,
                             ),
                           ],
                         ),
@@ -1636,21 +1846,71 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     );
   }
 
+  //   Widget _intDropdown(
+  //     BuildContext context, {
+  //     required String label,
+  //     required int value,
+  //     required List<int> options,
+  //     required bool enabled,
+  //     required ValueChanged<int> onChanged,
+  //   }) {
+  //     final effectiveOptions = options.contains(value)
+  //         ? options
+  //         : ([...options, value]..sort());
+  //
+  //     return SizedBox(
+  //       width: 130,
+  //       child: DropdownButtonFormField<int>(
+  //         isExpanded: true,
+  //         initialValue: value,
+  //         decoration: InputDecoration(
+  //           labelText: label,
+  //           isDense: true,
+  //           contentPadding: const EdgeInsets.symmetric(
+  //             horizontal: 10,
+  //             vertical: 8,
+  //           ),
+  //         ),
+  //         dropdownColor: context.cardBg,
+  //         items: effectiveOptions
+  //             .map(
+  //               (v) => DropdownMenuItem<int>(
+  //                 value: v,
+  //                 child: Text(
+  //                   v.toString(),
+  //                   style: TextStyle(color: context.textPrimary, fontSize: 13),
+  //                 ),
+  //               ),
+  //             )
+  //             .toList(),
+  //         onChanged: enabled
+  //             ? (val) {
+  //                 if (val != null) onChanged(val);
+  //               }
+  //             : null,
+  //       ),
+  //     );
+  //   }
+  // Gene - Nov, 23, 2026: Support optional key, width, and custom itemLabel formatting on _intDropdown.
   Widget _intDropdown(
     BuildContext context, {
+    Key? key,
     required String label,
     required int value,
     required List<int> options,
     required bool enabled,
     required ValueChanged<int> onChanged,
+    double width = 130,
+    String Function(int)? itemLabel,
   }) {
     final effectiveOptions = options.contains(value)
         ? options
         : ([...options, value]..sort());
 
     return SizedBox(
-      width: 130,
+      width: width,
       child: DropdownButtonFormField<int>(
+        key: key,
         isExpanded: true,
         initialValue: value,
         decoration: InputDecoration(
@@ -1667,7 +1927,7 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
               (v) => DropdownMenuItem<int>(
                 value: v,
                 child: Text(
-                  v.toString(),
+                  itemLabel != null ? itemLabel(v) : v.toString(),
                   style: TextStyle(color: context.textPrimary, fontSize: 13),
                 ),
               ),
@@ -1836,12 +2096,30 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
               children: [
                 Row(
                   children: [
+                    // Gene - Nov, 23, 2026: Per-source enable/disable checkbox to pause a source without deleting it.
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Checkbox(
+                        key: Key('ftp_source_enabled_$i'),
+                        value: src.enabled,
+                        onChanged: (val) {
+                          widget.provider.setSourceEnabledAt(i, val ?? true);
+                          setState(() {});
+                        },
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
                     Text(
                       'Source ${i + 1}',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
-                        color: context.textMuted,
+                        color: src.enabled
+                            ? context.textMuted
+                            : context.textMuted.withValues(alpha: 0.6),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -1930,62 +2208,128 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
                   ],
                 ),
                 const SizedBox(height: 6),
-                PathRow(
-                  label: 'Local Path',
-                  path: src.localPath,
-                  onPick: () async {
-                    await widget.provider.pickSourceAt(i);
-                    if (mounted) setState(() {});
-                  },
-                  onChanged: (val) {
-                    widget.provider.setSourcePathAt(i, val);
-                  },
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _subfoldersControllers[i],
-                        onChanged: (val) =>
-                            widget.provider.setSourceSubfoldersAt(i, val),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.textPrimary,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Subfolders (optional, comma-separated)',
-                          hintText: 'FolderA, FolderB',
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                        ),
+                //                 PathRow(
+                //                   label: 'Local Path',
+                //                   path: src.localPath,
+                //                   onPick: () async {
+                //                     await widget.provider.pickSourceAt(i);
+                //                     if (mounted) setState(() {});
+                //                   },
+                //                   onChanged: (val) {
+                //                     widget.provider.setSourcePathAt(i, val);
+                //                   },
+                //                 ),
+                //                 const SizedBox(height: 6),
+                //                 Row(
+                //                   children: [
+                //                     Expanded(
+                //                       child: TextField(
+                //                         controller: _subfoldersControllers[i],
+                //                         onChanged: (val) =>
+                //                             widget.provider.setSourceSubfoldersAt(i, val),
+                //                         style: TextStyle(
+                //                           fontSize: 12,
+                //                           color: context.textPrimary,
+                //                         ),
+                //                         decoration: const InputDecoration(
+                //                           labelText: 'Subfolders (optional, comma-separated)',
+                //                           hintText: 'FolderA, FolderB',
+                //                           isDense: true,
+                //                           contentPadding: EdgeInsets.symmetric(
+                //                             horizontal: 10,
+                //                             vertical: 8,
+                //                           ),
+                //                         ),
+                //                       ),
+                //                     ),
+                //                     const SizedBox(width: 8),
+                //                     Expanded(
+                //                       child: TextField(
+                //                         controller: _destControllers[i],
+                //                         onChanged: (val) =>
+                //                             widget.provider.setSourceFtpDestAt(i, val),
+                //                         style: TextStyle(
+                //                           fontSize: 12,
+                //                           color: context.textPrimary,
+                //                         ),
+                //                         decoration: const InputDecoration(
+                //                           labelText: 'FTP Dest Folder (optional)',
+                //                           hintText: 'Leave blank for FTP root',
+                //                           isDense: true,
+                //                           contentPadding: EdgeInsets.symmetric(
+                //                             horizontal: 10,
+                //                             vertical: 8,
+                //                           ),
+                //                         ),
+                //                       ),
+                //                     ),
+                //                   ],
+                //                 ),
+                // Gene - Nov, 23, 2026: Dim disabled upload sources visually and clarify blank Subfolders hint.
+                Opacity(
+                  opacity: src.enabled ? 1.0 : 0.55,
+                  child: Column(
+                    children: [
+                      PathRow(
+                        label: 'Local Path',
+                        path: src.localPath,
+                        onPick: () async {
+                          await widget.provider.pickSourceAt(i);
+                          if (mounted) setState(() {});
+                        },
+                        onChanged: (val) {
+                          widget.provider.setSourcePathAt(i, val);
+                        },
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _destControllers[i],
-                        onChanged: (val) =>
-                            widget.provider.setSourceFtpDestAt(i, val),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.textPrimary,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'FTP Dest Folder (optional)',
-                          hintText: 'Leave blank for FTP root',
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _subfoldersControllers[i],
+                              onChanged: (val) =>
+                                  widget.provider.setSourceSubfoldersAt(i, val),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: context.textPrimary,
+                              ),
+                              decoration: const InputDecoration(
+                                labelText:
+                                    'Subfolders (optional, comma-separated)',
+                                hintText: 'Blank = root (or all if nested on)',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _destControllers[i],
+                              onChanged: (val) =>
+                                  widget.provider.setSourceFtpDestAt(i, val),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: context.textPrimary,
+                              ),
+                              decoration: const InputDecoration(
+                                labelText: 'FTP Dest Folder (optional)',
+                                hintText: 'Leave blank for FTP root',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             );
