@@ -354,12 +354,15 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
         ? 'Not configured'
         : '${provider.host.trim()}:${provider.port}';
 
+    //     return Container(
+    //       decoration: BoxDecoration(
+    //         color: context.containerBg,
+    //         borderRadius: BorderRadius.circular(10),
+    //         border: Border.all(color: context.border),
+    //       ),
+    // Gene - Nov, 22, 2026: Styled FTP Connection collapsible card as a recessed Neumorphic panel inside the config card.
     return Container(
-      decoration: BoxDecoration(
-        color: context.containerBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: context.border),
-      ),
+      decoration: NeumorphicTheme.recessedDecoration(context, radius: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -409,15 +412,30 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                               color: accentColor,
                             ),
                           )
-                        : Icon(Icons.wifi_tethering, size: 15, color: accentColor),
+                        : Icon(
+                            Icons.wifi_tethering,
+                            size: 15,
+                            color: accentColor,
+                          ),
                     label: Text(
                       provider.isTestingConnection
                           ? 'Testing...'
                           : 'Test Connection',
                       style: TextStyle(fontSize: 12, color: accentColor),
                     ),
+                    //                     style: OutlinedButton.styleFrom(
+                    //                       side: BorderSide(color: context.border),
+                    //                       padding: const EdgeInsets.symmetric(
+                    //                         horizontal: 10,
+                    //                         vertical: 6,
+                    //                       ),
+                    //                       visualDensity: VisualDensity.compact,
+                    //                     ),
+                    // Gene - Nov, 22, 2026: Tinted Test Connection outline with accentColor.
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: context.border),
+                      side: BorderSide(
+                        color: accentColor.withValues(alpha: 0.45),
+                      ),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
                         vertical: 6,
@@ -671,8 +689,9 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     FtpFilesProvider provider,
     Color accentColor,
   ) {
-    final dateTypeShort =
-        provider.dateType == FtpDateType.creation ? 'Created' : 'Modified';
+    final dateTypeShort = provider.dateType == FtpDateType.creation
+        ? 'Created'
+        : 'Modified';
     final dateChipText = provider.dateMode == FtpDateMode.daysAgo
         ? '${provider.daysAgo}d ago ($dateTypeShort)'
         : '${provider.dateMode.label} ($dateTypeShort)';
@@ -694,8 +713,40 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                   'Advanced Settings',
                   style: TextStyle(color: accentColor),
                 ),
+                //                 style: OutlinedButton.styleFrom(
+                //                   side: BorderSide(color: context.border),
+                //                   padding: const EdgeInsets.symmetric(
+                //                     horizontal: 14,
+                //                     vertical: 8,
+                //                   ),
+                //                   visualDensity: VisualDensity.compact,
+                //                 ),
+                //               ),
+                //               _infoPill(
+                //                 context,
+                //                 icon: Icons.calendar_today,
+                //                 label: dateChipText,
+                //                 color: context.textSecondary,
+                //               ),
+                //               if (provider.enableSchedule)
+                //                 _infoPill(
+                //                   context,
+                //                   icon: Icons.schedule,
+                //                   label:
+                //                       '${provider.runTime.format(context)} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})',
+                //                   color: accentColor,
+                //                 ),
+                //               if (provider.dryRun)
+                //                 _infoPill(
+                //                   context,
+                //                   icon: Icons.science_outlined,
+                //                   label: 'DRY RUN',
+                //                   color: AppColors.warning,
+                //                   emphasized: true,
+                //                 ),
+                // Gene - Nov, 22, 2026: Matched FTP Advanced Settings outline and DRY RUN pill to theme-aware Neumorphic tokens.
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: context.border),
+                  side: BorderSide(color: accentColor.withValues(alpha: 0.45)),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
                     vertical: 8,
@@ -722,7 +773,7 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                   context,
                   icon: Icons.science_outlined,
                   label: 'DRY RUN',
-                  color: AppColors.warning,
+                  color: context.warningColor,
                   emphasized: true,
                 ),
             ],
@@ -781,6 +832,25 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     );
   }
 
+  //   Widget _infoPill(
+  //     BuildContext context, {
+  //     required IconData icon,
+  //     required String label,
+  //     required Color color,
+  //     bool emphasized = false,
+  //   }) {
+  //     return Container(
+  //       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+  //       decoration: BoxDecoration(
+  //         color: emphasized
+  //             ? color.withValues(alpha: 0.16)
+  //             : context.containerBg,
+  //         borderRadius: BorderRadius.circular(8),
+  //         border: Border.all(
+  //           color: emphasized ? color.withValues(alpha: 0.6) : context.border,
+  //         ),
+  //       ),
+  // Gene - Nov, 22, 2026: Upgraded FTP _infoPill to soft Neumorphic raised pill.
   Widget _infoPill(
     BuildContext context, {
     required IconData icon,
@@ -791,12 +861,15 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: emphasized
-            ? color.withValues(alpha: 0.16)
-            : context.containerBg,
+        color: context.cardBg,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: emphasized ? color.withValues(alpha: 0.6) : context.border,
+          color: emphasized ? color.withValues(alpha: 0.5) : context.border,
+        ),
+        boxShadow: NeumorphicTheme.softShadows(
+          context,
+          distance: 1.5,
+          blur: 3.0,
         ),
       ),
       child: Row(
@@ -835,7 +908,9 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
           else ...[
             ElevatedButton.icon(
               key: const Key('ftp_start_schedule_btn'),
-              onPressed: provider.canArmSchedule ? provider.startSchedule : null,
+              onPressed: provider.canArmSchedule
+                  ? provider.startSchedule
+                  : null,
               icon: const Icon(Icons.schedule_rounded, size: 18),
               label: const Text('Start Schedule'),
             ),
@@ -892,24 +967,45 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
           ),
         ),
         const SizedBox(width: 8),
+        //         StatBadge(
+        //           title: 'Uploaded',
+        //           value: provider.filesUploaded.toString(),
+        //           color: AppColors.success,
+        //           icon: Icons.cloud_done_rounded,
+        //         ),
+        //         const SizedBox(width: 8),
+        //         StatBadge(
+        //           title: 'Skipped',
+        //           value: provider.filesSkipped.toString(),
+        //           color: AppColors.warning,
+        //           icon: Icons.fast_forward_rounded,
+        //         ),
+        //         const SizedBox(width: 8),
+        //         StatBadge(
+        //           title: 'Errors',
+        //           value: provider.errors.toString(),
+        //           color: AppColors.error,
+        //           icon: Icons.error,
+        //         ),
+        // Gene - Nov, 22, 2026: Use theme-aware semantic colors for FTP StatBadges.
         StatBadge(
           title: 'Uploaded',
           value: provider.filesUploaded.toString(),
-          color: AppColors.success,
+          color: context.successColor,
           icon: Icons.cloud_done_rounded,
         ),
         const SizedBox(width: 8),
         StatBadge(
           title: 'Skipped',
           value: provider.filesSkipped.toString(),
-          color: AppColors.warning,
+          color: context.warningColor,
           icon: Icons.fast_forward_rounded,
         ),
         const SizedBox(width: 8),
         StatBadge(
           title: 'Errors',
           value: provider.errors.toString(),
-          color: AppColors.error,
+          color: context.errorColor,
           icon: Icons.error,
         ),
       ],
@@ -1189,7 +1285,9 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                                 width: 24,
                                 height: 24,
                                 child: Checkbox(
-                                  key: const Key('ftp_enable_schedule_checkbox'),
+                                  key: const Key(
+                                    'ftp_enable_schedule_checkbox',
+                                  ),
                                   value: provider.enableSchedule,
                                   onChanged: provider.isProcessing
                                       ? null
@@ -1270,11 +1368,20 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                         if (provider.enableSchedule &&
                             !provider.hasCheckedScheduleDays) ...[
                           const SizedBox(height: 6),
-                          const Text(
+                          //                           const Text(
+                          //                             'Select at least one day to arm the schedule.',
+                          //                             style: TextStyle(
+                          //                               fontSize: 12,
+                          //                               color: AppColors.error,
+                          //                               fontWeight: FontWeight.w500,
+                          //                             ),
+                          //                           ),
+                          // Gene - Nov, 22, 2026: Use theme-aware errorColor on schedule validation message.
+                          Text(
                             'Select at least one day to arm the schedule.',
                             style: TextStyle(
                               fontSize: 12,
-                              color: AppColors.error,
+                              color: context.errorColor,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -1332,7 +1439,10 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.stop_circle_outlined, size: 16),
+                                      Icon(
+                                        Icons.stop_circle_outlined,
+                                        size: 16,
+                                      ),
                                       SizedBox(width: 4),
                                       Text('Stop'),
                                     ],
@@ -1609,10 +1719,13 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
         height: MediaQuery.of(context).size.height * 0.54,
         child: ListView.separated(
           itemCount: sources.length,
-          separatorBuilder: (_, _) => Divider(
-            height: 18,
-            color: AppColors.cardBorder.withValues(alpha: 0.5),
-          ),
+          //           separatorBuilder: (_, _) => Divider(
+          //             height: 18,
+          //             color: AppColors.cardBorder.withValues(alpha: 0.5),
+          //           ),
+          // Gene - Nov, 22, 2026: Use theme-aware context.border in Upload Sources divider.
+          separatorBuilder: (_, _) =>
+              Divider(height: 18, color: context.border.withValues(alpha: 0.5)),
           itemBuilder: (context, i) {
             final FtpUploadSource src = sources[i];
             return Column(
@@ -1690,12 +1803,20 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
                       ),
                     ),
                     const Spacer(),
+                    //                     if (sources.length > 1)
+                    //                       IconButton(
+                    //                         icon: const Icon(
+                    //                           Icons.delete_outline,
+                    //                           size: 18,
+                    //                           color: AppColors.error,
+                    //                         ),
+                    // Gene - Nov, 22, 2026: Use theme-aware errorColor for remove upload source icon.
                     if (sources.length > 1)
                       IconButton(
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.delete_outline,
                           size: 18,
-                          color: AppColors.error,
+                          color: context.errorColor,
                         ),
                         tooltip: 'Remove source',
                         onPressed: () {

@@ -46,10 +46,16 @@ class CopyFilesScreen extends StatelessWidget {
                                 MediaQuery.of(context).size.height * 0.45,
                           ),
                           child: SingleChildScrollView(
+                            //                             child: Container(
+                            //                               decoration: AppDecorations.glassCard(
+                            //                                 context: context,
+                            //                                 glowColor: AppColors.info,
+                            //                               ),
+                            // Gene - Nov, 22, 2026: Unified CopyFilesScreen card glow to theme-aware copyAccent.
                             child: Container(
                               decoration: AppDecorations.glassCard(
                                 context: context,
-                                glowColor: AppColors.info,
+                                glowColor: context.copyAccent,
                               ),
                               padding: const EdgeInsets.all(16.0),
                               child: Column(
@@ -158,26 +164,56 @@ class CopyFilesScreen extends StatelessWidget {
                                   // Advanced Settings & Log Interval on the same line
                                   Row(
                                     children: [
+                                      //                                       OutlinedButton.icon(
+                                      //                                         onPressed: () =>
+                                      //                                             _showAdvancedSettingsDialog(
+                                      //                                               context,
+                                      //                                               provider,
+                                      //                                             ),
+                                      //                                         icon: const Icon(
+                                      //                                           Icons.settings,
+                                      //                                           size: 16,
+                                      //                                           color: AppColors.accent,
+                                      //                                         ),
+                                      //                                         label: const Text(
+                                      //                                           'Advanced Settings',
+                                      //                                           style: TextStyle(
+                                      //                                             color: AppColors.accent,
+                                      //                                           ),
+                                      //                                         ),
+                                      //                                         style: OutlinedButton.styleFrom(
+                                      //                                           side: const BorderSide(
+                                      //                                             color: AppColors.cardBorder,
+                                      //                                           ),
+                                      //                                           padding: const EdgeInsets.symmetric(
+                                      //                                             horizontal: 16,
+                                      //                                             vertical: 8,
+                                      //                                           ),
+                                      //                                           visualDensity: VisualDensity.compact,
+                                      //                                         ),
+                                      //                                       ),
+                                      // Gene - Nov, 22, 2026: Styled Advanced Settings button with theme-aware copyAccent.
                                       OutlinedButton.icon(
                                         onPressed: () =>
                                             _showAdvancedSettingsDialog(
                                               context,
                                               provider,
                                             ),
-                                        icon: const Icon(
+                                        icon: Icon(
                                           Icons.settings,
                                           size: 16,
-                                          color: AppColors.accent,
+                                          color: context.copyAccent,
                                         ),
-                                        label: const Text(
+                                        label: Text(
                                           'Advanced Settings',
                                           style: TextStyle(
-                                            color: AppColors.accent,
+                                            color: context.copyAccent,
                                           ),
                                         ),
                                         style: OutlinedButton.styleFrom(
-                                          side: const BorderSide(
-                                            color: AppColors.cardBorder,
+                                          side: BorderSide(
+                                            color: context.copyAccent
+                                                .withValues(alpha: 0.45),
                                           ),
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: 16,
@@ -263,10 +299,21 @@ class CopyFilesScreen extends StatelessWidget {
                                         ),
                                       ),
                                       const SizedBox(width: 12),
+                                      //                                       StatBadge(
+                                      //                                         title: 'History',
+                                      //                                         value: 'View',
+                                      //                                         color: AppColors.accent,
+                                      //                                         icon: Icons.history,
+                                      //                                         onTap: () => showHistoryDialog(
+                                      //                                           context,
+                                      //                                           initialOperation: 'Copy',
+                                      //                                         ),
+                                      //                                       ),
+                                      // Gene - Nov, 22, 2026: Use theme-aware copyAccent for Copy History StatBadge.
                                       StatBadge(
                                         title: 'History',
                                         value: 'View',
-                                        color: AppColors.accent,
+                                        color: context.copyAccent,
                                         icon: Icons.history,
                                         onTap: () => showHistoryDialog(
                                           context,
@@ -348,16 +395,74 @@ class CopyFilesScreen extends StatelessWidget {
                             ),
                           const SizedBox(width: 16),
 
+                          //                           // Progress indicator
+                          //                           if (provider.isProcessing && !provider.isPaused)
+                          //                             Container(
+                          //                               width: 14,
+                          //                               height: 14,
+                          //                               margin: const EdgeInsets.only(right: 8),
+                          //                               child: const CircularProgressIndicator(
+                          //                                 strokeWidth: 2,
+                          //                                 valueColor: AlwaysStoppedAnimation<Color>(
+                          //                                   AppColors.info,
+                          //                                 ),
+                          //                               ),
+                          //                             ),
+                          //
+                          //                           // Status
+                          //                           Expanded(
+                          //                             child: Text(
+                          //                               provider.currentStatus,
+                          //                               style: TextStyle(
+                          //                                 fontWeight: FontWeight.w600,
+                          //                                 color: context.textPrimary,
+                          //                                 fontSize: 13,
+                          //                               ),
+                          //                               maxLines: 1,
+                          //                               overflow: TextOverflow.ellipsis,
+                          //                             ),
+                          //                           ),
+                          //                           const SizedBox(width: 8),
+                          //
+                          //                           // Stats
+                          //                           StatBadge(
+                          //                             title: 'Copied',
+                          //                             value: provider.filesCopied.toString(),
+                          //                             color: AppColors.info,
+                          //                             icon: Icons.file_copy,
+                          //                           ),
+                          //                           const SizedBox(width: 6),
+                          //                           StatBadge(
+                          //                             title: 'Exist',
+                          //                             value: provider.filesAlreadyExist.toString(),
+                          //                             color: AppColors.accent,
+                          //                             icon: Icons.check_circle_outline,
+                          //                           ),
+                          //                           const SizedBox(width: 6),
+                          //                           StatBadge(
+                          //                             title: 'Skipped',
+                          //                             value: provider.filesSkipped.toString(),
+                          //                             color: AppColors.warning,
+                          //                             icon: Icons.skip_next,
+                          //                           ),
+                          //                           const SizedBox(width: 6),
+                          //                           StatBadge(
+                          //                             title: 'Errors',
+                          //                             value: provider.errors.toString(),
+                          //                             color: AppColors.error,
+                          //                             icon: Icons.error_outline,
+                          //                           ),
+                          // Gene - Nov, 22, 2026: Unified CopyFilesScreen spinner and stat badge colors using theme-aware getters.
                           // Progress indicator
                           if (provider.isProcessing && !provider.isPaused)
                             Container(
                               width: 14,
                               height: 14,
                               margin: const EdgeInsets.only(right: 8),
-                              child: const CircularProgressIndicator(
+                              child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                  AppColors.info,
+                                  context.copyAccent,
                                 ),
                               ),
                             ),
@@ -381,28 +486,28 @@ class CopyFilesScreen extends StatelessWidget {
                           StatBadge(
                             title: 'Copied',
                             value: provider.filesCopied.toString(),
-                            color: AppColors.info,
+                            color: context.copyAccent,
                             icon: Icons.file_copy,
                           ),
                           const SizedBox(width: 6),
                           StatBadge(
                             title: 'Exist',
                             value: provider.filesAlreadyExist.toString(),
-                            color: AppColors.accent,
+                            color: context.primaryAccent,
                             icon: Icons.check_circle_outline,
                           ),
                           const SizedBox(width: 6),
                           StatBadge(
                             title: 'Skipped',
                             value: provider.filesSkipped.toString(),
-                            color: AppColors.warning,
+                            color: context.warningColor,
                             icon: Icons.skip_next,
                           ),
                           const SizedBox(width: 6),
                           StatBadge(
                             title: 'Errors',
                             value: provider.errors.toString(),
-                            color: AppColors.error,
+                            color: context.errorColor,
                             icon: Icons.error_outline,
                           ),
                         ],
@@ -438,13 +543,15 @@ class CopyFilesScreen extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 4),
-          Icon(
-            Icons.file_copy_rounded,
-            color: context.isDarkMode
-                ? AppColors.info
-                : const Color(0xFF0284C7),
-            size: 22,
-          ),
+          //           Icon(
+          //             Icons.file_copy_rounded,
+          //             color: context.isDarkMode
+          //                 ? AppColors.info
+          //                 : const Color(0xFF0284C7),
+          //             size: 22,
+          //           ),
+          // Gene - Nov, 22, 2026: Use unified copyAccent for CopyFilesScreen app bar icon.
+          Icon(Icons.file_copy_rounded, color: context.copyAccent, size: 22),
           const SizedBox(width: 10),
           Text(
             'Copy Files (${currentProfile.name})',
@@ -529,12 +636,41 @@ class CopyFilesScreen extends StatelessWidget {
           builder: (context, setDialogState) {
             return AlertDialog(
               title: Row(
+                //                 children: [
+                //                   const Icon(
+                //                     Icons.folder_copy,
+                //                     size: 22,
+                //                     color: AppColors.info,
+                //                   ),
+                //                   const SizedBox(width: 8),
+                //                   const Text('Directory Pairs', style: TextStyle(fontSize: 18)),
+                //                   const Spacer(),
+                //                   TextButton.icon(
+                //                     icon: const Icon(Icons.add, size: 18),
+                //                     label: const Text(
+                //                       'Add Pair',
+                //                       style: TextStyle(fontSize: 13),
+                //                     ),
+                //                     onPressed: () {
+                //                       provider.addDirectoryPair();
+                //                       setDialogState(() {});
+                //                     },
+                //                   ),
+                //                 ],
+                //               ),
+                //               contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                //               content: SizedBox(
+                //                 width: MediaQuery.of(context).size.width * 0.7,
+                //                 height: MediaQuery.of(context).size.height * 0.5,
+                //                 child: ListView.separated(
+                //                   itemCount: provider.directoryPairs.length,
+                //                   separatorBuilder: (_, _) => Divider(
+                //                     height: 16,
+                //                     color: AppColors.cardBorder.withValues(alpha: 0.5),
+                //                   ),
+                // Gene - Nov, 22, 2026: Use theme-aware copyAccent and border in CopyFilesScreen Directory Pairs dialog.
                 children: [
-                  const Icon(
-                    Icons.folder_copy,
-                    size: 22,
-                    color: AppColors.info,
-                  ),
+                  Icon(Icons.folder_copy, size: 22, color: context.copyAccent),
                   const SizedBox(width: 8),
                   const Text('Directory Pairs', style: TextStyle(fontSize: 18)),
                   const Spacer(),
@@ -559,7 +695,7 @@ class CopyFilesScreen extends StatelessWidget {
                   itemCount: provider.directoryPairs.length,
                   separatorBuilder: (_, _) => Divider(
                     height: 16,
-                    color: AppColors.cardBorder.withValues(alpha: 0.5),
+                    color: context.border.withValues(alpha: 0.5),
                   ),
                   itemBuilder: (context, i) {
                     return Column(
@@ -618,12 +754,20 @@ class CopyFilesScreen extends StatelessWidget {
                               ),
                             ),
                             const Spacer(),
+                            //                             if (provider.directoryPairs.length > 1)
+                            //                               IconButton(
+                            //                                 icon: const Icon(
+                            //                                   Icons.delete_outline,
+                            //                                   size: 18,
+                            //                                   color: AppColors.error,
+                            //                                 ),
+                            // Gene - Nov, 22, 2026: Use theme-aware errorColor for remove pair icon.
                             if (provider.directoryPairs.length > 1)
                               IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.delete_outline,
                                   size: 18,
-                                  color: AppColors.error,
+                                  color: context.errorColor,
                                 ),
                                 tooltip: 'Remove pair',
                                 onPressed: () {
@@ -687,10 +831,15 @@ class CopyFilesScreen extends StatelessWidget {
           value: provider,
           child: Consumer<CopyFilesProvider>(
             builder: (context, provider, child) {
+              //               return AlertDialog(
+              //                 title: Row(
+              //                   children: [
+              //                     Icon(Icons.settings, size: 22, color: AppColors.info),
+              // Gene - Nov, 22, 2026: Use theme-aware copyAccent in CopyFilesScreen Advanced Settings dialog title.
               return AlertDialog(
                 title: Row(
                   children: [
-                    Icon(Icons.settings, size: 22, color: AppColors.info),
+                    Icon(Icons.settings, size: 22, color: context.copyAccent),
                     const SizedBox(width: 8),
                     const Text(
                       'Advanced Settings',

@@ -150,6 +150,25 @@ class _HistoryDialogState extends State<HistoryDialog> {
             ),
           ),
           const Spacer(),
+          //           TextButton.icon(
+          //             onPressed: () {
+          //               final provider = Provider.of<HistoryProvider>(
+          //                 context,
+          //                 listen: false,
+          //               );
+          //               _showClearConfirmation(context, provider);
+          //             },
+          //             icon: const Icon(
+          //               Icons.delete_outline,
+          //               size: 16,
+          //               color: AppColors.error,
+          //             ),
+          //             label: const Text(
+          //               'Clear History',
+          //               style: TextStyle(color: AppColors.error, fontSize: 13),
+          //             ),
+          //           ),
+          // Gene - Nov, 22, 2026: Use theme-aware errorColor for Clear History action in HistoryDialog.
           TextButton.icon(
             onPressed: () {
               final provider = Provider.of<HistoryProvider>(
@@ -158,14 +177,14 @@ class _HistoryDialogState extends State<HistoryDialog> {
               );
               _showClearConfirmation(context, provider);
             },
-            icon: const Icon(
+            icon: Icon(
               Icons.delete_outline,
               size: 16,
-              color: AppColors.error,
+              color: context.errorColor,
             ),
-            label: const Text(
+            label: Text(
               'Clear History',
-              style: TextStyle(color: AppColors.error, fontSize: 13),
+              style: TextStyle(color: context.errorColor, fontSize: 13),
             ),
           ),
           const SizedBox(width: 8),
@@ -267,18 +286,85 @@ class _HistoryDialogState extends State<HistoryDialog> {
               ],
             ),
           const Spacer(),
+          //           _buildSummaryBadge(
+          //             context,
+          //             'Total Runs',
+          //             filtered.length.toString(),
+          //             context.isDarkMode ? AppColors.info : const Color(0xFF0284C7),
+          //           ),
+          //           const SizedBox(width: 8),
+          //           _buildSummaryBadge(
+          //             context,
+          //             'Files Processed',
+          //             NumberFormat('#,##0').format(totalFiles),
+          //             context.isDarkMode ? AppColors.success : const Color(0xFF16A34A),
+          //           ),
+          //           if (totalFolders > 0) ...[
+          //             const SizedBox(width: 8),
+          //             _buildSummaryBadge(
+          //               context,
+          //               'Folders',
+          //               NumberFormat('#,##0').format(totalFolders),
+          //               context.primaryAccent,
+          //             ),
+          //           ],
+          //           const SizedBox(width: 8),
+          //           _buildSummaryBadge(
+          //             context,
+          //             'Errors',
+          //             NumberFormat('#,##0').format(totalErrors),
+          //             totalErrors > 0 ? AppColors.error : context.textMuted,
+          //           ),
+          //         ],
+          //       ),
+          //     );
+          //   }
+          //
+          //   Widget _buildSummaryBadge(
+          //     BuildContext context,
+          //     String label,
+          //     String value,
+          //     Color color,
+          //   ) {
+          //     return Container(
+          //       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          //       decoration: BoxDecoration(
+          //         color: color.withValues(alpha: 0.1),
+          //         borderRadius: BorderRadius.circular(6),
+          //         border: Border.all(color: color.withValues(alpha: 0.3)),
+          //       ),
+          //       child: Row(
+          //         mainAxisSize: MainAxisSize.min,
+          //         children: [
+          //           Text(
+          //             '$label: ',
+          //             style: TextStyle(fontSize: 11, color: context.textMuted),
+          //           ),
+          //           Text(
+          //             value,
+          //             style: TextStyle(
+          //               fontSize: 12,
+          //               fontWeight: FontWeight.bold,
+          //               color: color,
+          //             ),
+          //           ),
+          //         ],
+          //       ),
+          //     );
+          //   }
+          // Gene - Nov, 22, 2026: Updated HistoryDialog summary badges to soft Neumorphic pills with theme-aware semantic colors.
           _buildSummaryBadge(
             context,
             'Total Runs',
             filtered.length.toString(),
-            context.isDarkMode ? AppColors.info : const Color(0xFF0284C7),
+            context.infoColor,
           ),
           const SizedBox(width: 8),
           _buildSummaryBadge(
             context,
             'Files Processed',
             NumberFormat('#,##0').format(totalFiles),
-            context.isDarkMode ? AppColors.success : const Color(0xFF16A34A),
+            context.successColor,
           ),
           if (totalFolders > 0) ...[
             const SizedBox(width: 8),
@@ -294,7 +380,7 @@ class _HistoryDialogState extends State<HistoryDialog> {
             context,
             'Errors',
             NumberFormat('#,##0').format(totalErrors),
-            totalErrors > 0 ? AppColors.error : context.textMuted,
+            totalErrors > 0 ? context.errorColor : context.textMuted,
           ),
         ],
       ),
@@ -307,12 +393,21 @@ class _HistoryDialogState extends State<HistoryDialog> {
     String value,
     Color color,
   ) {
+    final isDark = context.isDarkMode;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        color: context.cardBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: color.withValues(alpha: isDark ? 0.35 : 0.32),
+          width: 1.0,
+        ),
+        boxShadow: NeumorphicTheme.softShadows(
+          context,
+          distance: 1.5,
+          blur: 3.0,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -327,6 +422,7 @@ class _HistoryDialogState extends State<HistoryDialog> {
               fontSize: 12,
               fontWeight: FontWeight.bold,
               color: color,
+              fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
         ],
@@ -358,10 +454,13 @@ class _HistoryDialogState extends State<HistoryDialog> {
       scrollDirection: Axis.vertical,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        //         child: DataTable(
+        //           headingRowColor: WidgetStateProperty.all(
+        //             isDark ? AppColors.bgDark2 : const Color(0xFFE2E8F0),
+        //           ),
+        // Gene - Nov, 22, 2026: Use theme-aware tableHeaderBg in HistoryDialog DataTable.
         child: DataTable(
-          headingRowColor: WidgetStateProperty.all(
-            isDark ? AppColors.bgDark2 : const Color(0xFFE2E8F0),
-          ),
+          headingRowColor: WidgetStateProperty.all(context.tableHeaderBg),
           dataRowMinHeight: 52,
           dataRowMaxHeight: 68,
           horizontalMargin: 16,
@@ -469,11 +568,17 @@ class _HistoryDialogState extends State<HistoryDialog> {
             Color opColor = _getOpColor(record.operation, isDark);
             IconData opIcon = _getOpIcon(record.operation);
 
+            //             Color statusColor = record.status == 'Completed'
+            //                 ? (isDark ? AppColors.success : const Color(0xFF16A34A))
+            //                 : record.status == 'Stopped'
+            //                 ? (isDark ? AppColors.warning : const Color(0xFFD97706))
+            //                 : AppColors.error;
+            // Gene - Nov, 22, 2026: Use theme-aware semantic status colors in HistoryDialog table.
             Color statusColor = record.status == 'Completed'
-                ? (isDark ? AppColors.success : const Color(0xFF16A34A))
+                ? context.successColor
                 : record.status == 'Stopped'
-                ? (isDark ? AppColors.warning : const Color(0xFFD97706))
-                : AppColors.error;
+                ? context.warningColor
+                : context.errorColor;
 
             return DataRow(
               cells: [
@@ -593,8 +698,66 @@ class _HistoryDialogState extends State<HistoryDialog> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
+                      //                       color: record.errors > 0
+                      //                           ? AppColors.error
+                      //                           : context.textMuted,
+                      //                     ),
+                      //                   ),
+                      //                 ),
+                      //               ],
+                      //             );
+                      //           }).toList(),
+                      //         ),
+                      //       ),
+                      //     );
+                      //   }
+                      //
+                      //   Color _getOpColor(String operation, bool isDark) {
+                      //     switch (operation) {
+                      //       case 'Transfer':
+                      //         return isDark ? AppColors.accent : AppColors.lightAccent;
+                      //       case 'Copy':
+                      //         return isDark ? AppColors.info : const Color(0xFF0284C7);
+                      //       case 'Delete':
+                      //         return AppColors.error;
+                      //       case 'Count':
+                      //         return isDark ? AppColors.success : const Color(0xFF16A34A);
+                      //       // Gene - Nov, 21, 2026: Color mapping for FTP operation in HistoryDialog
+                      //       case 'FTP':
+                      //         return isDark ? AppColors.ftpDark : AppColors.ftpLight;
+                      //       default:
+                      //         return AppColors.textMuted;
+                      //     }
+                      //   }
+                      //
+                      //   IconData _getOpIcon(String operation) {
+                      //     switch (operation) {
+                      //       case 'Transfer':
+                      //         return Icons.move_up;
+                      //       case 'Copy':
+                      //         return Icons.file_copy;
+                      //       case 'Delete':
+                      //         return Icons.delete_forever;
+                      //       case 'Count':
+                      //         return Icons.analytics;
+                      //       // Gene - Nov, 21, 2026: Icon mapping for FTP operation in HistoryDialog
+                      //       case 'FTP':
+                      //         return Icons.cloud_upload;
+                      //       default:
+                      //         return Icons.help_outline;
+                      //     }
+                      //   }
+                      //
+                      //   void _showClearConfirmation(BuildContext context, HistoryProvider provider) {
+                      //     showDialog(
+                      //       context: context,
+                      //       builder: (ctx) => AlertDialog(
+                      //         title: Row(
+                      //           children: [
+                      //             Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 24),
+                      // Gene - Nov, 22, 2026: Unified operation colors (Copy -> Violet, Transfer -> Blue, Delete -> Red, Count -> Emerald, FTP -> Teal) and theme-aware errorColor in HistoryDialog.
                       color: record.errors > 0
-                          ? AppColors.error
+                          ? context.errorColor
                           : context.textMuted,
                     ),
                   ),
@@ -612,16 +775,15 @@ class _HistoryDialogState extends State<HistoryDialog> {
       case 'Transfer':
         return isDark ? AppColors.accent : AppColors.lightAccent;
       case 'Copy':
-        return isDark ? AppColors.info : const Color(0xFF0284C7);
+        return isDark ? AppColors.copyDark : AppColors.copyLight;
       case 'Delete':
-        return AppColors.error;
+        return isDark ? AppColors.errorDark : AppColors.errorLight;
       case 'Count':
-        return isDark ? AppColors.success : const Color(0xFF16A34A);
-      // Gene - Nov, 21, 2026: Color mapping for FTP operation in HistoryDialog
+        return isDark ? AppColors.successDark : AppColors.successLight;
       case 'FTP':
         return isDark ? AppColors.ftpDark : AppColors.ftpLight;
       default:
-        return AppColors.textMuted;
+        return isDark ? AppColors.textMuted : AppColors.lightTextMuted;
     }
   }
 
@@ -635,7 +797,6 @@ class _HistoryDialogState extends State<HistoryDialog> {
         return Icons.delete_forever;
       case 'Count':
         return Icons.analytics;
-      // Gene - Nov, 21, 2026: Icon mapping for FTP operation in HistoryDialog
       case 'FTP':
         return Icons.cloud_upload;
       default:
@@ -649,7 +810,11 @@ class _HistoryDialogState extends State<HistoryDialog> {
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 24),
+            Icon(
+              Icons.warning_amber_rounded,
+              color: context.errorColor,
+              size: 24,
+            ),
             const SizedBox(width: 8),
             const Text('Clear History'),
           ],

@@ -50,10 +50,33 @@ class UpdateDialog extends StatelessWidget {
                     : 'The download page opens in your browser.',
                 style: TextStyle(color: context.textSecondary, fontSize: 13),
               ),
+              //               if (provider.isDownloading) ...[
+              //                 const SizedBox(height: 16),
+              //                 LinearProgressIndicator(value: provider.downloadProgress),
+              //                 const SizedBox(height: 4),
+              //                 Text(
+              //                   'Downloading… '
+              //                   '${(provider.downloadProgress * 100).toStringAsFixed(0)}%',
+              //                   style: TextStyle(color: context.textMuted, fontSize: 12),
+              //                 ),
+              //               ],
+              //               if (provider.installError != null) ...[
+              //                 const SizedBox(height: 12),
+              //                 Text(
+              //                   'Update failed: ${provider.installError}. '
+              //                   'Use Download to get it manually.',
+              //                   style: const TextStyle(color: AppColors.error, fontSize: 13),
+              //                 ),
+              //               ],
+              // Gene - Nov, 22, 2026: Styled download progress with recessed Neumorphic groove and used theme-aware errorColor.
               if (provider.isDownloading) ...[
                 const SizedBox(height: 16),
-                LinearProgressIndicator(value: provider.downloadProgress),
-                const SizedBox(height: 4),
+                NeumorphicTheme.progressTrack(
+                  context,
+                  value: provider.downloadProgress,
+                  color: context.primaryAccent,
+                ),
+                const SizedBox(height: 6),
                 Text(
                   'Downloading… '
                   '${(provider.downloadProgress * 100).toStringAsFixed(0)}%',
@@ -65,7 +88,7 @@ class UpdateDialog extends StatelessWidget {
                 Text(
                   'Update failed: ${provider.installError}. '
                   'Use Download to get it manually.',
-                  style: const TextStyle(color: AppColors.error, fontSize: 13),
+                  style: TextStyle(color: context.errorColor, fontSize: 13),
                 ),
               ],
             ],

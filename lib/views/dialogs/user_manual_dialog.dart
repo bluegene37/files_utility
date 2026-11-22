@@ -151,11 +151,24 @@ class _UserManualDialogState extends State<UserManualDialog> {
   // Header Bar
   // ─────────────────────────────────────────────────────────────────────────
 
+  //   Widget _buildHeaderBar(BuildContext context, bool isDark) {
+  //     return Container(
+  //       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+  //       decoration: BoxDecoration(
+  //         color: isDark ? AppColors.bgDark3 : AppColors.lightBg2,
+  //         border: Border(
+  //           bottom: BorderSide(
+  //             color: context.border.withValues(alpha: 0.8),
+  //             width: 1,
+  //           ),
+  //         ),
+  //       ),
+  // Gene - Nov, 22, 2026: Use theme-aware tableHeaderBg in UserManualDialog header bar.
   Widget _buildHeaderBar(BuildContext context, bool isDark) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.bgDark3 : AppColors.lightBg2,
+        color: context.tableHeaderBg,
         border: Border(
           bottom: BorderSide(
             color: context.border.withValues(alpha: 0.8),
@@ -233,11 +246,72 @@ class _UserManualDialogState extends State<UserManualDialog> {
             ),
           ),
           const SizedBox(width: 12),
+          //           IconButton(
+          //             icon: const Icon(Icons.close_rounded, size: 20),
+          //             tooltip: 'Close (Esc)',
+          //             color: context.textSecondary,
+          //             hoverColor: AppColors.error.withValues(alpha: 0.15),
+          //             onPressed: () => Navigator.of(context).pop(),
+          //           ),
+          //         ],
+          //       ),
+          //     );
+          //   }
+          //
+          //   // ─────────────────────────────────────────────────────────────────────────
+          //   // Master Sidebar (Left)
+          //   // ─────────────────────────────────────────────────────────────────────────
+          //
+          //   Widget _buildMasterSidebar(
+          //     BuildContext context,
+          //     List<ManualTopic> filteredList,
+          //     ManualTopic selectedTopic,
+          //     bool isDark,
+          //   ) {
+          //     return Container(
+          //       color: isDark
+          //           ? AppColors.bgDark1.withValues(alpha: 0.5)
+          //           : AppColors.lightBg1.withValues(alpha: 0.7),
+          //       child: Column(
+          //         children: [
+          //           // Search Field Box
+          //           Padding(
+          //             padding: const EdgeInsets.all(12),
+          //             child: TextField(
+          //               controller: _searchController,
+          //               onChanged: (val) => setState(() => _searchQuery = val),
+          //               style: TextStyle(fontSize: 13, color: context.textPrimary),
+          //               decoration: InputDecoration(
+          //                 hintText: 'Search documentation...',
+          //                 hintStyle: TextStyle(fontSize: 12, color: context.textMuted),
+          //                 prefixIcon: Icon(
+          //                   Icons.search_rounded,
+          //                   size: 18,
+          //                   color: context.primaryAccent,
+          //                 ),
+          //                 suffixIcon: _searchQuery.isNotEmpty
+          //                     ? IconButton(
+          //                         icon: const Icon(Icons.clear_rounded, size: 16),
+          //                         onPressed: _clearSearch,
+          //                         tooltip: 'Clear search',
+          //                       )
+          //                     : null,
+          //                 contentPadding: const EdgeInsets.symmetric(
+          //                   horizontal: 10,
+          //                   vertical: 8,
+          //                 ),
+          //                 isDense: true,
+          //                 filled: true,
+          //                 fillColor: isDark ? AppColors.bgDark2 : AppColors.lightSurface,
+          //               ),
+          //             ),
+          //           ),
+          // Gene - Nov, 22, 2026: Use theme-aware errorColor, containerBg sidebar, and recessed search input in UserManualDialog.
           IconButton(
             icon: const Icon(Icons.close_rounded, size: 20),
             tooltip: 'Close (Esc)',
             color: context.textSecondary,
-            hoverColor: AppColors.error.withValues(alpha: 0.15),
+            hoverColor: context.errorColor.withValues(alpha: 0.15),
             onPressed: () => Navigator.of(context).pop(),
           ),
         ],
@@ -256,9 +330,7 @@ class _UserManualDialogState extends State<UserManualDialog> {
     bool isDark,
   ) {
     return Container(
-      color: isDark
-          ? AppColors.bgDark1.withValues(alpha: 0.5)
-          : AppColors.lightBg1.withValues(alpha: 0.7),
+      color: context.containerBg.withValues(alpha: 0.6),
       child: Column(
         children: [
           // Search Field Box
@@ -289,7 +361,7 @@ class _UserManualDialogState extends State<UserManualDialog> {
                 ),
                 isDense: true,
                 filled: true,
-                fillColor: isDark ? AppColors.bgDark2 : AppColors.lightSurface,
+                fillColor: context.recessBg,
               ),
             ),
           ),
@@ -393,13 +465,23 @@ class _UserManualDialogState extends State<UserManualDialog> {
             ),
             child: Row(
               children: [
+                //                 Container(
+                //                   width: 32,
+                //                   height: 32,
+                //                   decoration: BoxDecoration(
+                //                     color: isSelected
+                //                         ? activeColor.withValues(alpha: 0.25)
+                //                         : (isDark ? AppColors.bgDark3 : AppColors.lightBg2),
+                //                     borderRadius: BorderRadius.circular(8),
+                //                   ),
+                // Gene - Nov, 22, 2026: Use theme-aware containerBg for unselected topic icon container.
                 Container(
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? activeColor.withValues(alpha: 0.25)
-                        : (isDark ? AppColors.bgDark3 : AppColors.lightBg2),
+                        ? activeColor.withValues(alpha: 0.22)
+                        : context.containerBg,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
@@ -485,13 +567,21 @@ class _UserManualDialogState extends State<UserManualDialog> {
   // Detail Panel (Right)
   // ─────────────────────────────────────────────────────────────────────────
 
+  //   Widget _buildDetailPanel(
+  //     BuildContext context,
+  //     ManualTopic topic,
+  //     bool isDark,
+  //   ) {
+  //     return Container(
+  //       color: isDark ? AppColors.surface : AppColors.lightSurface,
+  // Gene - Nov, 22, 2026: Use context.cardBg for UserManualDialog detail panel.
   Widget _buildDetailPanel(
     BuildContext context,
     ManualTopic topic,
     bool isDark,
   ) {
     return Container(
-      color: isDark ? AppColors.surface : AppColors.lightSurface,
+      color: context.cardBg,
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
         child: Column(
@@ -590,8 +680,16 @@ class _UserManualDialogState extends State<UserManualDialog> {
                       horizontal: 7,
                       vertical: 2,
                     ),
+                    //                     decoration: BoxDecoration(
+                    //                       color: isDark ? AppColors.bgDark3 : AppColors.lightBg2,
+                    //                       borderRadius: BorderRadius.circular(4),
+                    //                       border: Border.all(
+                    //                         color: context.border.withValues(alpha: 0.5),
+                    //                       ),
+                    //                     ),
+                    // Gene - Nov, 22, 2026: Use context.containerBg for UserManualDialog keyword chips.
                     decoration: BoxDecoration(
-                      color: isDark ? AppColors.bgDark3 : AppColors.lightBg2,
+                      color: context.containerBg,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
                         color: context.border.withValues(alpha: 0.5),
@@ -624,6 +722,23 @@ class _UserManualDialogState extends State<UserManualDialog> {
     );
   }
 
+  //   Widget _buildSectionCard(
+  //     BuildContext context,
+  //     ManualSection section,
+  //     bool isDark,
+  //   ) {
+  //     return Container(
+  //       margin: const EdgeInsets.only(bottom: 16),
+  //       padding: const EdgeInsets.all(16),
+  //       decoration: BoxDecoration(
+  //         color: isDark ? AppColors.bgDark2 : AppColors.lightBg1,
+  //         borderRadius: BorderRadius.circular(12),
+  //         border: Border.all(
+  //           color: context.border.withValues(alpha: 0.8),
+  //           width: 1,
+  //         ),
+  //       ),
+  // Gene - Nov, 22, 2026: Styled UserManualDialog section cards with soft raised Neumorphic shadows and rim border.
   Widget _buildSectionCard(
     BuildContext context,
     ManualSection section,
@@ -633,11 +748,13 @@ class _UserManualDialogState extends State<UserManualDialog> {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.bgDark2 : AppColors.lightBg1,
+        color: context.cardBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: context.border.withValues(alpha: 0.8),
-          width: 1,
+        border: NeumorphicTheme.rimBorder(context),
+        boxShadow: NeumorphicTheme.softShadows(
+          context,
+          distance: 2.5,
+          blur: 5.0,
         ),
       ),
       child: Column(
@@ -684,12 +801,23 @@ class _UserManualDialogState extends State<UserManualDialog> {
                         color: context.primaryAccent,
                         shape: BoxShape.circle,
                       ),
+                      //                       child: Text(
+                      //                         '$stepIndex',
+                      //                         style: TextStyle(
+                      //                           fontSize: 10,
+                      //                           fontWeight: FontWeight.bold,
+                      //                           color: isDark ? AppColors.bgDark1 : Colors.white,
+                      //                         ),
+                      //                       ),
+                      // Gene - Nov, 22, 2026: Ensure high-contrast step number foreground on Electric/Royal Blue badge.
                       child: Text(
                         '$stepIndex',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: isDark ? AppColors.bgDark1 : Colors.white,
+                          color: isDark
+                              ? const Color(0xFF0F172A)
+                              : Colors.white,
                         ),
                       ),
                     ),
@@ -772,8 +900,13 @@ class _UserManualDialogState extends State<UserManualDialog> {
                     horizontal: 6,
                     vertical: 2,
                   ),
+                  //                   decoration: BoxDecoration(
+                  //                     color: isDark ? AppColors.bgDark3 : AppColors.lightBg2,
+                  //                     borderRadius: BorderRadius.circular(4),
+                  //                   ),
+                  // Gene - Nov, 22, 2026: Use context.containerBg for UserManualDialog section tags.
                   decoration: BoxDecoration(
-                    color: isDark ? AppColors.bgDark3 : AppColors.lightBg2,
+                    color: context.containerBg,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -832,6 +965,26 @@ class _UserManualDialogState extends State<UserManualDialog> {
     );
   }
 
+  //   Widget _buildSingleKbdBadge(
+  //     BuildContext context,
+  //     String keyText,
+  //     bool isDark,
+  //   ) {
+  //     return Container(
+  //       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+  //       decoration: BoxDecoration(
+  //         color: isDark ? const Color(0xFF241E19) : const Color(0xFFEFECE5),
+  //         borderRadius: BorderRadius.circular(6),
+  //         border: Border.all(color: context.border.withValues(alpha: 0.7)),
+  //         boxShadow: [
+  //           BoxShadow(
+  //             color: Colors.black.withValues(alpha: 0.08),
+  //             offset: const Offset(0, 1),
+  //             blurRadius: 1,
+  //           ),
+  //         ],
+  //       ),
+  // Gene - Nov, 22, 2026: Styled shortcut keycaps as raised soft Neumorphic keys in UserManualDialog.
   Widget _buildSingleKbdBadge(
     BuildContext context,
     String keyText,
@@ -840,16 +993,14 @@ class _UserManualDialogState extends State<UserManualDialog> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF241E19) : const Color(0xFFEFECE5),
+        color: context.cardBg,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: context.border.withValues(alpha: 0.7)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            offset: const Offset(0, 1),
-            blurRadius: 1,
-          ),
-        ],
+        border: NeumorphicTheme.rimBorder(context),
+        boxShadow: NeumorphicTheme.softShadows(
+          context,
+          distance: 1.5,
+          blur: 3.0,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -875,11 +1026,24 @@ class _UserManualDialogState extends State<UserManualDialog> {
   // Footer Bar
   // ─────────────────────────────────────────────────────────────────────────
 
+  //   Widget _buildFooterBar(BuildContext context, bool isDark) {
+  //     return Container(
+  //       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+  //       decoration: BoxDecoration(
+  //         color: isDark ? AppColors.bgDark3 : AppColors.lightBg2,
+  //         border: Border(
+  //           top: BorderSide(
+  //             color: context.border.withValues(alpha: 0.8),
+  //             width: 1,
+  //           ),
+  //         ),
+  //       ),
+  // Gene - Nov, 22, 2026: Use theme-aware tableHeaderBg in UserManualDialog footer bar.
   Widget _buildFooterBar(BuildContext context, bool isDark) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.bgDark3 : AppColors.lightBg2,
+        color: context.tableHeaderBg,
         border: Border(
           top: BorderSide(
             color: context.border.withValues(alpha: 0.8),

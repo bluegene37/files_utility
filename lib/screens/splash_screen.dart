@@ -84,22 +84,46 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                //                 // App icon
+                //                 Container(
+                //                   width: 160,
+                //                   height: 160,
+                //                   decoration: BoxDecoration(
+                //                     borderRadius: BorderRadius.circular(32),
+                //                     boxShadow: [
+                //                       BoxShadow(
+                //                         color: context.primaryAccent.withValues(alpha: 0.25),
+                //                         blurRadius: 40,
+                //                         spreadRadius: 5,
+                //                       ),
+                //                     ],
+                //                   ),
+                //                   child: ClipRRect(
+                //                     borderRadius: BorderRadius.circular(32),
+                //                     child: Image.asset(
+                //                       'assets/images/app_icon.png',
+                //                       fit: BoxFit.cover,
+                //                     ),
+                //                   ),
+                //                 ),
+                // Gene - Nov, 22, 2026: Wrapped SplashScreen app icon in an embossed Neumorphic bezel.
                 // App icon
                 Container(
-                  width: 160,
-                  height: 160,
+                  width: 172,
+                  height: 172,
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(32),
-                    boxShadow: [
-                      BoxShadow(
-                        color: context.primaryAccent.withValues(alpha: 0.25),
-                        blurRadius: 40,
-                        spreadRadius: 5,
-                      ),
-                    ],
+                    color: context.cardBg,
+                    borderRadius: BorderRadius.circular(34),
+                    border: NeumorphicTheme.rimBorder(context),
+                    boxShadow: NeumorphicTheme.raisedShadows(
+                      context,
+                      distance: 7.0,
+                      blur: 14.0,
+                    ),
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(32),
+                    borderRadius: BorderRadius.circular(28),
                     child: Image.asset(
                       'assets/images/app_icon.png',
                       fit: BoxFit.cover,

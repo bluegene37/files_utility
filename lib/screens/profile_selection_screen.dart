@@ -141,22 +141,46 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  //                   // App icon & Title
+                  //                   Container(
+                  //                     width: 80,
+                  //                     height: 80,
+                  //                     decoration: BoxDecoration(
+                  //                       borderRadius: BorderRadius.circular(20),
+                  //                       boxShadow: [
+                  //                         BoxShadow(
+                  //                           color: context.primaryAccent.withValues(alpha: 0.25),
+                  //                           blurRadius: 20,
+                  //                           spreadRadius: 2,
+                  //                         ),
+                  //                       ],
+                  //                     ),
+                  //                     child: ClipRRect(
+                  //                       borderRadius: BorderRadius.circular(20),
+                  //                       child: Image.asset(
+                  //                         'assets/images/app_icon.png',
+                  //                         fit: BoxFit.cover,
+                  //                       ),
+                  //                     ),
+                  //                   ),
+                  // Gene - Nov, 22, 2026: Wrapped ProfileSelectionScreen app icon in an embossed Neumorphic bezel.
                   // App icon & Title
                   Container(
-                    width: 80,
-                    height: 80,
+                    width: 88,
+                    height: 88,
+                    padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: context.primaryAccent.withValues(alpha: 0.25),
-                          blurRadius: 20,
-                          spreadRadius: 2,
-                        ),
-                      ],
+                      color: context.cardBg,
+                      borderRadius: BorderRadius.circular(22),
+                      border: NeumorphicTheme.rimBorder(context),
+                      boxShadow: NeumorphicTheme.raisedShadows(
+                        context,
+                        distance: 5.0,
+                        blur: 10.0,
+                      ),
                     ),
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(18),
                       child: Image.asset(
                         'assets/images/app_icon.png',
                         fit: BoxFit.cover,
@@ -272,45 +296,94 @@ class _ProfileSelectionScreenState extends State<ProfileSelectionScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
+                                  //                                   Tooltip(
+                                  //                                     message: profiles.length <= 1
+                                  //                                         ? 'Cannot delete the last profile'
+                                  //                                         : 'Delete selected profile',
+                                  //                                     child: IconButton(
+                                  //                                       onPressed:
+                                  //                                           profiles.length <= 1 ||
+                                  //                                               _selectedProfileId == null
+                                  //                                           ? null
+                                  //                                           : _deleteSelectedProfile,
+                                  //                                       icon: Icon(
+                                  //                                         Icons.delete_outline,
+                                  //                                         color:
+                                  //                                             profiles.length <= 1 ||
+                                  //                                                 _selectedProfileId == null
+                                  //                                             ? context.textMuted
+                                  //                                             : AppColors.error,
+                                  //                                       ),
+                                  //                                       style: IconButton.styleFrom(
+                                  //                                         backgroundColor:
+                                  //                                             profiles.length <= 1 ||
+                                  //                                                 _selectedProfileId == null
+                                  //                                             ? Colors.transparent
+                                  //                                             : AppColors.error.withValues(
+                                  //                                                 alpha: 0.1,
+                                  //                                               ),
+                                  //                                         shape: RoundedRectangleBorder(
+                                  //                                           borderRadius: BorderRadius.circular(
+                                  //                                             10,
+                                  //                                           ),
+                                  //                                           side: BorderSide(
+                                  //                                             color:
+                                  //                                                 profiles.length <= 1 ||
+                                  //                                                     _selectedProfileId == null
+                                  //                                                 ? context.border
+                                  //                                                 : AppColors.error.withValues(
+                                  //                                                     alpha: 0.3,
+                                  //                                                   ),
+                                  //                                           ),
+                                  //                                         ),
+                                  //                                       ),
+                                  //                                     ),
+                                  //                                   ),
+                                  // Gene - Nov, 22, 2026: Styled profile delete button with soft Neumorphic elevation when enabled and theme-aware errorColor.
                                   Tooltip(
                                     message: profiles.length <= 1
                                         ? 'Cannot delete the last profile'
                                         : 'Delete selected profile',
-                                    child: IconButton(
-                                      onPressed:
-                                          profiles.length <= 1 ||
-                                              _selectedProfileId == null
-                                          ? null
-                                          : _deleteSelectedProfile,
-                                      icon: Icon(
-                                        Icons.delete_outline,
+                                    child: Container(
+                                      decoration: BoxDecoration(
                                         color:
                                             profiles.length <= 1 ||
                                                 _selectedProfileId == null
-                                            ? context.textMuted
-                                            : AppColors.error,
-                                      ),
-                                      style: IconButton.styleFrom(
-                                        backgroundColor:
+                                            ? Colors.transparent
+                                            : context.cardBg,
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color:
+                                              profiles.length <= 1 ||
+                                                  _selectedProfileId == null
+                                              ? context.border
+                                              : context.errorColor.withValues(
+                                                  alpha: 0.35,
+                                                ),
+                                        ),
+                                        boxShadow:
                                             profiles.length <= 1 ||
                                                 _selectedProfileId == null
-                                            ? Colors.transparent
-                                            : AppColors.error.withValues(
-                                                alpha: 0.1,
+                                            ? null
+                                            : NeumorphicTheme.softShadows(
+                                                context,
+                                                distance: 2.0,
+                                                blur: 4.0,
                                               ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                          side: BorderSide(
-                                            color:
-                                                profiles.length <= 1 ||
-                                                    _selectedProfileId == null
-                                                ? context.border
-                                                : AppColors.error.withValues(
-                                                    alpha: 0.3,
-                                                  ),
-                                          ),
+                                      ),
+                                      child: IconButton(
+                                        onPressed:
+                                            profiles.length <= 1 ||
+                                                _selectedProfileId == null
+                                            ? null
+                                            : _deleteSelectedProfile,
+                                        icon: Icon(
+                                          Icons.delete_outline,
+                                          color:
+                                              profiles.length <= 1 ||
+                                                  _selectedProfileId == null
+                                              ? context.textMuted
+                                              : context.errorColor,
                                         ),
                                       ),
                                     ),

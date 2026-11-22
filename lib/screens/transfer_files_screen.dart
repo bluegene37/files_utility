@@ -49,10 +49,16 @@ class TransferFilesScreen extends StatelessWidget {
                                 MediaQuery.of(context).size.height * 0.45,
                           ),
                           child: SingleChildScrollView(
+                            //                             child: Container(
+                            //                               decoration: AppDecorations.glassCard(
+                            //                                 context: context,
+                            //                                 glowColor: AppColors.accent,
+                            //                               ),
+                            // Gene - Nov, 22, 2026: Use theme-aware primaryAccent for TransferFilesScreen card rim.
                             child: Container(
                               decoration: AppDecorations.glassCard(
                                 context: context,
-                                glowColor: AppColors.accent,
+                                glowColor: context.primaryAccent,
                               ),
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16.0,
@@ -78,26 +84,56 @@ class TransferFilesScreen extends StatelessWidget {
                                   // Advanced Settings & Log Interval on the same line
                                   Row(
                                     children: [
+                                      //                                       OutlinedButton.icon(
+                                      //                                         onPressed: () =>
+                                      //                                             _showAdvancedSettingsDialog(
+                                      //                                               context,
+                                      //                                               provider,
+                                      //                                             ),
+                                      //                                         icon: const Icon(
+                                      //                                           Icons.settings,
+                                      //                                           size: 16,
+                                      //                                           color: AppColors.accent,
+                                      //                                         ),
+                                      //                                         label: const Text(
+                                      //                                           'Advanced Settings',
+                                      //                                           style: TextStyle(
+                                      //                                             color: AppColors.accent,
+                                      //                                           ),
+                                      //                                         ),
+                                      //                                         style: OutlinedButton.styleFrom(
+                                      //                                           side: const BorderSide(
+                                      //                                             color: AppColors.cardBorder,
+                                      //                                           ),
+                                      //                                           padding: const EdgeInsets.symmetric(
+                                      //                                             horizontal: 16,
+                                      //                                             vertical: 8,
+                                      //                                           ),
+                                      //                                           visualDensity: VisualDensity.compact,
+                                      //                                         ),
+                                      //                                       ),
+                                      // Gene - Nov, 22, 2026: Replaced hardcoded AppColors.accent and AppColors.cardBorder on Advanced Settings button with theme-aware primaryAccent and border.
                                       OutlinedButton.icon(
                                         onPressed: () =>
                                             _showAdvancedSettingsDialog(
                                               context,
                                               provider,
                                             ),
-                                        icon: const Icon(
+                                        icon: Icon(
                                           Icons.settings,
                                           size: 16,
-                                          color: AppColors.accent,
+                                          color: context.primaryAccent,
                                         ),
-                                        label: const Text(
+                                        label: Text(
                                           'Advanced Settings',
                                           style: TextStyle(
-                                            color: AppColors.accent,
+                                            color: context.primaryAccent,
                                           ),
                                         ),
                                         style: OutlinedButton.styleFrom(
-                                          side: const BorderSide(
-                                            color: AppColors.cardBorder,
+                                          side: BorderSide(
+                                            color: context.primaryAccent
+                                                .withValues(alpha: 0.45),
                                           ),
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: 16,
@@ -183,10 +219,139 @@ class TransferFilesScreen extends StatelessWidget {
                                         ),
                                       ),
                                       const SizedBox(width: 12),
+                                      //                                       StatBadge(
+                                      //                                         title: 'History',
+                                      //                                         value: 'View',
+                                      //                                         color: AppColors.accent,
+                                      //                                         icon: Icons.history,
+                                      //                                         onTap: () => showHistoryDialog(
+                                      //                                           context,
+                                      //                                           initialOperation: 'Transfer',
+                                      //                                         ),
+                                      //                                       ),
+                                      //                                     ],
+                                      //                                   ),
+                                      //                                   if (provider.enableDateRange ||
+                                      //                                       provider.enableAgeFilter ||
+                                      //                                       provider.excludeSubfolders) ...[
+                                      //                                     const SizedBox(height: 8),
+                                      //                                     Wrap(
+                                      //                                       spacing: 8,
+                                      //                                       runSpacing: 4,
+                                      //                                       children: [
+                                      //                                         if (provider.enableDateRange)
+                                      //                                           Container(
+                                      //                                             padding: const EdgeInsets.symmetric(
+                                      //                                               horizontal: 8,
+                                      //                                               vertical: 4,
+                                      //                                             ),
+                                      //                                             decoration: BoxDecoration(
+                                      //                                               color: AppColors.accent
+                                      //                                                   .withValues(alpha: 0.12),
+                                      //                                               borderRadius:
+                                      //                                                   BorderRadius.circular(6),
+                                      //                                               border: Border.all(
+                                      //                                                 color: AppColors.accent
+                                      //                                                     .withValues(alpha: 0.3),
+                                      //                                               ),
+                                      //                                             ),
+                                      //                                             child: Row(
+                                      //                                               mainAxisSize: MainAxisSize.min,
+                                      //                                               children: [
+                                      //                                                 const Icon(
+                                      //                                                   Icons.calendar_today,
+                                      //                                                   size: 12,
+                                      //                                                   color: AppColors.accent,
+                                      //                                                 ),
+                                      //                                                 const SizedBox(width: 4),
+                                      //                                                 Text(
+                                      //                                                   'Date: ${DateFormat('dd/MM/yyyy').format(provider.fromDate)} – ${DateFormat('dd/MM/yyyy').format(provider.toDate)}',
+                                      //                                                   style: const TextStyle(
+                                      //                                                     fontSize: 11,
+                                      //                                                     fontWeight:
+                                      //                                                         FontWeight.w500,
+                                      //                                                     color: AppColors.accent,
+                                      //                                                   ),
+                                      //                                                 ),
+                                      //                                               ],
+                                      //                                             ),
+                                      //                                           ),
+                                      //                                         if (provider.enableAgeFilter)
+                                      //                                           Container(
+                                      //                                             padding: const EdgeInsets.symmetric(
+                                      //                                               horizontal: 8,
+                                      //                                               vertical: 4,
+                                      //                                             ),
+                                      //                                             decoration: BoxDecoration(
+                                      //                                               color: AppColors.accent
+                                      //                                                   .withValues(alpha: 0.12),
+                                      //                                               borderRadius:
+                                      //                                                   BorderRadius.circular(6),
+                                      //                                               border: Border.all(
+                                      //                                                 color: AppColors.accent
+                                      //                                                     .withValues(alpha: 0.3),
+                                      //                                               ),
+                                      //                                             ),
+                                      //                                             child: Row(
+                                      //                                               mainAxisSize: MainAxisSize.min,
+                                      //                                               children: [
+                                      //                                                 const Icon(
+                                      //                                                   Icons.schedule,
+                                      //                                                   size: 12,
+                                      //                                                   color: AppColors.accent,
+                                      //                                                 ),
+                                      //                                                 const SizedBox(width: 4),
+                                      //                                                 Text(
+                                      //                                                   'Age: > ${provider.ageFilterValue} ${provider.ageFilterUnit}',
+                                      //                                                   style: const TextStyle(
+                                      //                                                     fontSize: 11,
+                                      //                                                     fontWeight:
+                                      //                                                         FontWeight.w500,
+                                      //                                                     color: AppColors.accent,
+                                      //                                                   ),
+                                      //                                                 ),
+                                      //                                               ],
+                                      //                                             ),
+                                      //                                           ),
+                                      //                                         if (provider.excludeSubfolders)
+                                      //                                           Container(
+                                      //                                             padding: const EdgeInsets.symmetric(
+                                      //                                               horizontal: 8,
+                                      //                                               vertical: 4,
+                                      //                                             ),
+                                      //                                             decoration: BoxDecoration(
+                                      //                                               color: AppColors.cardBorder
+                                      //                                                   .withValues(alpha: 0.3),
+                                      //                                               borderRadius:
+                                      //                                                   BorderRadius.circular(6),
+                                      //                                             ),
+                                      //                                             child: Row(
+                                      //                                               mainAxisSize: MainAxisSize.min,
+                                      //                                               children: [
+                                      //                                                 Icon(
+                                      //                                                   Icons.folder,
+                                      //                                                   size: 12,
+                                      //                                                   color: context.textMuted,
+                                      //                                                 ),
+                                      //                                                 const SizedBox(width: 4),
+                                      //                                                 Text(
+                                      //                                                   'Source folder only',
+                                      //                                                   style: TextStyle(
+                                      //                                                     fontSize: 11,
+                                      //                                                     color: context.textMuted,
+                                      //                                                   ),
+                                      //                                                 ),
+                                      //                                               ],
+                                      //                                             ),
+                                      //                                           ),
+                                      //                                       ],
+                                      //                                     ),
+                                      //                                   ],
+                                      // Gene - Nov, 22, 2026: Fixed post-merge filter summary chips to use theme-aware primaryAccent/border and soft Neumorphic pill styling.
                                       StatBadge(
                                         title: 'History',
                                         value: 'View',
-                                        color: AppColors.accent,
+                                        color: context.primaryAccent,
                                         icon: Icons.history,
                                         onTap: () => showHistoryDialog(
                                           context,
@@ -201,40 +366,49 @@ class TransferFilesScreen extends StatelessWidget {
                                     const SizedBox(height: 8),
                                     Wrap(
                                       spacing: 8,
-                                      runSpacing: 4,
+                                      runSpacing: 6,
                                       children: [
                                         if (provider.enableDateRange)
                                           Container(
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 4,
+                                              horizontal: 10,
+                                              vertical: 5,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: AppColors.accent
-                                                  .withValues(alpha: 0.12),
+                                              color: context.cardBg,
                                               borderRadius:
-                                                  BorderRadius.circular(6),
+                                                  BorderRadius.circular(8),
                                               border: Border.all(
-                                                color: AppColors.accent
-                                                    .withValues(alpha: 0.3),
+                                                color: context.primaryAccent
+                                                    .withValues(
+                                                      alpha: context.isDarkMode
+                                                          ? 0.4
+                                                          : 0.35,
+                                                    ),
                                               ),
+                                              boxShadow:
+                                                  NeumorphicTheme.softShadows(
+                                                    context,
+                                                    distance: 1.5,
+                                                    blur: 3.0,
+                                                  ),
                                             ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                const Icon(
+                                                Icon(
                                                   Icons.calendar_today,
                                                   size: 12,
-                                                  color: AppColors.accent,
+                                                  color: context.primaryAccent,
                                                 ),
-                                                const SizedBox(width: 4),
+                                                const SizedBox(width: 5),
                                                 Text(
                                                   'Date: ${DateFormat('dd/MM/yyyy').format(provider.fromDate)} – ${DateFormat('dd/MM/yyyy').format(provider.toDate)}',
-                                                  style: const TextStyle(
-                                                    fontSize: 11,
-                                                    fontWeight:
-                                                        FontWeight.w500,
-                                                    color: AppColors.accent,
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w600,
+                                                    color:
+                                                        context.primaryAccent,
                                                   ),
                                                 ),
                                               ],
@@ -243,35 +417,44 @@ class TransferFilesScreen extends StatelessWidget {
                                         if (provider.enableAgeFilter)
                                           Container(
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 4,
+                                              horizontal: 10,
+                                              vertical: 5,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: AppColors.accent
-                                                  .withValues(alpha: 0.12),
+                                              color: context.cardBg,
                                               borderRadius:
-                                                  BorderRadius.circular(6),
+                                                  BorderRadius.circular(8),
                                               border: Border.all(
-                                                color: AppColors.accent
-                                                    .withValues(alpha: 0.3),
+                                                color: context.primaryAccent
+                                                    .withValues(
+                                                      alpha: context.isDarkMode
+                                                          ? 0.4
+                                                          : 0.35,
+                                                    ),
                                               ),
+                                              boxShadow:
+                                                  NeumorphicTheme.softShadows(
+                                                    context,
+                                                    distance: 1.5,
+                                                    blur: 3.0,
+                                                  ),
                                             ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                const Icon(
+                                                Icon(
                                                   Icons.schedule,
                                                   size: 12,
-                                                  color: AppColors.accent,
+                                                  color: context.primaryAccent,
                                                 ),
-                                                const SizedBox(width: 4),
+                                                const SizedBox(width: 5),
                                                 Text(
                                                   'Age: > ${provider.ageFilterValue} ${provider.ageFilterUnit}',
-                                                  style: const TextStyle(
-                                                    fontSize: 11,
-                                                    fontWeight:
-                                                        FontWeight.w500,
-                                                    color: AppColors.accent,
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w600,
+                                                    color:
+                                                        context.primaryAccent,
                                                   ),
                                                 ),
                                               ],
@@ -280,14 +463,22 @@ class TransferFilesScreen extends StatelessWidget {
                                         if (provider.excludeSubfolders)
                                           Container(
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 4,
+                                              horizontal: 10,
+                                              vertical: 5,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: AppColors.cardBorder
-                                                  .withValues(alpha: 0.3),
+                                              color: context.cardBg,
                                               borderRadius:
-                                                  BorderRadius.circular(6),
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: context.border,
+                                              ),
+                                              boxShadow:
+                                                  NeumorphicTheme.softShadows(
+                                                    context,
+                                                    distance: 1.5,
+                                                    blur: 3.0,
+                                                  ),
                                             ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
@@ -295,14 +486,16 @@ class TransferFilesScreen extends StatelessWidget {
                                                 Icon(
                                                   Icons.folder,
                                                   size: 12,
-                                                  color: context.textMuted,
+                                                  color: context.textSecondary,
                                                 ),
-                                                const SizedBox(width: 4),
+                                                const SizedBox(width: 5),
                                                 Text(
                                                   'Source folder only',
                                                   style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: context.textMuted,
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w500,
+                                                    color:
+                                                        context.textSecondary,
                                                   ),
                                                 ),
                                               ],
@@ -372,16 +565,56 @@ class TransferFilesScreen extends StatelessWidget {
                               ),
                             ),
                           const SizedBox(width: 16),
+                          //                           // Status
+                          //                           if (provider.isProcessing && !provider.isPaused)
+                          //                             Container(
+                          //                               width: 14,
+                          //                               height: 14,
+                          //                               margin: const EdgeInsets.only(right: 8),
+                          //                               child: const CircularProgressIndicator(
+                          //                                 strokeWidth: 2,
+                          //                                 valueColor: AlwaysStoppedAnimation<Color>(
+                          //                                   AppColors.accent,
+                          //                                 ),
+                          //                               ),
+                          //                             ),
+                          //                           Expanded(
+                          //                             child: Text(
+                          //                               provider.currentStatus,
+                          //                               style: TextStyle(
+                          //                                 fontWeight: FontWeight.w600,
+                          //                                 color: context.textPrimary,
+                          //                                 fontSize: 13,
+                          //                               ),
+                          //                               maxLines: 1,
+                          //                               overflow: TextOverflow.ellipsis,
+                          //                             ),
+                          //                           ),
+                          //                           const SizedBox(width: 8),
+                          //                           StatBadge(
+                          //                             title: 'Moved',
+                          //                             value: provider.filesMoved.toString(),
+                          //                             color: AppColors.success,
+                          //                             icon: Icons.check_circle,
+                          //                           ),
+                          //                           const SizedBox(width: 8),
+                          //                           StatBadge(
+                          //                             title: 'Errors',
+                          //                             value: provider.errors.toString(),
+                          //                             color: AppColors.error,
+                          //                             icon: Icons.error,
+                          //                           ),
+                          // Gene - Nov, 22, 2026: Replaced hardcoded spinner and stat badge colors with theme-aware getters.
                           // Status
                           if (provider.isProcessing && !provider.isPaused)
                             Container(
                               width: 14,
                               height: 14,
                               margin: const EdgeInsets.only(right: 8),
-                              child: const CircularProgressIndicator(
+                              child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                  AppColors.accent,
+                                  context.primaryAccent,
                                 ),
                               ),
                             ),
@@ -401,14 +634,14 @@ class TransferFilesScreen extends StatelessWidget {
                           StatBadge(
                             title: 'Moved',
                             value: provider.filesMoved.toString(),
-                            color: AppColors.success,
+                            color: context.successColor,
                             icon: Icons.check_circle,
                           ),
                           const SizedBox(width: 8),
                           StatBadge(
                             title: 'Errors',
                             value: provider.errors.toString(),
-                            color: AppColors.error,
+                            color: context.errorColor,
                             icon: Icons.error,
                           ),
                         ],
@@ -533,10 +766,19 @@ class TransferFilesScreen extends StatelessWidget {
           value: provider,
           child: Consumer<TransferFilesProvider>(
             builder: (context, provider, child) {
+              //               return AlertDialog(
+              //                 title: Row(
+              //                   children: [
+              //                     Icon(Icons.settings, size: 22, color: AppColors.accent),
+              // Gene - Nov, 22, 2026: Use theme-aware primaryAccent in TransferFilesScreen Advanced Settings dialog title.
               return AlertDialog(
                 title: Row(
                   children: [
-                    Icon(Icons.settings, size: 22, color: AppColors.accent),
+                    Icon(
+                      Icons.settings,
+                      size: 22,
+                      color: context.primaryAccent,
+                    ),
                     const SizedBox(width: 8),
                     const Text(
                       'Advanced Settings',
@@ -702,10 +944,9 @@ class TransferFilesScreen extends StatelessWidget {
                                     value: provider.yesterdayOnly,
                                     onChanged: provider.isProcessing
                                         ? null
-                                        : (val) =>
-                                            provider.setYesterdayOnly(
-                                              val ?? false,
-                                            ),
+                                        : (val) => provider.setYesterdayOnly(
+                                            val ?? false,
+                                          ),
                                     visualDensity: VisualDensity.compact,
                                     materialTapTargetSize:
                                         MaterialTapTargetSize.shrinkWrap,

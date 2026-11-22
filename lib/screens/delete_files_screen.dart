@@ -37,10 +37,16 @@ class DeleteFilesScreen extends StatelessWidget {
                   child: Column(
                     children: [
                       // Config Section
+                      //                       Container(
+                      //                         decoration: AppDecorations.glassCard(
+                      //                           context: context,
+                      //                           glowColor: AppColors.error,
+                      //                         ),
+                      // Gene - Nov, 22, 2026: Use theme-aware errorColor for DeleteFilesScreen card rim.
                       Container(
                         decoration: AppDecorations.glassCard(
                           context: context,
-                          glowColor: AppColors.error,
+                          glowColor: context.errorColor,
                         ),
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
@@ -55,23 +61,51 @@ class DeleteFilesScreen extends StatelessWidget {
                             const SizedBox(height: 8),
                             Row(
                               children: [
+                                //                                 OutlinedButton.icon(
+                                //                                   onPressed: () => _showAdvancedSettingsDialog(
+                                //                                     context,
+                                //                                     provider,
+                                //                                   ),
+                                //                                   icon: const Icon(
+                                //                                     Icons.settings,
+                                //                                     size: 16,
+                                //                                     color: AppColors.accent,
+                                //                                   ),
+                                //                                   label: const Text(
+                                //                                     'Advanced Settings',
+                                //                                     style: TextStyle(color: AppColors.accent),
+                                //                                   ),
+                                //                                   style: OutlinedButton.styleFrom(
+                                //                                     side: const BorderSide(
+                                //                                       color: AppColors.cardBorder,
+                                //                                     ),
+                                //                                     padding: const EdgeInsets.symmetric(
+                                //                                       horizontal: 16,
+                                //                                       vertical: 8,
+                                //                                     ),
+                                //                                     visualDensity: VisualDensity.compact,
+                                //                                   ),
+                                //                                 ),
+                                // Gene - Nov, 22, 2026: Styled Advanced Settings button with theme-aware errorColor in DeleteFilesScreen.
                                 OutlinedButton.icon(
                                   onPressed: () => _showAdvancedSettingsDialog(
                                     context,
                                     provider,
                                   ),
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.settings,
                                     size: 16,
-                                    color: AppColors.accent,
+                                    color: context.errorColor,
                                   ),
-                                  label: const Text(
+                                  label: Text(
                                     'Advanced Settings',
-                                    style: TextStyle(color: AppColors.accent),
+                                    style: TextStyle(color: context.errorColor),
                                   ),
                                   style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(
-                                      color: AppColors.cardBorder,
+                                    side: BorderSide(
+                                      color: context.errorColor.withValues(
+                                        alpha: 0.45,
+                                      ),
                                     ),
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 16,
@@ -154,10 +188,21 @@ class DeleteFilesScreen extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 12),
+                                //                                 StatBadge(
+                                //                                   title: 'History',
+                                //                                   value: 'View',
+                                //                                   color: AppColors.accent,
+                                //                                   icon: Icons.history,
+                                //                                   onTap: () => showHistoryDialog(
+                                //                                     context,
+                                //                                     initialOperation: 'Delete',
+                                //                                   ),
+                                //                                 ),
+                                // Gene - Nov, 22, 2026: Use theme-aware errorColor for Delete History StatBadge.
                                 StatBadge(
                                   title: 'History',
                                   value: 'View',
-                                  color: AppColors.accent,
+                                  color: context.errorColor,
                                   icon: Icons.history,
                                   onTap: () => showHistoryDialog(
                                     context,
@@ -196,12 +241,67 @@ class DeleteFilesScreen extends StatelessWidget {
                               label: const Text('Clear Logs'),
                             ),
                           ] else
+                            //                             ElevatedButton.icon(
+                            //                               onPressed: provider.stop,
+                            //                               icon: const Icon(Icons.stop),
+                            //                               label: const Text('Stop'),
+                            //                               style: ElevatedButton.styleFrom(
+                            //                                 backgroundColor: Colors.grey.shade700,
+                            //                                 foregroundColor: Colors.white,
+                            //                               ),
+                            //                             ),
+                            //                           const SizedBox(width: 16),
+                            //
+                            //                           // Progress indicator
+                            //                           if (provider.isProcessing)
+                            //                             Container(
+                            //                               width: 14,
+                            //                               height: 14,
+                            //                               margin: const EdgeInsets.only(right: 8),
+                            //                               child: CircularProgressIndicator(
+                            //                                 strokeWidth: 2,
+                            //                                 valueColor: AlwaysStoppedAnimation<Color>(
+                            //                                   AppColors.error.withValues(alpha: 0.8),
+                            //                                 ),
+                            //                               ),
+                            //                             ),
+                            //
+                            //                           // Status
+                            //                           Expanded(
+                            //                             child: Text(
+                            //                               provider.currentStatus,
+                            //                               style: TextStyle(
+                            //                                 fontWeight: FontWeight.w600,
+                            //                                 color: context.textPrimary,
+                            //                                 fontSize: 13,
+                            //                               ),
+                            //                               maxLines: 1,
+                            //                               overflow: TextOverflow.ellipsis,
+                            //                             ),
+                            //                           ),
+                            //                           const SizedBox(width: 8),
+                            //
+                            //                           // Stats
+                            //                           StatBadge(
+                            //                             title: 'Deleted',
+                            //                             value: provider.deletedCount.toString(),
+                            //                             color: AppColors.error,
+                            //                             icon: Icons.delete,
+                            //                           ),
+                            //                           const SizedBox(width: 8),
+                            //                           StatBadge(
+                            //                             title: 'Errors',
+                            //                             value: provider.errorCount.toString(),
+                            //                             color: AppColors.warning,
+                            //                             icon: Icons.error_outline,
+                            //                           ),
+                            // Gene - Nov, 22, 2026: Updated DeleteFilesScreen Stop button to slate neutral and stat badges/spinner to theme-aware semantic colors.
                             ElevatedButton.icon(
                               onPressed: provider.stop,
                               icon: const Icon(Icons.stop),
                               label: const Text('Stop'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.grey.shade700,
+                                backgroundColor: const Color(0xFF475569),
                                 foregroundColor: Colors.white,
                               ),
                             ),
@@ -216,7 +316,7 @@ class DeleteFilesScreen extends StatelessWidget {
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                  AppColors.error.withValues(alpha: 0.8),
+                                  context.errorColor.withValues(alpha: 0.85),
                                 ),
                               ),
                             ),
@@ -240,14 +340,14 @@ class DeleteFilesScreen extends StatelessWidget {
                           StatBadge(
                             title: 'Deleted',
                             value: provider.deletedCount.toString(),
-                            color: AppColors.error,
+                            color: context.errorColor,
                             icon: Icons.delete,
                           ),
                           const SizedBox(width: 8),
                           StatBadge(
                             title: 'Errors',
                             value: provider.errorCount.toString(),
-                            color: AppColors.warning,
+                            color: context.warningColor,
                             icon: Icons.error_outline,
                           ),
                         ],
@@ -295,9 +395,15 @@ class DeleteFilesScreen extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 4),
-          const Icon(
+          //           const Icon(
+          //             Icons.delete_forever_rounded,
+          //             color: AppColors.error,
+          //             size: 22,
+          //           ),
+          // Gene - Nov, 22, 2026: Use theme-aware errorColor for DeleteFilesScreen app bar icon.
+          Icon(
             Icons.delete_forever_rounded,
-            color: AppColors.error,
+            color: context.errorColor,
             size: 22,
           ),
           const SizedBox(width: 10),
@@ -325,9 +431,81 @@ class DeleteFilesScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        //         title: Row(
+        //           children: [
+        //             Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 24),
+        //             const SizedBox(width: 8),
+        //             const Text('Confirm Deletion'),
+        //           ],
+        //         ),
+        //         content: Column(
+        //           mainAxisSize: MainAxisSize.min,
+        //           crossAxisAlignment: CrossAxisAlignment.start,
+        //           children: [
+        //             Text(
+        //               'Are you sure you want to delete EVERYTHING inside:',
+        //               style: TextStyle(color: context.textSecondary),
+        //             ),
+        //             const SizedBox(height: 8),
+        //             Container(
+        //               padding: const EdgeInsets.all(10),
+        //               decoration: BoxDecoration(
+        //                 color: context.containerBg,
+        //                 borderRadius: BorderRadius.circular(8),
+        //                 border: Border.all(color: context.border),
+        //               ),
+        //               child: Text(
+        //                 provider.targetPath ?? '',
+        //                 style: TextStyle(
+        //                   fontWeight: FontWeight.w600,
+        //                   color: context.textPrimary,
+        //                   fontFamily: 'Consolas',
+        //                   fontSize: 13,
+        //                 ),
+        //               ),
+        //             ),
+        //             const SizedBox(height: 8),
+        //             Text(
+        //               'Filter: Files up to Year ${provider.selectedYear} matching months: ${provider.validMonths.join(', ')}',
+        //               style: TextStyle(
+        //                 fontStyle: FontStyle.italic,
+        //                 color: context.textMuted,
+        //                 fontSize: 13,
+        //               ),
+        //             ),
+        //             const SizedBox(height: 12),
+        //             Container(
+        //               padding: const EdgeInsets.all(10),
+        //               decoration: BoxDecoration(
+        //                 color: AppColors.error.withValues(alpha: 0.1),
+        //                 borderRadius: BorderRadius.circular(8),
+        //                 border: Border.all(
+        //                   color: AppColors.error.withValues(alpha: 0.3),
+        //                 ),
+        //               ),
+        //               child: const Row(
+        //                 children: [
+        //                   Icon(Icons.warning, color: AppColors.error, size: 18),
+        //                   SizedBox(width: 8),
+        //                   Text(
+        //                     'This action cannot be undone!',
+        //                     style: TextStyle(
+        //                       color: AppColors.error,
+        //                       fontWeight: FontWeight.w600,
+        //                       fontSize: 13,
+        //                     ),
+        //                   ),
+        //                 ],
+        //               ),
+        //             ),
+        // Gene - Nov, 22, 2026: Styled Delete confirmation target box as recessed Neumorphic well and used theme-aware errorColor.
         title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 24),
+            Icon(
+              Icons.warning_amber_rounded,
+              color: context.errorColor,
+              size: 24,
+            ),
             const SizedBox(width: 8),
             const Text('Confirm Deletion'),
           ],
@@ -343,10 +521,9 @@ class DeleteFilesScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: context.containerBg,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: context.border),
+              decoration: NeumorphicTheme.recessedDecoration(
+                context,
+                radius: 10,
               ),
               child: Text(
                 provider.targetPath ?? '',
@@ -371,20 +548,20 @@ class DeleteFilesScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: AppColors.error.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
+                color: context.errorColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: AppColors.error.withValues(alpha: 0.3),
+                  color: context.errorColor.withValues(alpha: 0.3),
                 ),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.warning, color: AppColors.error, size: 18),
-                  SizedBox(width: 8),
+                  Icon(Icons.warning, color: context.errorColor, size: 18),
+                  const SizedBox(width: 8),
                   Text(
                     'This action cannot be undone!',
                     style: TextStyle(
-                      color: AppColors.error,
+                      color: context.errorColor,
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
                     ),
@@ -426,10 +603,15 @@ class DeleteFilesScreen extends StatelessWidget {
           value: provider,
           child: Consumer<DeleteFilesProvider>(
             builder: (context, provider, child) {
+              //               return AlertDialog(
+              //                 title: Row(
+              //                   children: [
+              //                     Icon(Icons.settings, size: 22, color: AppColors.error),
+              // Gene - Nov, 22, 2026: Use theme-aware errorColor in DeleteFilesScreen Advanced Settings dialog.
               return AlertDialog(
                 title: Row(
                   children: [
-                    Icon(Icons.settings, size: 22, color: AppColors.error),
+                    Icon(Icons.settings, size: 22, color: context.errorColor),
                     const SizedBox(width: 8),
                     const Text(
                       'Advanced Settings',

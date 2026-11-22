@@ -37,10 +37,16 @@ class CountFilesScreen extends StatelessWidget {
                   child: Column(
                     children: [
                       // Config Section
+                      //                       Container(
+                      //                         decoration: AppDecorations.glassCard(
+                      //                           context: context,
+                      //                           glowColor: AppColors.success,
+                      //                         ),
+                      // Gene - Nov, 22, 2026: Use theme-aware successColor for CountFilesScreen card rim.
                       Container(
                         decoration: AppDecorations.glassCard(
                           context: context,
-                          glowColor: AppColors.success,
+                          glowColor: context.successColor,
                         ),
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
@@ -132,10 +138,21 @@ class CountFilesScreen extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 12),
+                                //                                 StatBadge(
+                                //                                   title: 'History',
+                                //                                   value: 'View',
+                                //                                   color: AppColors.accent,
+                                //                                   icon: Icons.history,
+                                //                                   onTap: () => showHistoryDialog(
+                                //                                     context,
+                                //                                     initialOperation: 'Count',
+                                //                                   ),
+                                //                                 ),
+                                // Gene - Nov, 22, 2026: Use theme-aware successColor for Count History StatBadge.
                                 StatBadge(
                                   title: 'History',
                                   value: 'View',
-                                  color: AppColors.accent,
+                                  color: context.successColor,
                                   icon: Icons.history,
                                   onTap: () => showHistoryDialog(
                                     context,
@@ -178,16 +195,67 @@ class CountFilesScreen extends StatelessWidget {
                             ),
                           const SizedBox(width: 16),
 
+                          //                           // Progress indicator
+                          //                           if (provider.isCounting)
+                          //                             Container(
+                          //                               width: 14,
+                          //                               height: 14,
+                          //                               margin: const EdgeInsets.only(right: 8),
+                          //                               child: const CircularProgressIndicator(
+                          //                                 strokeWidth: 2,
+                          //                                 valueColor: AlwaysStoppedAnimation<Color>(
+                          //                                   AppColors.success,
+                          //                                 ),
+                          //                               ),
+                          //                             ),
+                          //
+                          //                           // Status
+                          //                           Expanded(
+                          //                             child: Text(
+                          //                               provider.currentStatus,
+                          //                               style: TextStyle(
+                          //                                 fontWeight: FontWeight.w600,
+                          //                                 color: context.textPrimary,
+                          //                                 fontSize: 13,
+                          //                               ),
+                          //                               maxLines: 1,
+                          //                               overflow: TextOverflow.ellipsis,
+                          //                             ),
+                          //                           ),
+                          //                           const SizedBox(width: 8),
+                          //
+                          //                           // Stats
+                          //                           StatBadge(
+                          //                             title: 'Files',
+                          //                             value: provider.totalFiles.toString(),
+                          //                             color: AppColors.success,
+                          //                             icon: Icons.insert_drive_file,
+                          //                           ),
+                          //                           const SizedBox(width: 8),
+                          //                           StatBadge(
+                          //                             title: 'Folders',
+                          //                             value: provider.totalFolders.toString(),
+                          //                             color: AppColors.info,
+                          //                             icon: Icons.folder,
+                          //                           ),
+                          //                           const SizedBox(width: 8),
+                          //                           StatBadge(
+                          //                             title: 'Errors',
+                          //                             value: provider.errors.toString(),
+                          //                             color: AppColors.error,
+                          //                             icon: Icons.error,
+                          //                           ),
+                          // Gene - Nov, 22, 2026: Replaced hardcoded spinner and stat badge colors in CountFilesScreen with theme-aware getters.
                           // Progress indicator
                           if (provider.isCounting)
                             Container(
                               width: 14,
                               height: 14,
                               margin: const EdgeInsets.only(right: 8),
-                              child: const CircularProgressIndicator(
+                              child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                  AppColors.success,
+                                  context.successColor,
                                 ),
                               ),
                             ),
@@ -211,21 +279,21 @@ class CountFilesScreen extends StatelessWidget {
                           StatBadge(
                             title: 'Files',
                             value: provider.totalFiles.toString(),
-                            color: AppColors.success,
+                            color: context.successColor,
                             icon: Icons.insert_drive_file,
                           ),
                           const SizedBox(width: 8),
                           StatBadge(
                             title: 'Folders',
                             value: provider.totalFolders.toString(),
-                            color: AppColors.info,
+                            color: context.infoColor,
                             icon: Icons.folder,
                           ),
                           const SizedBox(width: 8),
                           StatBadge(
                             title: 'Errors',
                             value: provider.errors.toString(),
-                            color: AppColors.error,
+                            color: context.errorColor,
                             icon: Icons.error,
                           ),
                         ],
@@ -261,13 +329,15 @@ class CountFilesScreen extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 4),
-          Icon(
-            Icons.analytics_rounded,
-            color: context.isDarkMode
-                ? AppColors.success
-                : const Color(0xFF16A34A),
-            size: 22,
-          ),
+          //           Icon(
+          //             Icons.analytics_rounded,
+          //             color: context.isDarkMode
+          //                 ? AppColors.success
+          //                 : const Color(0xFF16A34A),
+          //             size: 22,
+          //           ),
+          // Gene - Nov, 22, 2026: Use theme-aware successColor for CountFilesScreen app bar icon.
+          Icon(Icons.analytics_rounded, color: context.successColor, size: 22),
           const SizedBox(width: 10),
           Text(
             'Count Files (${currentProfile.name})',

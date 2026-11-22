@@ -95,16 +95,49 @@ class _HistoryScreenState extends State<HistoryScreen>
                           _buildVisualGraphsDashboard(context, provider),
                           const SizedBox(height: 16),
 
+                          //                           // Tab Bar for each operation table
+                          //                           Container(
+                          //                             decoration: BoxDecoration(
+                          //                               color: context.containerBg,
+                          //                               borderRadius: BorderRadius.circular(10),
+                          //                               border: Border.all(color: context.border),
+                          //                             ),
+                          //                             child: TabBar(
+                          //                               controller: _tabController,
+                          //                               indicatorColor: context.primaryAccent,
+                          //                               labelColor: context.primaryAccent,
+                          //                               unselectedLabelColor: context.textSecondary,
+                          //                               labelStyle: const TextStyle(
+                          //                                 fontWeight: FontWeight.bold,
+                          //                                 fontSize: 13,
+                          //                               ),
+                          //                               tabs: _operations
+                          //                                   .map((op) => Tab(text: '$op History'))
+                          //                                   .toList(),
+                          //                             ),
+                          //                           ),
+                          // Gene - Nov, 22, 2026: Styled HistoryScreen TabBar as a recessed Neumorphic track with a raised active-tab pill indicator.
                           // Tab Bar for each operation table
                           Container(
-                            decoration: BoxDecoration(
-                              color: context.containerBg,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: context.border),
+                            decoration: NeumorphicTheme.recessedDecoration(
+                              context,
+                              radius: 12,
                             ),
                             child: TabBar(
                               controller: _tabController,
-                              indicatorColor: context.primaryAccent,
+                              indicator: BoxDecoration(
+                                color: context.cardBg,
+                                borderRadius: BorderRadius.circular(9),
+                                border: NeumorphicTheme.rimBorder(context),
+                                boxShadow: NeumorphicTheme.softShadows(
+                                  context,
+                                  distance: 2.0,
+                                  blur: 4.0,
+                                ),
+                              ),
+                              indicatorSize: TabBarIndicatorSize.tab,
+                              indicatorPadding: const EdgeInsets.all(4),
+                              dividerColor: Colors.transparent,
                               labelColor: context.primaryAccent,
                               unselectedLabelColor: context.textSecondary,
                               labelStyle: const TextStyle(
@@ -166,6 +199,25 @@ class _HistoryScreenState extends State<HistoryScreen>
             ),
           ),
           const Spacer(),
+          //           TextButton.icon(
+          //             onPressed: () {
+          //               final provider = Provider.of<HistoryProvider>(
+          //                 context,
+          //                 listen: false,
+          //               );
+          //               _showClearConfirmation(context, provider);
+          //             },
+          //             icon: const Icon(
+          //               Icons.delete_outline,
+          //               size: 18,
+          //               color: AppColors.error,
+          //             ),
+          //             label: const Text(
+          //               'Clear All History',
+          //               style: TextStyle(color: AppColors.error),
+          //             ),
+          //           ),
+          // Gene - Nov, 22, 2026: Use theme-aware errorColor on Clear All History button.
           TextButton.icon(
             onPressed: () {
               final provider = Provider.of<HistoryProvider>(
@@ -174,14 +226,14 @@ class _HistoryScreenState extends State<HistoryScreen>
               );
               _showClearConfirmation(context, provider);
             },
-            icon: const Icon(
+            icon: Icon(
               Icons.delete_outline,
               size: 18,
-              color: AppColors.error,
+              color: context.errorColor,
             ),
-            label: const Text(
+            label: Text(
               'Clear All History',
-              style: TextStyle(color: AppColors.error),
+              style: TextStyle(color: context.errorColor),
             ),
           ),
           const SizedBox(width: 8),
@@ -270,14 +322,72 @@ class _HistoryScreenState extends State<HistoryScreen>
           // Bar Graph Comparison Cards
           Row(
             children: [
+              //               Expanded(
+              //                 child: _buildOperationGraphCard(
+              //                   context,
+              //                   title: 'Transfer',
+              //                   icon: Icons.move_up,
+              //                   color: context.isDarkMode
+              //                       ? AppColors.accent
+              //                       : AppColors.lightAccent,
+              //                   runsCount: records
+              //                       .where((r) => r.operation == 'Transfer')
+              //                       .length,
+              //                   filesCount: transferFiles,
+              //                   ratio: transferFiles / maxFiles,
+              //                 ),
+              //               ),
+              //               const SizedBox(width: 12),
+              //               Expanded(
+              //                 child: _buildOperationGraphCard(
+              //                   context,
+              //                   title: 'Copy',
+              //                   icon: Icons.file_copy,
+              //                   color: context.isDarkMode
+              //                       ? AppColors.info
+              //                       : const Color(0xFF0284C7),
+              //                   runsCount: records.where((r) => r.operation == 'Copy').length,
+              //                   filesCount: copyFiles,
+              //                   ratio: copyFiles / maxFiles,
+              //                 ),
+              //               ),
+              //               const SizedBox(width: 12),
+              //               Expanded(
+              //                 child: _buildOperationGraphCard(
+              //                   context,
+              //                   title: 'Delete',
+              //                   icon: Icons.delete_forever,
+              //                   color: AppColors.error,
+              //                   runsCount: records
+              //                       .where((r) => r.operation == 'Delete')
+              //                       .length,
+              //                   filesCount: deleteFiles,
+              //                   ratio: deleteFiles / maxFiles,
+              //                 ),
+              //               ),
+              //               const SizedBox(width: 12),
+              //               Expanded(
+              //                 child: _buildOperationGraphCard(
+              //                   context,
+              //                   title: 'Count',
+              //                   icon: Icons.analytics,
+              //                   color: context.isDarkMode
+              //                       ? AppColors.success
+              //                       : const Color(0xFF16A34A),
+              //                   runsCount: records
+              //                       .where((r) => r.operation == 'Count')
+              //                       .length,
+              //                   filesCount: countFiles,
+              //                   ratio: countFiles / maxFiles,
+              //                 ),
+              //               ),
+              // Gene - Nov, 22, 2026: Unified HistoryScreen summary card operation colors with theme-aware getters.
               Expanded(
                 child: _buildOperationGraphCard(
                   context,
                   title: 'Transfer',
                   icon: Icons.move_up,
-                  color: context.isDarkMode
-                      ? AppColors.accent
-                      : AppColors.lightAccent,
+                  color: context.primaryAccent,
                   runsCount: records
                       .where((r) => r.operation == 'Transfer')
                       .length,
@@ -291,9 +401,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                   context,
                   title: 'Copy',
                   icon: Icons.file_copy,
-                  color: context.isDarkMode
-                      ? AppColors.info
-                      : const Color(0xFF0284C7),
+                  color: context.copyAccent,
                   runsCount: records.where((r) => r.operation == 'Copy').length,
                   filesCount: copyFiles,
                   ratio: copyFiles / maxFiles,
@@ -305,7 +413,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                   context,
                   title: 'Delete',
                   icon: Icons.delete_forever,
-                  color: AppColors.error,
+                  color: context.errorColor,
                   runsCount: records
                       .where((r) => r.operation == 'Delete')
                       .length,
@@ -319,9 +427,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                   context,
                   title: 'Count',
                   icon: Icons.analytics,
-                  color: context.isDarkMode
-                      ? AppColors.success
-                      : const Color(0xFF16A34A),
+                  color: context.successColor,
                   runsCount: records
                       .where((r) => r.operation == 'Count')
                       .length,
@@ -337,9 +443,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                   title: 'FTP',
                   icon: Icons.cloud_upload,
                   color: context.ftpAccent,
-                  runsCount: records
-                      .where((r) => r.operation == 'FTP')
-                      .length,
+                  runsCount: records.where((r) => r.operation == 'FTP').length,
                   filesCount: ftpFiles,
                   ratio: ftpFiles / maxFiles,
                 ),
@@ -351,6 +455,91 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  //   Widget _buildOperationGraphCard(
+  //     BuildContext context, {
+  //     required String title,
+  //     required IconData icon,
+  //     required Color color,
+  //     required int runsCount,
+  //     required int filesCount,
+  //     required double ratio,
+  //   }) {
+  //     return Container(
+  //       padding: const EdgeInsets.all(12),
+  //       decoration: BoxDecoration(
+  //         color: context.containerBg,
+  //         borderRadius: BorderRadius.circular(12),
+  //         border: Border.all(color: context.border),
+  //       ),
+  //       child: Column(
+  //         crossAxisAlignment: CrossAxisAlignment.start,
+  //         children: [
+  //           Row(
+  //             children: [
+  //               Icon(icon, color: color, size: 16),
+  //               const SizedBox(width: 6),
+  //               Text(
+  //                 title,
+  //                 style: TextStyle(
+  //                   fontSize: 13,
+  //                   fontWeight: FontWeight.bold,
+  //                   color: color,
+  //                 ),
+  //               ),
+  //               const Spacer(),
+  //               Container(
+  //                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+  //                 decoration: BoxDecoration(
+  //                   color: color.withValues(alpha: 0.12),
+  //                   borderRadius: BorderRadius.circular(6),
+  //                 ),
+  //                 child: Text(
+  //                   '$runsCount runs',
+  //                   style: TextStyle(
+  //                     fontSize: 10,
+  //                     fontWeight: FontWeight.bold,
+  //                     color: color,
+  //                   ),
+  //                 ),
+  //               ),
+  //             ],
+  //           ),
+  //           const SizedBox(height: 10),
+  //           Row(
+  //             crossAxisAlignment: CrossAxisAlignment.baseline,
+  //             textBaseline: TextBaseline.alphabetic,
+  //             children: [
+  //               Text(
+  //                 NumberFormat('#,##0').format(filesCount),
+  //                 style: TextStyle(
+  //                   fontSize: 16,
+  //                   fontWeight: FontWeight.bold,
+  //                   color: context.textPrimary,
+  //                 ),
+  //               ),
+  //               const SizedBox(width: 4),
+  //               Text(
+  //                 'files',
+  //                 style: TextStyle(fontSize: 11, color: context.textMuted),
+  //               ),
+  //             ],
+  //           ),
+  //           const SizedBox(height: 8),
+  //           // Progress bar representation
+  //           ClipRRect(
+  //             borderRadius: BorderRadius.circular(4),
+  //             child: LinearProgressIndicator(
+  //               value: ratio.clamp(0.04, 1.0),
+  //               minHeight: 6,
+  //               backgroundColor: context.border,
+  //               valueColor: AlwaysStoppedAnimation<Color>(color),
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //     );
+  //   }
+  // Gene - Nov, 22, 2026: Upgraded _buildOperationGraphCard to soft raised Neumorphic tile with sunken progress groove.
   Widget _buildOperationGraphCard(
     BuildContext context, {
     required String title,
@@ -363,9 +552,14 @@ class _HistoryScreenState extends State<HistoryScreen>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: context.containerBg,
+        color: context.cardBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.border),
+        border: NeumorphicTheme.rimBorder(context),
+        boxShadow: NeumorphicTheme.softShadows(
+          context,
+          distance: 2.5,
+          blur: 5.0,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -411,6 +605,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: context.textPrimary,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
               const SizedBox(width: 4),
@@ -421,15 +616,11 @@ class _HistoryScreenState extends State<HistoryScreen>
             ],
           ),
           const SizedBox(height: 8),
-          // Progress bar representation
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: ratio.clamp(0.04, 1.0),
-              minHeight: 6,
-              backgroundColor: context.border,
-              valueColor: AlwaysStoppedAnimation<Color>(color),
-            ),
+          NeumorphicTheme.progressTrack(
+            context,
+            value: ratio.clamp(0.04, 1.0),
+            color: color,
+            height: 7.0,
           ),
         ],
       ),
@@ -476,10 +667,13 @@ class _HistoryScreenState extends State<HistoryScreen>
           scrollDirection: Axis.vertical,
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
+            //             child: DataTable(
+            //               headingRowColor: WidgetStateProperty.all(
+            //                 isDark ? AppColors.bgDark2 : const Color(0xFFE2E8F0),
+            //               ),
+            // Gene - Nov, 22, 2026: Use theme-aware tableHeaderBg in HistoryScreen DataTable.
             child: DataTable(
-              headingRowColor: WidgetStateProperty.all(
-                isDark ? AppColors.bgDark2 : const Color(0xFFE2E8F0),
-              ),
+              headingRowColor: WidgetStateProperty.all(context.tableHeaderBg),
               dataRowMinHeight: 52,
               dataRowMaxHeight: 64,
               horizontalMargin: 16,
@@ -597,11 +791,17 @@ class _HistoryScreenState extends State<HistoryScreen>
                 Color opColor = _getOpColor(record.operation, isDark);
                 IconData opIcon = _getOpIcon(record.operation);
 
+                //                 Color statusColor = record.status == 'Completed'
+                //                     ? (isDark ? AppColors.success : const Color(0xFF16A34A))
+                //                     : record.status == 'Stopped'
+                //                     ? (isDark ? AppColors.warning : const Color(0xFFD97706))
+                //                     : AppColors.error;
+                // Gene - Nov, 22, 2026: Use theme-aware semantic status colors in HistoryScreen table.
                 Color statusColor = record.status == 'Completed'
-                    ? (isDark ? AppColors.success : const Color(0xFF16A34A))
+                    ? context.successColor
                     : record.status == 'Stopped'
-                    ? (isDark ? AppColors.warning : const Color(0xFFD97706))
-                    : AppColors.error;
+                    ? context.warningColor
+                    : context.errorColor;
 
                 return DataRow(
                   cells: [
@@ -727,8 +927,68 @@ class _HistoryScreenState extends State<HistoryScreen>
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
+                          //                           color: record.errors > 0
+                          //                               ? AppColors.error
+                          //                               : context.textMuted,
+                          //                         ),
+                          //                       ),
+                          //                     ),
+                          //                   ],
+                          //                 );
+                          //               }).toList(),
+                          //             ),
+                          //           ),
+                          //         ),
+                          //       ),
+                          //     );
+                          //   }
+                          //
+                          //   Color _getOpColor(String operation, bool isDark) {
+                          //     switch (operation) {
+                          //       case 'Transfer':
+                          //         return isDark ? AppColors.accent : AppColors.lightAccent;
+                          //       case 'Copy':
+                          //         return isDark ? AppColors.info : const Color(0xFF0284C7);
+                          //       case 'Delete':
+                          //         return AppColors.error;
+                          //       case 'Count':
+                          //         return isDark ? AppColors.success : const Color(0xFF16A34A);
+                          //       // Gene - Nov, 21, 2026: Color mapping for FTP operation in HistoryScreen
+                          //       case 'FTP':
+                          //         return isDark ? AppColors.ftpDark : AppColors.ftpLight;
+                          //       default:
+                          //         return isDark ? AppColors.textMuted : AppColors.lightTextMuted;
+                          //     }
+                          //   }
+                          //
+                          //   IconData _getOpIcon(String operation) {
+                          //     switch (operation) {
+                          //       case 'Transfer':
+                          //         return Icons.move_up;
+                          //       case 'Copy':
+                          //         return Icons.file_copy;
+                          //       case 'Delete':
+                          //         return Icons.delete_forever;
+                          //       case 'Count':
+                          //         return Icons.analytics;
+                          //       // Gene - Nov, 21, 2026: Icon mapping for FTP operation in HistoryScreen
+                          //       case 'FTP':
+                          //         return Icons.cloud_upload;
+                          //       default:
+                          //         return Icons.help_outline;
+                          //     }
+                          //   }
+                          //
+                          //   void _showClearConfirmation(BuildContext context, HistoryProvider provider) {
+                          //     showDialog(
+                          //       context: context,
+                          //       builder: (ctx) => AlertDialog(
+                          //         title: Row(
+                          //           children: [
+                          //             Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 24),
+                          // Gene - Nov, 22, 2026: Unified HistoryScreen operation colors and theme-aware errorColor.
                           color: record.errors > 0
-                              ? AppColors.error
+                              ? context.errorColor
                               : context.textMuted,
                         ),
                       ),
@@ -748,12 +1008,11 @@ class _HistoryScreenState extends State<HistoryScreen>
       case 'Transfer':
         return isDark ? AppColors.accent : AppColors.lightAccent;
       case 'Copy':
-        return isDark ? AppColors.info : const Color(0xFF0284C7);
+        return isDark ? AppColors.copyDark : AppColors.copyLight;
       case 'Delete':
-        return AppColors.error;
+        return isDark ? AppColors.errorDark : AppColors.errorLight;
       case 'Count':
-        return isDark ? AppColors.success : const Color(0xFF16A34A);
-      // Gene - Nov, 21, 2026: Color mapping for FTP operation in HistoryScreen
+        return isDark ? AppColors.successDark : AppColors.successLight;
       case 'FTP':
         return isDark ? AppColors.ftpDark : AppColors.ftpLight;
       default:
@@ -771,7 +1030,6 @@ class _HistoryScreenState extends State<HistoryScreen>
         return Icons.delete_forever;
       case 'Count':
         return Icons.analytics;
-      // Gene - Nov, 21, 2026: Icon mapping for FTP operation in HistoryScreen
       case 'FTP':
         return Icons.cloud_upload;
       default:
@@ -785,7 +1043,11 @@ class _HistoryScreenState extends State<HistoryScreen>
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 24),
+            Icon(
+              Icons.warning_amber_rounded,
+              color: context.errorColor,
+              size: 24,
+            ),
             const SizedBox(width: 8),
             const Text('Clear History'),
           ],
