@@ -189,9 +189,9 @@ To enable automated signing and notarization on GitHub Releases, configure the f
 | :--- | :--- |
 | `MACOS_CERTIFICATE_BASE64` | Your Developer ID Application `.p12` certificate, base64-encoded |
 | `MACOS_CERTIFICATE_PASSWORD` | The `.p12` export password |
-| `APPLE_ID` | Apple Developer Account email (e.g. `bluegene37@outlook.com`) |
+| `APPLE_ID` | Apple Developer Account email (e.g. `<your-apple-id@example.com>`) |
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password generated from appleid.apple.com |
-| `APPLE_TEAM_ID` | Apple Developer Team ID (`T7LB768N2Z`) |
+| `APPLE_TEAM_ID` | Apple Developer Team ID (`<YOUR_TEAM_ID>`) |
 
 Encode `.p12` certificate for GitHub Secrets:
 ```bash
@@ -211,7 +211,7 @@ With no certificate secret set, the CI workflow falls back gracefully to an ad-h
 .\scripts\build_windows_installer.ps1
 
 # Build and sign with a PFX certificate:
-.\scripts\build_windows_installer.ps1 -CertPath "C:\path\to\cert.pfx" -CertPassword "YourPassword"
+.\scripts\build_windows_installer.ps1 -CertPath "C:\path\to\cert.pfx" -CertPassword "<your-cert-password>"
 
 # Build and test signing with an automated self-signed certificate:
 .\scripts\build_windows_installer.ps1 -CreateSelfSigned
@@ -240,11 +240,11 @@ dart run msix:create
 # Output location: build/macos/Files Utility-<version>.dmg
 ```
 
-For local automated notarization, store your credentials once in Keychain:
+For local automated notarization, store your credentials once in Keychain (and optionally set `MACOS_SIGNING_IDENTITY` / `NOTARY_PROFILE` in your shell):
 ```bash
 xcrun notarytool store-credentials "files-utility-notary" \
-  --apple-id "bluegene37@outlook.com" \
-  --team-id "T7LB768N2Z" \
+  --apple-id "<your-apple-id@example.com>" \
+  --team-id "<YOUR_TEAM_ID>" \
   --password "<your-app-specific-password>"
 ```
 
@@ -266,4 +266,4 @@ dart run flutter_launcher_icons
 <!-- Previous implementation:
 | **macOS (`.dmg`)** | **Unsigned / Not Notarized** | Apple Gatekeeper blocks untrusted execution on first launch. Users right-click `.app` in `/Applications` $\rightarrow$ **Open**, or run: `xattr -dr com.apple.quarantine "/Applications/Files Utility.app"`. | Join Apple Developer Program, sign with Developer ID Application certificate, and notarize via `xcrun notarytool`. |
 -->
-| **macOS (`.dmg`)** | **Developer ID Signed & Notarization Pipeline Enabled** | Fully trusted and verified by Apple Gatekeeper when signed with Developer ID Application and notarized. | Configured with `Developer ID Application: Gene Ray Medel (T7LB768N2Z)` and Hardened Runtime; automated via `scripts/build_macos_dmg.sh` and CI. |
+| **macOS (`.dmg`)** | **Developer ID Signed & Notarization Pipeline Enabled** | Fully trusted and verified by Apple Gatekeeper when signed with Developer ID Application and notarized. | Configured with `Developer ID Application: <Your Name> (<YOUR_TEAM_ID>)` (via `MACOS_SIGNING_IDENTITY` or local Keychain auto-detection) and Hardened Runtime; automated via `scripts/build_macos_dmg.sh` and CI. |

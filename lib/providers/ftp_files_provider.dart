@@ -1023,11 +1023,19 @@ class FtpFilesProvider with ChangeNotifier {
       'type': 'ftp_settings',
       'schemaVersion': 1,
       'exportedAt': (now ?? _nowProvider()).toIso8601String(),
+      //       'connection': {
+      //         'protocol': protocol.storageKey,
+      //         'host': host,
+      //         'port': port,
+      //         'username': username,
+      //         'transferMode': transferMode.storageKey,
+      //         'timeoutSeconds': timeoutSeconds,
+      //       },
+      // Gene - Nov, 23, 2026: Exclude both username and password from exported FTP settings JSON.
       'connection': {
         'protocol': protocol.storageKey,
         'host': host,
         'port': port,
-        'username': username,
         'transferMode': transferMode.storageKey,
         'timeoutSeconds': timeoutSeconds,
       },
@@ -1192,9 +1200,25 @@ class FtpFilesProvider with ChangeNotifier {
           port = pVal;
         }
       }
-      if (conn.containsKey('username')) {
-        username = (conn['username'] as String? ?? '').trim();
-      }
+      //       if (conn.containsKey('username')) {
+      //         username = (conn['username'] as String? ?? '').trim();
+      //       }
+      //       if (conn.containsKey('transferMode')) {
+      //         transferMode = FtpTransferMode.fromStorage(
+      //           conn['transferMode'] as String?,
+      //         );
+      //       }
+      //       if (conn.containsKey('timeoutSeconds')) {
+      //         final tVal = (conn['timeoutSeconds'] as num?)?.toInt();
+      //         if (tVal != null) {
+      //           timeoutSeconds = tVal.clamp(5, 600);
+      //         }
+      //       }
+      //       // Clear cached password if importing settings for a different server host.
+      //       if (host.isNotEmpty && previousHost.isNotEmpty && host != previousHost) {
+      //         password = '';
+      //       }
+      // Gene - Nov, 23, 2026: Never import username from JSON exports and clear both username and password when switching hosts.
       if (conn.containsKey('transferMode')) {
         transferMode = FtpTransferMode.fromStorage(
           conn['transferMode'] as String?,
@@ -1206,8 +1230,9 @@ class FtpFilesProvider with ChangeNotifier {
           timeoutSeconds = tVal.clamp(5, 600);
         }
       }
-      // Clear cached password if importing settings for a different server host.
+      // Clear cached credentials if importing settings for a different server host.
       if (host.isNotEmpty && previousHost.isNotEmpty && host != previousHost) {
+        username = '';
         password = '';
       }
     }
@@ -1330,8 +1355,11 @@ class FtpFilesProvider with ChangeNotifier {
 
     settingsVersion++;
     _saveSettings();
+    //     final msg =
+    //         'Imported FTP settings (${uploadSources.length} source(s)). Re-enter FTP password if needed.';
+    // Gene - Nov, 23, 2026: Prompt user to enter both FTP username and password after JSON settings import.
     final msg =
-        'Imported FTP settings (${uploadSources.length} source(s)). Re-enter FTP password if needed.';
+        'Imported FTP settings (${uploadSources.length} source(s)). Enter FTP username and password in Connection settings.';
     _addLog('📥 $msg');
     notifyListeners();
     return msg;
@@ -1364,9 +1392,15 @@ class FtpFilesProvider with ChangeNotifier {
         jsonContent: exportSettingsJsonString(),
       );
       if (outPath == null) return null;
-      _addLog('📤 Exported FTP settings (without password) to $outPath');
+      //       _addLog('📤 Exported FTP settings (without password) to $outPath');
+      //       notifyListeners();
+      //       return 'Exported FTP settings (without password) to ${p.basename(outPath)}';
+      // Gene - Nov, 23, 2026: Update export message to reflect username and password exclusion.
+      _addLog(
+        '📤 Exported FTP settings (without username/password) to $outPath',
+      );
       notifyListeners();
-      return 'Exported FTP settings (without password) to ${p.basename(outPath)}';
+      return 'Exported FTP settings (without username/password) to ${p.basename(outPath)}';
     } catch (e) {
       return 'Failed to export settings: ${CredentialObfuscator.redact(e.toString(), password)}';
     }

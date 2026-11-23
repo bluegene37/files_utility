@@ -469,8 +469,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CURRENT_PROJECT_VERSION = 1;
-				// Gene - Nov, 22, 2026: Commented out DEVELOPMENT_TEAM to support headless macOS CI builds
-				// DEVELOPMENT_TEAM = T7LB768N2Z;
+				// Gene - Nov, 23, 2026: Removed personal Apple Team ID comment; set DEVELOPMENT_TEAM via local Xcode signing or MACOS_SIGNING_IDENTITY.
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.genexis.filesutility.RunnerTests;
@@ -486,8 +485,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CURRENT_PROJECT_VERSION = 1;
-				// Gene - Nov, 22, 2026: Commented out DEVELOPMENT_TEAM to support headless macOS CI builds
-				// DEVELOPMENT_TEAM = T7LB768N2Z;
+				// Gene - Nov, 23, 2026: Removed personal Apple Team ID comment; set DEVELOPMENT_TEAM via local Xcode signing or MACOS_SIGNING_IDENTITY.
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.genexis.filesutility.RunnerTests;
@@ -503,8 +501,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CURRENT_PROJECT_VERSION = 1;
-				// Gene - Nov, 22, 2026: Commented out DEVELOPMENT_TEAM to support headless macOS CI builds
-				// DEVELOPMENT_TEAM = T7LB768N2Z;
+				// Gene - Nov, 23, 2026: Removed personal Apple Team ID comment; set DEVELOPMENT_TEAM via local Xcode signing or MACOS_SIGNING_IDENTITY.
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.genexis.filesutility.RunnerTests;
@@ -547,8 +544,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				// Gene - Nov, 22, 2026: Commented out DEVELOPMENT_TEAM to support headless macOS CI builds
-				// DEVELOPMENT_TEAM = T7LB768N2Z;
+				// Gene - Nov, 23, 2026: Removed personal Apple Team ID comment; set DEVELOPMENT_TEAM via local Xcode signing or MACOS_SIGNING_IDENTITY.
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -576,8 +572,7 @@
 				CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				// Gene - Nov, 22, 2026: Commented out DEVELOPMENT_TEAM to support headless macOS CI builds
-				// DEVELOPMENT_TEAM = T7LB768N2Z;
+				// Gene - Nov, 23, 2026: Removed personal Apple Team ID comment; set DEVELOPMENT_TEAM via local Xcode signing or MACOS_SIGNING_IDENTITY.
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -629,8 +624,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				// Gene - Nov, 22, 2026: Commented out DEVELOPMENT_TEAM to support headless macOS CI builds
-				// DEVELOPMENT_TEAM = T7LB768N2Z;
+				// Gene - Nov, 23, 2026: Removed personal Apple Team ID comment; set DEVELOPMENT_TEAM via local Xcode signing or MACOS_SIGNING_IDENTITY.
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -689,8 +683,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				// Gene - Nov, 22, 2026: Commented out DEVELOPMENT_TEAM to support headless macOS CI builds
-				// DEVELOPMENT_TEAM = T7LB768N2Z;
+				// Gene - Nov, 23, 2026: Removed personal Apple Team ID comment; set DEVELOPMENT_TEAM via local Xcode signing or MACOS_SIGNING_IDENTITY.
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -718,8 +711,7 @@
 				CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				// Gene - Nov, 22, 2026: Commented out DEVELOPMENT_TEAM to support headless macOS CI builds
-				// DEVELOPMENT_TEAM = T7LB768N2Z;
+				// Gene - Nov, 23, 2026: Removed personal Apple Team ID comment; set DEVELOPMENT_TEAM via local Xcode signing or MACOS_SIGNING_IDENTITY.
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -740,8 +732,7 @@
 				CODE_SIGN_ENTITLEMENTS = Runner/Release.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				// Gene - Nov, 22, 2026: Commented out DEVELOPMENT_TEAM to support headless macOS CI builds
-				// DEVELOPMENT_TEAM = T7LB768N2Z;
+				// Gene - Nov, 23, 2026: Removed personal Apple Team ID comment; set DEVELOPMENT_TEAM via local Xcode signing or MACOS_SIGNING_IDENTITY.
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

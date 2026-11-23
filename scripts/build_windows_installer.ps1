@@ -31,7 +31,7 @@
 
 .EXAMPLE
     # Build, sign with certificate, and package:
-    .\scripts\build_windows_installer.ps1 -CertPath "C:\certs\mycert.pfx" -CertPassword "Secret123!"
+    .\scripts\build_windows_installer.ps1 -CertPath "C:\certs\mycert.pfx" -CertPassword "<your-cert-password>"
 
 .EXAMPLE
     # Build and test signing with a temporary self-signed certificate:

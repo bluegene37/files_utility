@@ -23,7 +23,7 @@
     .\scripts\generate_self_signed_cert.ps1
 
 .EXAMPLE
-    .\scripts\generate_self_signed_cert.ps1 -OutputDir "C:\certs" -Password "MyPassword123!"
+    .\scripts\generate_self_signed_cert.ps1 -OutputDir "C:\certs" -Password "<your-cert-password>"
 #>
 
 [CmdletBinding()]

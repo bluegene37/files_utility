@@ -50,7 +50,7 @@ void main() {
 
   group('FTP Settings & Upload Sources JSON Export/Import', () {
     test(
-      'exports and round-trips full FTP settings while excluding password',
+      'exports and round-trips full FTP settings while excluding username and password',
       () {
         final source = FtpFilesProvider(persistSettings: false);
         addTearDown(source.dispose);
@@ -59,17 +59,17 @@ void main() {
           ..setProtocol(FtpProtocol.ftpes)
           ..setHost('ftp.prod.example.com')
           ..setPort(2121)
-          ..setUsername('deploy_user')
-          ..setPassword('super_secret_pw!')
+          ..setUsername('example_user')
+          ..setPassword('placeholder_val')
           ..setTimeoutSeconds(60)
           ..setUseMultipleSources(true)
           ..setSourcePath('/local/single')
           ..setSubfolders('Sub1, Sub2')
           ..setRemoteDirectory('RemoteRoot')
-          ..setSourceNameAt(0, 'DBBackup')
-          ..setSourcePathAt(0, r'\\NAS1\Backups')
-          ..setSourceSubfoldersAt(0, 'ETS-East')
-          ..setSourceFtpDestAt(0, 'DB_BackUp')
+          ..setSourceNameAt(0, 'Backups')
+          ..setSourcePathAt(0, r'\\FILESERVER\Backups')
+          ..setSourceSubfoldersAt(0, 'SiteA')
+          ..setSourceFtpDestAt(0, 'RemoteBackups')
           ..setSourceRunOrderAt(0, 1)
           ..setSourceEnabledAt(0, true)
           ..addUploadSource()
@@ -98,10 +98,13 @@ void main() {
           now: DateTime(2026, 11, 23, 8, 0),
         );
 
-        expect(exportedJson, isNot(contains('super_secret_pw!')));
+        expect(exportedJson, isNot(contains('example_user')));
+        expect(exportedJson, isNot(contains('placeholder_val')));
         final decoded = jsonDecode(exportedJson) as Map<String, dynamic>;
         expect(decoded['type'], 'ftp_settings');
-        expect((decoded['connection'] as Map).containsKey('password'), isFalse);
+        final conn = decoded['connection'] as Map<String, dynamic>;
+        expect(conn.containsKey('username'), isFalse);
+        expect(conn.containsKey('password'), isFalse);
 
         final target = FtpFilesProvider(persistSettings: false);
         addTearDown(target.dispose);
@@ -111,15 +114,15 @@ void main() {
         expect(target.protocol, FtpProtocol.ftpes);
         expect(target.host, 'ftp.prod.example.com');
         expect(target.port, 2121);
-        expect(target.username, 'deploy_user');
+        expect(target.username, isEmpty);
         expect(target.password, isEmpty);
         expect(target.timeoutSeconds, 60);
         expect(target.useMultipleSources, isTrue);
         expect(target.uploadSources, hasLength(2));
-        expect(target.uploadSources[0].name, 'DBBackup');
-        expect(target.uploadSources[0].localPath, r'\\NAS1\Backups');
-        expect(target.uploadSources[0].subfolders, 'ETS-East');
-        expect(target.uploadSources[0].ftpDest, 'DB_BackUp');
+        expect(target.uploadSources[0].name, 'Backups');
+        expect(target.uploadSources[0].localPath, r'\\FILESERVER\Backups');
+        expect(target.uploadSources[0].subfolders, 'SiteA');
+        expect(target.uploadSources[0].ftpDest, 'RemoteBackups');
         expect(target.uploadSources[0].enabled, isTrue);
         expect(target.uploadSources[1].name, 'Testing');
         expect(target.uploadSources[1].enabled, isFalse);
@@ -143,13 +146,14 @@ void main() {
     );
 
     test(
-      'preserves password on same-host FTP import and clears it on host change',
+      'preserves credentials on same-host FTP import and clears both username and password on host change',
       () {
         final provider = FtpFilesProvider(persistSettings: false);
         addTearDown(provider.dispose);
 
         provider
           ..setHost('same.example.com')
+          ..setUsername('keep_user')
           ..setPassword('keep_me');
 
         final sameHostJson = jsonEncode({
@@ -162,6 +166,7 @@ void main() {
           },
         });
         provider.importFromJsonString(sameHostJson);
+        expect(provider.username, 'keep_user');
         expect(provider.password, 'keep_me');
 
         final diffHostJson = jsonEncode({
@@ -170,6 +175,7 @@ void main() {
         });
         provider.importFromJsonString(diffHostJson);
         expect(provider.host, 'other.example.com');
+        expect(provider.username, isEmpty);
         expect(provider.password, isEmpty);
       },
     );
@@ -181,9 +187,9 @@ void main() {
         addTearDown(donor.dispose);
         donor
           ..setHost('donor.example.com')
-          ..setSourceNameAt(0, 'JobFiles')
-          ..setSourcePathAt(0, '/data/jobs')
-          ..setSourceSubfoldersAt(0, 'JobImages, JobDocs')
+          ..setSourceNameAt(0, 'AppFiles')
+          ..setSourcePathAt(0, '/data/app')
+          ..setSourceSubfoldersAt(0, 'FolderA, FolderB')
           ..setSourceRunOrderAt(0, 1)
           ..addUploadSource()
           ..setSourceNameAt(1, 'Archive')
@@ -199,6 +205,7 @@ void main() {
         addTearDown(recipient.dispose);
         recipient
           ..setHost('recipient.example.com')
+          ..setUsername('recipient_user')
           ..setPassword('recipient_pw')
           ..setEnableSchedule(true)
           ..setRunTime(const TimeOfDay(hour: 4, minute: 15));
@@ -207,10 +214,11 @@ void main() {
         expect(msg, contains('2 upload source(s)'));
         expect(recipient.useMultipleSources, isTrue);
         expect(recipient.uploadSources, hasLength(2));
-        expect(recipient.uploadSources[0].name, 'JobFiles');
+        expect(recipient.uploadSources[0].name, 'AppFiles');
         expect(recipient.uploadSources[1].enabled, isFalse);
         // Connection & schedule remain untouched.
         expect(recipient.host, 'recipient.example.com');
+        expect(recipient.username, 'recipient_user');
         expect(recipient.password, 'recipient_pw');
         expect(recipient.runTime, const TimeOfDay(hour: 4, minute: 15));
 

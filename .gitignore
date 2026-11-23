@@ -78,6 +78,15 @@ app.*.map.json
 *.provisionprofile
 .env*
 !.env.example
+config.ini
+ftp_settings.json
+ftp_upload_sources.json
+copy_settings.json
+copy_directory_pairs.json
+*.secret
+*.secrets
+*.credentials
+assets/myFLO_FTP_automation.py
 
 # AI assistant files and generated notes (kept local only)
 CLAUDE.md

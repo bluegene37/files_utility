@@ -1,4 +1,4 @@
-// Gene - Nov, 23, 2026: Importer for myFLO_FTP_automation.py config.ini and .env configuration files.
+// Gene - Nov, 23, 2026: Importer for FTP automation config.ini and .env configuration files.
 import '../models/ftp_upload_source.dart';
 import 'ftp_transfer_service.dart';
 

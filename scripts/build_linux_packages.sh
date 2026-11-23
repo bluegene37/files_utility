@@ -78,7 +78,8 @@ Priority: optional
 Architecture: amd64
 Installed-Size: $INSTALLED_SIZE
 Depends: libgtk-3-0 (>= 3.24), libsqlite3-0
-Maintainer: genexis.dev <bluegene37@gmail.com>
+# Gene - Nov, 23, 2026: Remove hardcoded personal email; allow override via LINUX_MAINTAINER.
+Maintainer: ${LINUX_MAINTAINER:-genexis.dev <maintainer@genexis.dev>}
 Homepage: https://github.com/bluegene37/files_utility
 Description: File transfer and cleanup utility for network shares and NAS
  Files Utility moves, copies, counts, and cleans up files across network

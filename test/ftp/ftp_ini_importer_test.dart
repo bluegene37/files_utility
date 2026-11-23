@@ -10,8 +10,8 @@ void main() {
       const env = '''
 # FTP SECRETS
 FTP_ADDRESS=192.0.2.70
-FTP_USERNAME="myflouser" # inline comment ignored
-FTP_PASSWORD='s#cret!Pass=1'
+FTP_USERNAME="example_user" # inline comment ignored
+FTP_PASSWORD='placeholder_val_1'
 ''';
 
       const ini = '''
@@ -33,14 +33,14 @@ LOG_KEEP_DAYS = 14
 ; LOCAL_PATH = C:\\temp\\ftpTest
 ; SUBFOLDERS = test, test2
 
-[source.DBBackup]
-LOCAL_PATH = \\\\ENETSNAS1\\SQLBackups\\2019-Full
-SUBFOLDERS = ETS-East
-FTP_DEST = DB_BackUp
+[source.Backups]
+LOCAL_PATH = \\\\FILESERVER\\Backups\\Full
+SUBFOLDERS = SiteA
+FTP_DEST = RemoteBackups
 
-[source.JobFiles]
-LOCAL_PATH = \\\\myflofs1\\Apps4\\myFloETS-East
-SUBFOLDERS = JobImages, JobDocuments, JobInvoice
+[source.AppData]
+LOCAL_PATH = \\\\FILESERVER\\Share\\AppData
+SUBFOLDERS = FolderA, FolderB, FolderC
 FTP_DEST =
 ''';
 
@@ -48,8 +48,8 @@ FTP_DEST =
 
       expect(result.isEmpty, isFalse);
       expect(result.host, '192.0.2.70');
-      expect(result.username, 'myflouser');
-      expect(result.password, 's#cret!Pass=1');
+      expect(result.username, 'example_user');
+      expect(result.password, 'placeholder_val_1');
       expect(result.port, 21);
       expect(result.protocol, FtpProtocol.ftp);
       expect(result.daysAgo, 1);
@@ -61,18 +61,15 @@ FTP_DEST =
 
       // Commented-out [source.Testing] must be excluded.
       expect(result.sources, hasLength(2));
-      expect(result.sources[0].name, 'DBBackup');
-      expect(result.sources[0].localPath, r'\\ENETSNAS1\SQLBackups\2019-Full');
-      expect(result.sources[0].subfolders, 'ETS-East');
-      expect(result.sources[0].ftpDest, 'DB_BackUp');
+      expect(result.sources[0].name, 'Backups');
+      expect(result.sources[0].localPath, r'\\FILESERVER\Backups\Full');
+      expect(result.sources[0].subfolders, 'SiteA');
+      expect(result.sources[0].ftpDest, 'RemoteBackups');
       expect(result.sources[0].runOrder, 1);
       expect(result.sources[0].enabled, isTrue);
 
-      expect(result.sources[1].name, 'JobFiles');
-      expect(
-        result.sources[1].subfolders,
-        'JobImages, JobDocuments, JobInvoice',
-      );
+      expect(result.sources[1].name, 'AppData');
+      expect(result.sources[1].subfolders, 'FolderA, FolderB, FolderC');
       expect(result.sources[1].ftpDest, isEmpty);
       expect(result.sources[1].runOrder, 2);
     });
@@ -99,7 +96,7 @@ FTP_DEST =
 
         final multi = FtpIniImporter.parse(
           envContent:
-              'FTP_ADDRESS=ftp.example.com\nFTP_USERNAME=u1\nFTP_PASSWORD=top_secret_pw\n',
+              'FTP_ADDRESS=ftp.example.com\nFTP_USERNAME=example_user\nFTP_PASSWORD=placeholder_secret\n',
           iniContent: '''
 [ftp]
 FTP_PORT = 2121
@@ -121,8 +118,8 @@ FTP_DEST = RemoteOne
         expect(provider.host, 'ftp.example.com');
         expect(provider.port, 2121);
         expect(provider.protocol, FtpProtocol.ftpes);
-        expect(provider.username, 'u1');
-        expect(provider.password, 'top_secret_pw');
+        expect(provider.username, 'example_user');
+        expect(provider.password, 'placeholder_secret');
         expect(provider.dateMode, FtpDateMode.daysAgo);
         expect(provider.daysAgo, 5);
         expect(provider.logKeepDays, 7);
@@ -131,8 +128,11 @@ FTP_DEST = RemoteOne
         expect(provider.remoteDirectory, 'RemoteOne');
         // Blank SUBFOLDERS sets includeSubfolders = true to match script guide.
         expect(provider.includeSubfolders, isTrue);
-        expect(summary, isNot(contains('top_secret_pw')));
-        expect(provider.logs.any((l) => l.contains('top_secret_pw')), isFalse);
+        expect(summary, isNot(contains('placeholder_secret')));
+        expect(
+          provider.logs.any((l) => l.contains('placeholder_secret')),
+          isFalse,
+        );
 
         // Now apply a 2-source config with FTP_DAYS_AGO = 0 -> today & multiple sources.
         final twoSources = FtpIniImporter.parse(

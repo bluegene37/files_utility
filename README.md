@@ -49,7 +49,8 @@ Unlike standard file managers that freeze or lose state during large directory t
 - **☁️ FTP Upload & Scheduler**:
   - Native FTP, Implicit FTPS, Explicit FTPES, and SSH SFTP uploads with per-profile obfuscated credentials and automatic log/history redaction.
   <!-- - Multi-source run ordering, per-source enable/disable toggles, subfolder filtering, custom remote destination mapping, and `config.ini` / `.env` migration import. -->
-  - Multi-source run ordering, per-source enable/disable toggles, subfolder filtering, automatic remote folder creation, `config.ini` / `.env` import, and password-free JSON Import/Export for settings and upload sources.
+  <!-- - Multi-source run ordering, per-source enable/disable toggles, subfolder filtering, automatic remote folder creation, `config.ini` / `.env` import, and password-free JSON Import/Export for settings and upload sources. -->
+  - Multi-source run ordering, per-source enable/disable toggles, subfolder filtering, automatic remote folder creation, `config.ini` / `.env` import, and credential-free JSON Import/Export (usernames and passwords excluded) for settings and upload sources.
   - Live per-file transfer progress, skip-if-already-on-FTP (matching size) with partial re-upload, post-upload `SIZE` verification, automatic reconnect recovery, dry-run checks, configurable log retention, and weekday/time scheduling.
 - **🔍 Smart Filtering**:
   - Filter by age threshold ("older than $N$ days/months/years") or custom calendar date ranges.

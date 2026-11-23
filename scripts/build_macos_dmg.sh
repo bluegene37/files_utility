@@ -67,14 +67,18 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-SIGNING_IDENTITY="${MACOS_SIGNING_IDENTITY:-Developer ID Application: Gene Ray Medel (T7LB768N2Z)}"
+# Gene - Nov, 23, 2026: Removed hardcoded personal signing identity, Apple ID, Team ID, and Keychain profile; read via environment/Keychain instead.
+SIGNING_IDENTITY="${MACOS_SIGNING_IDENTITY:-}"
+if [ -z "${SIGNING_IDENTITY}" ]; then
+  SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep 'Developer ID Application:' | head -1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+fi
 ENTITLEMENTS="${REPO_ROOT}/macos/Runner/Release.entitlements"
 NOTARY_PROFILE="${NOTARY_PROFILE:-files-utility-notary}"
-APPLE_ID="${APPLE_ID:-bluegene37@outlook.com}"
-APPLE_TEAM_ID="${APPLE_TEAM_ID:-T7LB768N2Z}"
+APPLE_ID="${APPLE_ID:-}"
+APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 
 # Check if signing identity is available in Keychain
-if security find-identity -v -p codesigning | grep -q "${SIGNING_IDENTITY}"; then
+if [ -n "${SIGNING_IDENTITY}" ] && security find-identity -v -p codesigning | grep -q "${SIGNING_IDENTITY}"; then
   echo "==> Code signing nested frameworks with Hardened Runtime using '${SIGNING_IDENTITY}'..."
   if [ -d "${APP_PATH}/Contents/Frameworks" ]; then
     find "${APP_PATH}/Contents/Frameworks" -depth \
@@ -92,7 +96,8 @@ if security find-identity -v -p codesigning | grep -q "${SIGNING_IDENTITY}"; the
   echo "==> Verifying signature integrity..."
   codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 else
-  echo "==> Note: '${SIGNING_IDENTITY}' not found in keychain. Skipping Developer ID signing for .app bundle."
+  echo "==> Note: Developer ID signing identity not configured or not found in keychain. Skipping Developer ID signing for .app bundle."
+  echo "    (Set MACOS_SIGNING_IDENTITY or install a Developer ID Application certificate in your Keychain.)"
 fi
 
 DMG_DIR="${REPO_ROOT}/build/macos"
@@ -109,13 +114,13 @@ rm -f "$DMG_PATH"
 echo "==> Creating DMG at $DMG_PATH..."
 hdiutil create -volname "$APP_NAME" -srcfolder "$STAGING" -ov -format UDZO "$DMG_PATH"
 
-if security find-identity -v -p codesigning | grep -q "${SIGNING_IDENTITY}"; then
+if [ -n "${SIGNING_IDENTITY}" ] && security find-identity -v -p codesigning | grep -q "${SIGNING_IDENTITY}"; then
   echo "==> Code signing DMG..."
   codesign --force --sign "${SIGNING_IDENTITY}" --timestamp "$DMG_PATH"
 
   # Check if direct credentials or notarytool profile is available for automated notarization
-  if [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_ID}" ]; then
-    echo "==> Submitting DMG to Apple Notary Service using environment credentials (${APPLE_ID}, team ${APPLE_TEAM_ID})..."
+  if [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_ID}" ] && [ -n "${APPLE_TEAM_ID}" ]; then
+    echo "==> Submitting DMG to Apple Notary Service using environment credentials..."
     xcrun notarytool submit "$DMG_PATH" --apple-id "${APPLE_ID}" --password "${APPLE_APP_SPECIFIC_PASSWORD}" --team-id "${APPLE_TEAM_ID}" --wait
     echo "==> Stapling notarization ticket to DMG..."
     xcrun stapler staple "$DMG_PATH"
@@ -132,22 +137,12 @@ if security find-identity -v -p codesigning | grep -q "${SIGNING_IDENTITY}"; the
       xcrun stapler staple "$APP_PATH"
     fi
     echo "==> Successfully notarized and stapled!"
-  # Gene - Oct, 07, 2026: Added automatic fallback to shared batterie-notary profile
-  elif xcrun notarytool history --keychain-profile "batterie-notary" >/dev/null 2>&1; then
-    echo "==> Submitting DMG to Apple Notary Service using keychain profile 'batterie-notary'..."
-    xcrun notarytool submit "$DMG_PATH" --keychain-profile "batterie-notary" --wait
-    echo "==> Stapling notarization ticket to DMG..."
-    xcrun stapler staple "$DMG_PATH"
-    if [ -d "$APP_PATH" ]; then
-      xcrun stapler staple "$APP_PATH"
-    fi
-    echo "==> Successfully notarized and stapled!"
   else
     echo ""
     echo "==> NOTE: Apple Notary credentials not configured."
-    echo "    For automated CI/CD, set APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID environment variables."
+    echo "    For automated CI/CD, set MACOS_SIGNING_IDENTITY, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID."
     echo "    Or for local builds, store credentials in your Keychain once by running:"
-    echo "    xcrun notarytool store-credentials \"${NOTARY_PROFILE}\" --apple-id \"${APPLE_ID}\" --team-id \"${APPLE_TEAM_ID}\" --password \"<your-app-specific-password>\""
+    echo "    xcrun notarytool store-credentials \"${NOTARY_PROFILE}\" --apple-id \"<your-apple-id>\" --team-id \"<your-team-id>\" --password \"<your-app-specific-password>\""
     echo ""
   fi
 fi

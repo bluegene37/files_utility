@@ -91,7 +91,7 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     );
   }
 
-  //   // Gene - Nov, 23, 2026: Import myFLO_FTP_automation config.ini / .env settings from disk.
+  //   // Gene - Nov, 23, 2026: Import INI / .env settings from disk.
   //   Future<void> _handleImportConfig(FtpFilesProvider provider) async {
   //     final message = await provider.importConfigFromDisk();
   //     if (!mounted || message == null) return;
@@ -286,7 +286,7 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
           //                 ? null
           //                 : () => _handleImportConfig(provider),
           //           ),
-          // Gene - Nov, 23, 2026: Support JSON/.ini/.env import and JSON settings export (excluding password) in FTP app bar.
+          // Gene - Nov, 23, 2026: Support JSON/.ini/.env import and credential-free JSON settings export in FTP app bar.
           IconButton(
             key: const Key('ftp_import_ini_btn'),
             icon: Icon(
@@ -306,7 +306,7 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
               color: accentColor,
               size: 20,
             ),
-            tooltip: 'Export FTP Settings (.json, without password)',
+            tooltip: 'Export FTP Settings (.json, without credentials)',
             onPressed: provider.isProcessing
                 ? null
                 : () => _handleExportSettings(provider),

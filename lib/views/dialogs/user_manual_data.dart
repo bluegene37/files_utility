@@ -383,11 +383,8 @@ class UserManualData {
             'Expand the FTP Connection card and select the protocol (defaulting to Plain FTP on port 21).',
             'Enter your server host (e.g., ftp.example.com), port, username, and password.',
             'Click Test Connection to verify connectivity and check access to your optional Remote Folder before running.',
-            //             'Migrating from myFLO_FTP_automation.py? Click the Import config.ini / .env icon in the top bar to load connection settings, retention days, and [source.*] entries (including a paired .env or config.ini in the same folder).',
-            //           ],
-            //           tags: ['ftp', 'ftps', 'sftp', 'credentials', 'security', 'import'],
-            // Gene - Nov, 23, 2026: Document JSON Settings & Upload Sources Import/Export (excluding passwords) alongside config.ini/.env import.
-            'Export or reuse setups easily: click Export FTP Settings (.json) in the top bar to save connection, filters, sources, and schedule to a shareable JSON file (FTP passwords are always excluded for security), or click Import Settings to load a .json export or legacy myFLO_FTP_automation.py config.ini / .env files.',
+            // Gene - Nov, 23, 2026: Document credential-free JSON Settings & Upload Sources Import/Export (usernames and passwords excluded) alongside config.ini/.env import.
+            'Export or reuse setups easily: click Export FTP Settings (.json) in the top bar to save connection, filters, sources, and schedule to a shareable JSON file (both FTP username and password are always excluded for security), or click Import Settings to load a .json export or config.ini / .env files.',
           ],
           tags: [
             'ftp',
@@ -403,9 +400,10 @@ class UserManualData {
           title: 'Upload Sources & Remote Path Mapping',
           description:
               'Upload from a single local/network directory or enable Multiple Sources to configure ordered upload jobs with per-source Enable/Disable checkboxes, optional comma-separated Subfolders filters, and custom FTP Destination folders. Leave Subfolders blank for root-only files, or enable "Include nested subfolders" in Advanced Settings to scan and mirror all nested directories.',
+          // Gene - Nov, 23, 2026: Use strictly generic remote path mapping examples in User Manual.
           steps: [
-            'Example 1 — Job Files (FTP root): Subfolders = "JobImages, JobDocuments, JobInvoice" with FTP Dest left blank maps \\JobImages\\photo.jpg -> /JobImages/photo.jpg.',
-            'Example 2 — DB Backups (custom folder): Subfolders = "ETS-East" with FTP Dest = "DB_BackUp" maps \\ETS-East\\backup.bak -> /DB_BackUp/ETS-East/backup.bak.',
+            'Example 1 — Root mapping: Subfolders = "FolderA, FolderB, FolderC" with FTP Dest left blank maps \\FolderA\\photo.jpg -> /FolderA/photo.jpg.',
+            'Example 2 — Custom destination folder: Subfolders = "SiteA" with FTP Dest = "Backups" maps \\SiteA\\backup.bak -> /Backups/SiteA/backup.bak.',
             'Each subfolder is scanned and uploaded immediately (scan-then-upload) with automatic reconnect recovery if the control socket drops between subfolders.',
           ],
           //           tip:

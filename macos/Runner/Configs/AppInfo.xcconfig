@@ -10,9 +10,7 @@ PRODUCT_NAME = Files Utility
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = dev.genexis.filesutility
 
-// Gene - Oct, 07, 2026: Configured DEVELOPMENT_TEAM to official Apple Team ID T7LB768N2Z from Developer ID certificate
-// Gene - Nov, 22, 2026: Commented out DEVELOPMENT_TEAM so headless macOS CI builds do not require a Mac Development certificate (scripts/build_macos_dmg.sh re-signs with Developer ID when available)
-// DEVELOPMENT_TEAM = T7LB768N2Z
+// Gene - Nov, 23, 2026: Removed personal Apple Team ID; set DEVELOPMENT_TEAM via local Xcode signing or MACOS_SIGNING_IDENTITY in CI/scripts.
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 genexis.dev. All rights reserved.
