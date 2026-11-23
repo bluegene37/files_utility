@@ -64,6 +64,130 @@ void main() {
     });
   });
 
+  // Gene - Nov, 24, 2026: Unit tests for FTP schedule window end and active window (same-day, overnight, and no-cutoff).
+  group('FtpFilesProvider.computeWindowEnd & computeActiveWindow', () {
+    test('computeWindowEnd handles same-day, overnight, and Start == End', () {
+      final start = DateTime(2026, 11, 23, 22, 0);
+      expect(
+        FtpFilesProvider.computeWindowEnd(
+          windowStart: DateTime(2026, 11, 23, 8, 0),
+          runTime: const TimeOfDay(hour: 8, minute: 0),
+          runEndTime: const TimeOfDay(hour: 17, minute: 30),
+        ),
+        DateTime(2026, 11, 23, 17, 30),
+      );
+      expect(
+        FtpFilesProvider.computeWindowEnd(
+          windowStart: start,
+          runTime: const TimeOfDay(hour: 22, minute: 0),
+          runEndTime: const TimeOfDay(hour: 6, minute: 0),
+        ),
+        DateTime(2026, 11, 24, 6, 0),
+      );
+      expect(
+        FtpFilesProvider.computeWindowEnd(
+          windowStart: start,
+          runTime: const TimeOfDay(hour: 22, minute: 0),
+          runEndTime: const TimeOfDay(hour: 22, minute: 0),
+        ),
+        isNull,
+      );
+    });
+
+    test('computeActiveWindow matches same-day window [start, end)', () {
+      // 2026-11-23 is Monday (weekday == 1).
+      const start = TimeOfDay(hour: 9, minute: 0);
+      const end = TimeOfDay(hour: 17, minute: 0);
+      final days = _days(enabled: [1]);
+
+      expect(
+        FtpFilesProvider.computeActiveWindow(
+          now: DateTime(2026, 11, 23, 8, 59),
+          runTime: start,
+          runEndTime: end,
+          runDays: days,
+        ),
+        isNull,
+      );
+      final atStart = FtpFilesProvider.computeActiveWindow(
+        now: DateTime(2026, 11, 23, 9, 0),
+        runTime: start,
+        runEndTime: end,
+        runDays: days,
+      );
+      expect(atStart?.start, DateTime(2026, 11, 23, 9, 0));
+      expect(atStart?.end, DateTime(2026, 11, 23, 17, 0));
+
+      final midDay = FtpFilesProvider.computeActiveWindow(
+        now: DateTime(2026, 11, 23, 13, 30),
+        runTime: start,
+        runEndTime: end,
+        runDays: days,
+      );
+      expect(midDay?.end, DateTime(2026, 11, 23, 17, 0));
+
+      // Exclusive at End time.
+      expect(
+        FtpFilesProvider.computeActiveWindow(
+          now: DateTime(2026, 11, 23, 17, 0),
+          runTime: start,
+          runEndTime: end,
+          runDays: days,
+        ),
+        isNull,
+      );
+    });
+
+    test('computeActiveWindow matches overnight midnight-crossover window', () {
+      // Only Monday (1) checked, 22:00 -> 06:00 Tuesday.
+      const start = TimeOfDay(hour: 22, minute: 0);
+      const end = TimeOfDay(hour: 6, minute: 0);
+      final days = _days(enabled: [1]);
+
+      final monNight = FtpFilesProvider.computeActiveWindow(
+        now: DateTime(2026, 11, 23, 23, 30),
+        runTime: start,
+        runEndTime: end,
+        runDays: days,
+      );
+      expect(monNight?.start, DateTime(2026, 11, 23, 22, 0));
+      expect(monNight?.end, DateTime(2026, 11, 24, 6, 0));
+
+      // Tuesday 02:00 belongs to Monday's overnight window even though Tuesday isn't checked.
+      final tueEarly = FtpFilesProvider.computeActiveWindow(
+        now: DateTime(2026, 11, 24, 2, 0),
+        runTime: start,
+        runEndTime: end,
+        runDays: days,
+      );
+      expect(tueEarly?.start, DateTime(2026, 11, 23, 22, 0));
+      expect(tueEarly?.end, DateTime(2026, 11, 24, 6, 0));
+
+      // Exclusive at Tuesday 06:00.
+      expect(
+        FtpFilesProvider.computeActiveWindow(
+          now: DateTime(2026, 11, 24, 6, 0),
+          runTime: start,
+          runEndTime: end,
+          runDays: days,
+        ),
+        isNull,
+      );
+    });
+
+    test('computeActiveWindow returns null when Start == End', () {
+      expect(
+        FtpFilesProvider.computeActiveWindow(
+          now: DateTime(2026, 11, 23, 10, 0),
+          runTime: const TimeOfDay(hour: 10, minute: 0),
+          runEndTime: const TimeOfDay(hour: 10, minute: 0),
+          runDays: _days(enabled: [1]),
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('FtpFilesProvider.matchesDateFilter', () {
     final refNow = DateTime(2026, 11, 21, 9, 30);
 

@@ -1019,12 +1019,22 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                 label: dateChipText,
                 color: context.textSecondary,
               ),
+              //               if (provider.enableSchedule)
+              //                 _infoPill(
+              //                   context,
+              //                   icon: Icons.schedule,
+              //                   label:
+              //                       '${provider.runTime.format(context)} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})',
+              //                   color: accentColor,
+              //                 ),
+              // Gene - Nov, 24, 2026: Display schedule start and end window in main screen pill when an end time is set.
               if (provider.enableSchedule)
                 _infoPill(
                   context,
                   icon: Icons.schedule,
-                  label:
-                      '${provider.runTime.format(context)} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})',
+                  label: provider.hasEndTimeLimit
+                      ? '${provider.runTime.format(context)} – ${provider.runEndTime.format(context)} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})'
+                      : '${provider.runTime.format(context)} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})',
                   color: accentColor,
                 ),
               if (provider.dryRun)
@@ -1154,57 +1164,152 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     FtpFilesProvider provider,
     Color accentColor,
   ) {
-    return Row(
-      children: [
-        if (!provider.isProcessing) ...[
-          if (!provider.enableSchedule)
-            ElevatedButton.icon(
-              key: const Key('ftp_start_upload_btn'),
-              onPressed: provider.canRunNow ? provider.runNow : null,
-              icon: const Icon(Icons.cloud_upload_rounded, size: 18),
-              label: const Text('Start Upload'),
-            )
-          else ...[
-            ElevatedButton.icon(
-              key: const Key('ftp_start_schedule_btn'),
-              onPressed: provider.canArmSchedule
-                  ? provider.startSchedule
-                  : null,
-              icon: const Icon(Icons.schedule_rounded, size: 18),
-              label: const Text('Start Schedule'),
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              key: const Key('ftp_run_now_btn'),
-              onPressed: provider.canRunNow ? provider.runNow : null,
-              icon: const Icon(Icons.play_arrow_rounded, size: 18),
-              label: const Text('Run Now'),
-            ),
-          ],
-        ] else ...[
+    //     return Row(
+    //       children: [
+    //         if (!provider.isProcessing) ...[
+    //           if (!provider.enableSchedule)
+    //             ElevatedButton.icon(
+    //               key: const Key('ftp_start_upload_btn'),
+    //               onPressed: provider.canRunNow ? provider.runNow : null,
+    //               icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+    //               label: const Text('Start Upload'),
+    //             )
+    //           else ...[
+    //             ElevatedButton.icon(
+    //               key: const Key('ftp_start_schedule_btn'),
+    //               onPressed: provider.canArmSchedule
+    //                   ? provider.startSchedule
+    //                   : null,
+    //               icon: const Icon(Icons.schedule_rounded, size: 18),
+    //               label: const Text('Start Schedule'),
+    //             ),
+    //             const SizedBox(width: 8),
+    //             OutlinedButton.icon(
+    //               key: const Key('ftp_run_now_btn'),
+    //               onPressed: provider.canRunNow ? provider.runNow : null,
+    //               icon: const Icon(Icons.play_arrow_rounded, size: 18),
+    //               label: const Text('Run Now'),
+    //             ),
+    //           ],
+    //         ] else ...[
+    //           ElevatedButton.icon(
+    //             key: const Key('ftp_stop_btn'),
+    //             onPressed: provider.stop,
+    //             icon: const Icon(Icons.stop, size: 18),
+    //             label: const Text('Stop'),
+    //             style: ElevatedButton.styleFrom(
+    //               backgroundColor: AppColors.error,
+    //               foregroundColor: Colors.white,
+    //             ),
+    //           ),
+    //           if (provider.isScheduleArmed && !provider.isUploading) ...[
+    //             const SizedBox(width: 8),
+    //             OutlinedButton.icon(
+    //               key: const Key('ftp_run_now_btn'),
+    //               onPressed: provider.canRunNow ? provider.runNow : null,
+    //               icon: const Icon(Icons.play_arrow_rounded, size: 18),
+    //               label: const Text('Run Now'),
+    //             ),
+    //           ],
+    //         ],
+    //         const SizedBox(width: 14),
+    //         if (provider.isUploading || provider.isTestingConnection)
+    //           Container(
+    //             width: 14,
+    //             height: 14,
+    //             margin: const EdgeInsets.only(right: 8),
+    //             child: CircularProgressIndicator(
+    //               strokeWidth: 2,
+    //               valueColor: AlwaysStoppedAnimation<Color>(accentColor),
+    //             ),
+    //           ),
+    //         Expanded(
+    //           child: Text(
+    //             provider.currentStatus,
+    //             style: TextStyle(
+    //               fontWeight: FontWeight.w600,
+    //               color: context.textPrimary,
+    //               fontSize: 13,
+    //             ),
+    //             maxLines: 1,
+    //             overflow: TextOverflow.ellipsis,
+    //           ),
+    //         ),
+    //         const SizedBox(width: 8),
+    //         StatBadge(
+    //           title: 'Uploaded',
+    //           value: provider.filesUploaded.toString(),
+    //           color: context.successColor,
+    //           icon: Icons.cloud_done_rounded,
+    //         ),
+    //         const SizedBox(width: 8),
+    //         StatBadge(
+    //           title: 'Skipped',
+    //           value: provider.filesSkipped.toString(),
+    //           color: context.warningColor,
+    //           icon: Icons.fast_forward_rounded,
+    //         ),
+    //         const SizedBox(width: 8),
+    //         StatBadge(
+    //           title: 'Errors',
+    //           value: provider.errors.toString(),
+    //           color: context.errorColor,
+    //           icon: Icons.error,
+    //         ),
+    //       ],
+    //     );
+    // Gene - Nov, 24, 2026: Wrap action controls and stat badges on narrower desktop viewports (980x680) when schedule buttons are visible.
+    final actionButtons = <Widget>[
+      if (!provider.isProcessing) ...[
+        if (!provider.enableSchedule)
           ElevatedButton.icon(
-            key: const Key('ftp_stop_btn'),
-            onPressed: provider.stop,
-            icon: const Icon(Icons.stop, size: 18),
-            label: const Text('Stop'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: Colors.white,
-            ),
+            key: const Key('ftp_start_upload_btn'),
+            onPressed: provider.canRunNow ? provider.runNow : null,
+            icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+            label: const Text('Start Upload'),
+          )
+        else ...[
+          ElevatedButton.icon(
+            key: const Key('ftp_start_schedule_btn'),
+            onPressed: provider.canArmSchedule
+                ? provider.startSchedule
+                : null,
+            icon: const Icon(Icons.schedule_rounded, size: 18),
+            label: const Text('Start Schedule'),
           ),
-          if (provider.isScheduleArmed && !provider.isUploading) ...[
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              key: const Key('ftp_run_now_btn'),
-              onPressed: provider.canRunNow ? provider.runNow : null,
-              icon: const Icon(Icons.play_arrow_rounded, size: 18),
-              label: const Text('Run Now'),
-            ),
-          ],
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            key: const Key('ftp_run_now_btn'),
+            onPressed: provider.canRunNow ? provider.runNow : null,
+            icon: const Icon(Icons.play_arrow_rounded, size: 18),
+            label: const Text('Run Now'),
+          ),
         ],
-        const SizedBox(width: 14),
-        if (provider.isUploading || provider.isTestingConnection)
-          Container(
+      ] else ...[
+        ElevatedButton.icon(
+          key: const Key('ftp_stop_btn'),
+          onPressed: provider.stop,
+          icon: const Icon(Icons.stop, size: 18),
+          label: const Text('Stop'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.error,
+            foregroundColor: Colors.white,
+          ),
+        ),
+        if (provider.isScheduleArmed && !provider.isUploading) ...[
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            key: const Key('ftp_run_now_btn'),
+            onPressed: provider.canRunNow ? provider.runNow : null,
+            icon: const Icon(Icons.play_arrow_rounded, size: 18),
+            label: const Text('Run Now'),
+          ),
+        ],
+      ],
+    ];
+
+    final spinner = (provider.isUploading || provider.isTestingConnection)
+        ? Container(
             width: 14,
             height: 14,
             margin: const EdgeInsets.only(right: 8),
@@ -1212,62 +1317,90 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
               strokeWidth: 2,
               valueColor: AlwaysStoppedAnimation<Color>(accentColor),
             ),
+          )
+        : null;
+
+    final statusText = Text(
+      provider.currentStatus,
+      style: TextStyle(
+        fontWeight: FontWeight.w600,
+        color: context.textPrimary,
+        fontSize: 13,
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+
+    final statBadges = [
+      StatBadge(
+        title: 'Uploaded',
+        value: provider.filesUploaded.toString(),
+        color: context.successColor,
+        icon: Icons.cloud_done_rounded,
+      ),
+      StatBadge(
+        title: 'Skipped',
+        value: provider.filesSkipped.toString(),
+        color: context.warningColor,
+        icon: Icons.fast_forward_rounded,
+      ),
+      StatBadge(
+        title: 'Errors',
+        value: provider.errors.toString(),
+        color: context.errorColor,
+        icon: Icons.error,
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 1060) {
+          return Row(
+            children: [
+              ...actionButtons,
+              const SizedBox(width: 14),
+              ?spinner,
+              Expanded(child: statusText),
+              const SizedBox(width: 8),
+              statBadges[0],
+              const SizedBox(width: 8),
+              statBadges[1],
+              const SizedBox(width: 8),
+              statBadges[2],
+            ],
+          );
+        }
+
+        return SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ...actionButtons,
+                  const SizedBox(width: 12),
+                  ?spinner,
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: (constraints.maxWidth - 360).clamp(
+                        160.0,
+                        420.0,
+                      ),
+                    ),
+                    child: statusText,
+                  ),
+                ],
+              ),
+              Wrap(spacing: 8, runSpacing: 6, children: statBadges),
+            ],
           ),
-        Expanded(
-          child: Text(
-            provider.currentStatus,
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: context.textPrimary,
-              fontSize: 13,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        const SizedBox(width: 8),
-        //         StatBadge(
-        //           title: 'Uploaded',
-        //           value: provider.filesUploaded.toString(),
-        //           color: AppColors.success,
-        //           icon: Icons.cloud_done_rounded,
-        //         ),
-        //         const SizedBox(width: 8),
-        //         StatBadge(
-        //           title: 'Skipped',
-        //           value: provider.filesSkipped.toString(),
-        //           color: AppColors.warning,
-        //           icon: Icons.fast_forward_rounded,
-        //         ),
-        //         const SizedBox(width: 8),
-        //         StatBadge(
-        //           title: 'Errors',
-        //           value: provider.errors.toString(),
-        //           color: AppColors.error,
-        //           icon: Icons.error,
-        //         ),
-        // Gene - Nov, 22, 2026: Use theme-aware semantic colors for FTP StatBadges.
-        StatBadge(
-          title: 'Uploaded',
-          value: provider.filesUploaded.toString(),
-          color: context.successColor,
-          icon: Icons.cloud_done_rounded,
-        ),
-        const SizedBox(width: 8),
-        StatBadge(
-          title: 'Skipped',
-          value: provider.filesSkipped.toString(),
-          color: context.warningColor,
-          icon: Icons.fast_forward_rounded,
-        ),
-        const SizedBox(width: 8),
-        StatBadge(
-          title: 'Errors',
-          value: provider.errors.toString(),
-          color: context.errorColor,
-          icon: Icons.error,
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -1658,11 +1791,30 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                                   color: context.textSecondary,
                                 ),
                               ),
+                              //                               const SizedBox(width: 12),
+                              //                               SizedBox(
+                              //                                 width: 115,
+                              //                                 child: StyledTimePicker(
+                              //                                   label: 'Run At',
+                              //                                   time: provider.runTime,
+                              //                                   enabled:
+                              //                                       !provider.isProcessing &&
+                              //                                       provider.enableSchedule,
+                              //                                   onPicked: provider.setRunTime,
+                              //                                 ),
+                              //                               ),
+                              //                               const SizedBox(width: 14),
+                              //                               const VerticalDivider(width: 1, thickness: 1),
+                              //                               const SizedBox(width: 10),
+                              // Gene - Nov, 24, 2026: Replace single Run At picker with Start and End time window pickers.
                               const SizedBox(width: 12),
                               SizedBox(
-                                width: 115,
+                                width: 110,
                                 child: StyledTimePicker(
-                                  label: 'Run At',
+                                  key: const Key(
+                                    'ftp_schedule_start_time_picker',
+                                  ),
+                                  label: 'Start',
                                   time: provider.runTime,
                                   enabled:
                                       !provider.isProcessing &&
@@ -1670,9 +1822,24 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                                   onPicked: provider.setRunTime,
                                 ),
                               ),
-                              const SizedBox(width: 14),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 110,
+                                child: StyledTimePicker(
+                                  key: const Key(
+                                    'ftp_schedule_end_time_picker',
+                                  ),
+                                  label: 'End',
+                                  time: provider.runEndTime,
+                                  enabled:
+                                      !provider.isProcessing &&
+                                      provider.enableSchedule,
+                                  onPicked: provider.setRunEndTime,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
                               const VerticalDivider(width: 1, thickness: 1),
-                              const SizedBox(width: 10),
+                              const SizedBox(width: 8),
                               Expanded(
                                 child: Wrap(
                                   spacing: 4,
@@ -1734,6 +1901,43 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                               color: context.errorColor,
                               fontWeight: FontWeight.w500,
                             ),
+                          ),
+                        ] else if (provider.enableSchedule &&
+                            provider.hasCheckedScheduleDays) ...[
+                          // Gene - Nov, 24, 2026: Explain active Start/End runtime window behavior (same-day, overnight, or no end cutoff).
+                          const SizedBox(height: 6),
+                          Builder(
+                            builder: (context) {
+                              final startMin =
+                                  provider.runTime.hour * 60 +
+                                  provider.runTime.minute;
+                              final endMin =
+                                  provider.runEndTime.hour * 60 +
+                                  provider.runEndTime.minute;
+                              final startStr = provider.runTime.format(context);
+                              final endStr = provider.runEndTime.format(
+                                context,
+                              );
+                              final String helperText;
+                              if (!provider.hasEndTimeLimit) {
+                                helperText =
+                                    'Start and End match — scheduled runs will run until completion (no end cutoff).';
+                              } else if (endMin < startMin) {
+                                helperText =
+                                    'Overnight window — runs from $startStr until $endStr the next day.';
+                              } else {
+                                helperText =
+                                    'Runs from $startStr until $endStr on selected days; stops cleanly at End time.';
+                              }
+                              return Text(
+                                helperText,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: context.textMuted,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              );
+                            },
                           ),
                         ],
 

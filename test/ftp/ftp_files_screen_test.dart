@@ -254,11 +254,24 @@ void main() {
       await tester.tap(find.byKey(const Key('ftp_enable_schedule_checkbox')));
       await tester.pump();
 
+      // Gene - Nov, 24, 2026: Verify Start and End schedule pickers and window helper text appear in Advanced Settings.
+      expect(
+        find.byKey(const Key('ftp_schedule_start_time_picker')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('ftp_schedule_end_time_picker')),
+        findsOneWidget,
+      );
+      expect(find.text('Start'), findsOneWidget);
+      expect(find.text('End'), findsOneWidget);
+
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
 
-      // Main screen shows DRY RUN badge and Start Schedule + Run Now buttons.
+      // Main screen shows DRY RUN badge, schedule Start – End pill, and Start Schedule + Run Now buttons.
       expect(find.text('DRY RUN'), findsOneWidget);
+      expect(find.textContaining('–'), findsWidgets);
       expect(find.byKey(const Key('ftp_start_schedule_btn')), findsOneWidget);
       expect(find.byKey(const Key('ftp_run_now_btn')), findsOneWidget);
       expect(find.byKey(const Key('ftp_start_upload_btn')), findsNothing);
@@ -427,6 +440,57 @@ void main() {
       provider.setUploadProgressForTest(uploading: false);
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('ftp_upload_progress_bar')), findsNothing);
+    },
+  );
+
+  // Gene - Nov, 24, 2026: Verify Start/End schedule pickers render without overflow at 980x680 and pill adapts when Start == End.
+  testWidgets(
+    'FtpFilesScreen renders Start/End schedule controls at 980x680 without overflow and hides range when Start == End',
+    (tester) async {
+      tester.view.physicalSize = const Size(980, 680);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final provider = FtpFilesProvider(
+        clientFactory: (_) => _NoopFtpClient(),
+        persistSettings: false,
+      )
+        ..setEnableSchedule(true)
+        ..setRunTime(const TimeOfDay(hour: 22, minute: 0))
+        ..setRunEndTime(const TimeOfDay(hour: 6, minute: 0));
+      addTearDown(provider.dispose);
+
+      await tester.pumpWidget(buildFtpTestApp(provider));
+      await tester.pumpAndSettle();
+
+      // Overnight window range shown on main screen schedule pill.
+      expect(find.textContaining('–'), findsWidgets);
+
+      final advBtn = find.byKey(const Key('ftp_advanced_settings_btn'));
+      await tester.ensureVisible(advBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(advBtn);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('ftp_schedule_start_time_picker')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('ftp_schedule_end_time_picker')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Overnight window'), findsOneWidget);
+
+      // Setting Start == End updates helper copy and removes range separator from pill.
+      provider.setRunEndTime(const TimeOfDay(hour: 22, minute: 0));
+      await tester.pump();
+      expect(find.textContaining('no end cutoff'), findsOneWidget);
+
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('–'), findsNothing);
     },
   );
 }

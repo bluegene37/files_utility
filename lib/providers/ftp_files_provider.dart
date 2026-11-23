@@ -129,6 +129,8 @@ class FtpFilesProvider with ChangeNotifier {
   // Schedule settings
   bool enableSchedule = false;
   TimeOfDay runTime = const TimeOfDay(hour: 0, minute: 0);
+  // Gene - Nov, 24, 2026: Added configurable runEndTime for FTP scheduled run window (default 06:00).
+  TimeOfDay runEndTime = const TimeOfDay(hour: 6, minute: 0);
   Map<int, bool> runDays = {
     1: true,
     2: true,
@@ -164,6 +166,10 @@ class FtpFilesProvider with ChangeNotifier {
   int settingsVersion = 0;
 
   bool _stopRequested = false;
+  // Gene - Nov, 24, 2026: Track scheduled run window expiration separately from manual stop.
+  bool _windowExpired = false;
+  DateTime? _activeRunWindowEnd;
+  bool get _shouldAbortPass => _stopRequested || _windowExpired;
   bool _disposed = false;
   Timer? _scheduleTimer;
   FtpClientAdapter? _activeClient;
@@ -232,6 +238,13 @@ class FtpFilesProvider with ChangeNotifier {
 
   bool get hasCheckedScheduleDays => runDays.values.any((checked) => checked);
 
+  // Gene - Nov, 24, 2026: Helpers for checking whether a run end-time cutoff is active and formatting 24h times.
+  bool get hasEndTimeLimit =>
+      runTime.hour != runEndTime.hour || runTime.minute != runEndTime.minute;
+
+  static String _formatTime24(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
   bool get canRunNow =>
       !isUploading &&
       !isTestingConnection &&
@@ -286,6 +299,91 @@ class FtpFilesProvider with ChangeNotifier {
         return candidate;
       }
     }
+    return null;
+  }
+
+  // Gene - Nov, 24, 2026: Compute scheduled window end timestamp and active run window (including overnight midnight crossover).
+  /// Computes the closing timestamp for a window starting at [windowStart].
+  /// Returns `null` when [runTime] and [runEndTime] match (no end cutoff).
+  static DateTime? computeWindowEnd({
+    required DateTime windowStart,
+    required TimeOfDay runTime,
+    required TimeOfDay runEndTime,
+  }) {
+    final startMin = runTime.hour * 60 + runTime.minute;
+    final endMin = runEndTime.hour * 60 + runEndTime.minute;
+    if (startMin == endMin) return null;
+
+    if (endMin > startMin) {
+      return DateTime(
+        windowStart.year,
+        windowStart.month,
+        windowStart.day,
+        runEndTime.hour,
+        runEndTime.minute,
+      );
+    }
+    // Overnight / midnight crossover: calendar day + 1 avoids DST hour-shift bugs.
+    return DateTime(
+      windowStart.year,
+      windowStart.month,
+      windowStart.day + 1,
+      runEndTime.hour,
+      runEndTime.minute,
+    );
+  }
+
+  /// Returns the currently active `(start, end)` scheduled window containing [now],
+  /// checking both today and yesterday (for overnight windows), or `null` when
+  /// outside the window or when [runTime] == [runEndTime] (single trigger point).
+  static ({DateTime start, DateTime end})? computeActiveWindow({
+    required DateTime now,
+    required TimeOfDay runTime,
+    required TimeOfDay runEndTime,
+    required Map<int, bool> runDays,
+  }) {
+    final startMin = runTime.hour * 60 + runTime.minute;
+    final endMin = runEndTime.hour * 60 + runEndTime.minute;
+    if (startMin == endMin) return null;
+
+    final todayStart = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      runTime.hour,
+      runTime.minute,
+    );
+    if (runDays[todayStart.weekday] == true) {
+      final todayEnd = computeWindowEnd(
+        windowStart: todayStart,
+        runTime: runTime,
+        runEndTime: runEndTime,
+      )!;
+      if (!now.isBefore(todayStart) && now.isBefore(todayEnd)) {
+        return (start: todayStart, end: todayEnd);
+      }
+    }
+
+    if (endMin < startMin) {
+      final prevStart = DateTime(
+        now.year,
+        now.month,
+        now.day - 1,
+        runTime.hour,
+        runTime.minute,
+      );
+      if (runDays[prevStart.weekday] == true) {
+        final prevEnd = computeWindowEnd(
+          windowStart: prevStart,
+          runTime: runTime,
+          runEndTime: runEndTime,
+        )!;
+        if (!now.isBefore(prevStart) && now.isBefore(prevEnd)) {
+          return (start: prevStart, end: prevEnd);
+        }
+      }
+    }
+
     return null;
   }
 
@@ -494,6 +592,19 @@ class FtpFilesProvider with ChangeNotifier {
     runTime = (runHour != null && runMinute != null)
         ? TimeOfDay(hour: runHour, minute: runMinute)
         : const TimeOfDay(hour: 0, minute: 0);
+    // Gene - Nov, 24, 2026: Load persisted ftp_runEndHour/Minute; preserve no-cutoff behavior for legacy active schedules.
+    final runEndHour = db.getInt('ftp_runEndHour');
+    final runEndMinute = db.getInt('ftp_runEndMinute');
+    if (runEndHour != null && runEndMinute != null) {
+      runEndTime = TimeOfDay(
+        hour: runEndHour.clamp(0, 23),
+        minute: runEndMinute.clamp(0, 59),
+      );
+    } else if (enableSchedule) {
+      runEndTime = runTime;
+    } else {
+      runEndTime = const TimeOfDay(hour: 6, minute: 0);
+    }
 
     for (int day = 1; day <= 7; day++) {
       runDays[day] = db.getBool('ftp_runDay_$day') ?? true;
@@ -627,6 +738,9 @@ class FtpFilesProvider with ChangeNotifier {
     await db.setBool('ftp_enableSchedule', enableSchedule);
     await db.setInt('ftp_runHour', runTime.hour);
     await db.setInt('ftp_runMinute', runTime.minute);
+    // Gene - Nov, 24, 2026: Persist schedule window end time.
+    await db.setInt('ftp_runEndHour', runEndTime.hour);
+    await db.setInt('ftp_runEndMinute', runEndTime.minute);
     for (int day = 1; day <= 7; day++) {
       await db.setBool('ftp_runDay_$day', runDays[day] ?? true);
     }
@@ -1064,10 +1178,20 @@ class FtpFilesProvider with ChangeNotifier {
         'logInterval': logInterval,
         'logKeepDays': logKeepDays,
       },
+      //       'schedule': {
+      //         'enableSchedule': enableSchedule,
+      //         'runHour': runTime.hour,
+      //         'runMinute': runTime.minute,
+      //         'runDays': {for (int d = 1; d <= 7; d++) '$d': runDays[d] ?? true},
+      //         'onCompletionAction': onCompletionAction,
+      //       },
+      // Gene - Nov, 24, 2026: Export schedule runEndHour and runEndMinute in FTP settings JSON.
       'schedule': {
         'enableSchedule': enableSchedule,
         'runHour': runTime.hour,
         'runMinute': runTime.minute,
+        'runEndHour': runEndTime.hour,
+        'runEndMinute': runEndTime.minute,
         'runDays': {for (int d = 1; d <= 7; d++) '$d': runDays[d] ?? true},
         'onCompletionAction': onCompletionAction,
       },
@@ -1326,6 +1450,33 @@ class FtpFilesProvider with ChangeNotifier {
     final schedule = map['schedule'] is Map
         ? Map<String, dynamic>.from(map['schedule'] as Map)
         : null;
+    //     if (schedule != null) {
+    //       if (schedule.containsKey('enableSchedule')) {
+    //         enableSchedule = schedule['enableSchedule'] as bool? ?? enableSchedule;
+    //       }
+    //       final runHour = (schedule['runHour'] as num?)?.toInt();
+    //       final runMinute = (schedule['runMinute'] as num?)?.toInt();
+    //       if (runHour != null && runMinute != null) {
+    //         runTime = TimeOfDay(
+    //           hour: runHour.clamp(0, 23),
+    //           minute: runMinute.clamp(0, 59),
+    //         );
+    //       }
+    //       if (schedule['runDays'] is Map) {
+    //         final rawDays = Map<String, dynamic>.from(schedule['runDays'] as Map);
+    //         for (int day = 1; day <= 7; day++) {
+    //           final val = rawDays['$day'];
+    //           if (val is bool) {
+    //             runDays[day] = val;
+    //           }
+    //         }
+    //       }
+    //       final action = schedule['onCompletionAction'];
+    //       if (action == 'repeat' || action == 'stop') {
+    //         onCompletionAction = action as String;
+    //       }
+    //     }
+    // Gene - Nov, 24, 2026: Import schedule runEndHour/runEndMinute with legacy start-only fallback.
     if (schedule != null) {
       if (schedule.containsKey('enableSchedule')) {
         enableSchedule = schedule['enableSchedule'] as bool? ?? enableSchedule;
@@ -1337,6 +1488,17 @@ class FtpFilesProvider with ChangeNotifier {
           hour: runHour.clamp(0, 23),
           minute: runMinute.clamp(0, 59),
         );
+      }
+      final runEndHour = (schedule['runEndHour'] as num?)?.toInt();
+      final runEndMinute = (schedule['runEndMinute'] as num?)?.toInt();
+      if (runEndHour != null && runEndMinute != null) {
+        runEndTime = TimeOfDay(
+          hour: runEndHour.clamp(0, 23),
+          minute: runEndMinute.clamp(0, 59),
+        );
+      } else if (runHour != null && runMinute != null) {
+        // Legacy JSON export with only start time: preserve no-cutoff behavior.
+        runEndTime = runTime;
       }
       if (schedule['runDays'] is Map) {
         final rawDays = Map<String, dynamic>.from(schedule['runDays'] as Map);
@@ -1518,6 +1680,17 @@ class FtpFilesProvider with ChangeNotifier {
     }
   }
 
+  // Gene - Nov, 24, 2026: Added setter for scheduled run window end time.
+  void setRunEndTime(TimeOfDay time) {
+    runEndTime = time;
+    _saveSettings();
+    if (isScheduleArmed && !isUploading) {
+      _recomputeArmedNextRun();
+    } else {
+      notifyListeners();
+    }
+  }
+
   void setRunDay(int day, bool value) {
     runDays[day] = value;
     _saveSettings();
@@ -1543,6 +1716,21 @@ class FtpFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  //   void _recomputeArmedNextRun() {
+  //     final next = computeNextScheduledRun(
+  //       now: _nowProvider(),
+  //       runTime: runTime,
+  //       runDays: runDays,
+  //     );
+  //     nextScheduledRun = next;
+  //     if (next != null) {
+  //       final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+  //       currentStatus = '⏰ Scheduled — Next run: $formatted';
+  //       _addLog('⏰ Schedule updated — next run at $formatted.');
+  //     }
+  //     notifyListeners();
+  //   }
+  // Gene - Nov, 24, 2026: Include optional end-time window suffix in recomputed schedule status and log.
   void _recomputeArmedNextRun() {
     final next = computeNextScheduledRun(
       now: _nowProvider(),
@@ -1552,8 +1740,10 @@ class FtpFilesProvider with ChangeNotifier {
     nextScheduledRun = next;
     if (next != null) {
       final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-      currentStatus = '⏰ Scheduled — Next run: $formatted';
-      _addLog('⏰ Schedule updated — next run at $formatted.');
+      final windowSuffix =
+          hasEndTimeLimit ? ' (until ${_formatTime24(runEndTime)})' : '';
+      currentStatus = '⏰ Scheduled — Next run: $formatted$windowSuffix';
+      _addLog('⏰ Schedule updated — next run at $formatted$windowSuffix.');
     }
     notifyListeners();
   }
@@ -1614,11 +1804,136 @@ class FtpFilesProvider with ChangeNotifier {
 
   // --- Scheduling & Execution Controls ---
 
+  //   void startSchedule() {
+  //     if (!canArmSchedule) return;
+  //
+  //     final next = computeNextScheduledRun(
+  //       now: _nowProvider(),
+  //       runTime: runTime,
+  //       runDays: runDays,
+  //     );
+  //     if (next == null) {
+  //       _addLog('⚠️ Select at least one weekday before starting the schedule.');
+  //       notifyListeners();
+  //       return;
+  //     }
+  //
+  //     _stopRequested = false;
+  //     isScheduleArmed = true;
+  //     nextScheduledRun = next;
+  //
+  //     final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+  //     currentStatus = '⏰ Scheduled — Next run: $formatted';
+  //     _addLog('⏰ Schedule armed. Waiting for $formatted...');
+  //     notifyListeners();
+  //
+  //     _ensureScheduleTimerRunning();
+  //   }
+  //
+  //   void _ensureScheduleTimerRunning() {
+  //     _scheduleTimer?.cancel();
+  //     _scheduleTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+  //       _checkScheduleTick();
+  //     });
+  //   }
+  //
+  //   Future<void> _checkScheduleTick() async {
+  //     if (!isScheduleArmed || isUploading || _stopRequested) return;
+  //     final dueAt = nextScheduledRun;
+  //     if (dueAt == null) return;
+  //
+  //     final now = _nowProvider();
+  //     if (!now.isBefore(dueAt)) {
+  //       nextScheduledRun = null;
+  //       _addLog(
+  //         '⏳ Scheduled run time reached (${DateFormat('dd/MM/yyyy HH:mm').format(dueAt)}). Starting upload...',
+  //       );
+  //       await _executeUploadPass(isScheduledRun: true);
+  //     }
+  //   }
+  //
+  //   @visibleForTesting
+  //   Future<void> triggerScheduleTickForTest() => _checkScheduleTick();
+  //
+  //   Future<void> runNow() async {
+  //     if (!canRunNow) return;
+  //     await _executeUploadPass(isScheduledRun: false);
+  //   }
+  //
+  //   void stop() {
+  //     if (!isProcessing) return;
+  //     _stopRequested = true;
+  //     _scheduleTimer?.cancel();
+  //     _scheduleTimer = null;
+  //     isScheduleArmed = false;
+  //     nextScheduledRun = null;
+  //
+  //     if (isUploading) {
+  //       currentStatus = '⛔ Stopping...';
+  //       _addLog('⛔ Stop requested by user. Closing active FTP connection...');
+  //       unawaited(_activeClient?.disconnect());
+  //     } else {
+  //       currentStatus = '⛔ Stopped';
+  //       _addLog('⛔ FTP schedule stopped by user.');
+  //     }
+  //     notifyListeners();
+  //   }
+  // Gene - Nov, 24, 2026: Support start/end run window activation, missed-window handling, and automatic clean stop at runEndTime.
+  bool _checkWindowExpiration() {
+    if (!isUploading || _activeRunWindowEnd == null || _stopRequested) {
+      return _windowExpired;
+    }
+    if (_windowExpired) return true;
+    final now = _nowProvider();
+    if (!now.isBefore(_activeRunWindowEnd!)) {
+      _windowExpired = true;
+      final endLabel = _formatTime24(runEndTime);
+      currentStatus = '⏰ End time ($endLabel) reached. Stopping...';
+      _addLog(
+        '⏰ Scheduled end time ($endLabel) reached. Stopping active upload cleanly...',
+      );
+      unawaited(_activeClient?.disconnect());
+      notifyListeners();
+      return true;
+    }
+    return false;
+  }
+
   void startSchedule() {
     if (!canArmSchedule) return;
 
+    final now = _nowProvider();
+    final activeWindow = computeActiveWindow(
+      now: now,
+      runTime: runTime,
+      runEndTime: runEndTime,
+      runDays: runDays,
+    );
+    if (activeWindow != null) {
+      _stopRequested = false;
+      _windowExpired = false;
+      isScheduleArmed = true;
+      nextScheduledRun = null;
+
+      final startLabel = _formatTime24(runTime);
+      final endLabel = _formatTime24(runEndTime);
+      final endFmt = DateFormat('dd/MM/yyyy HH:mm').format(activeWindow.end);
+      currentStatus =
+          '⏰ Inside schedule window ($startLabel – $endLabel). Starting...';
+      _addLog(
+        '⏰ Inside active run window ($startLabel – $endLabel). Starting upload immediately (stops at $endFmt)...',
+      );
+      notifyListeners();
+
+      _ensureScheduleTimerRunning();
+      unawaited(
+        _executeUploadPass(isScheduledRun: true, windowEnd: activeWindow.end),
+      );
+      return;
+    }
+
     final next = computeNextScheduledRun(
-      now: _nowProvider(),
+      now: now,
       runTime: runTime,
       runDays: runDays,
     );
@@ -1629,12 +1944,15 @@ class FtpFilesProvider with ChangeNotifier {
     }
 
     _stopRequested = false;
+    _windowExpired = false;
     isScheduleArmed = true;
     nextScheduledRun = next;
 
     final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-    currentStatus = '⏰ Scheduled — Next run: $formatted';
-    _addLog('⏰ Schedule armed. Waiting for $formatted...');
+    final windowSuffix =
+        hasEndTimeLimit ? ' (until ${_formatTime24(runEndTime)})' : '';
+    currentStatus = '⏰ Scheduled — Next run: $formatted$windowSuffix';
+    _addLog('⏰ Schedule armed. Waiting for $formatted$windowSuffix...');
     notifyListeners();
 
     _ensureScheduleTimerRunning();
@@ -1648,17 +1966,84 @@ class FtpFilesProvider with ChangeNotifier {
   }
 
   Future<void> _checkScheduleTick() async {
-    if (!isScheduleArmed || isUploading || _stopRequested) return;
+    if (isUploading && !_stopRequested) {
+      _checkWindowExpiration();
+      return;
+    }
+    if (!isScheduleArmed || _stopRequested) return;
     final dueAt = nextScheduledRun;
     if (dueAt == null) return;
 
     final now = _nowProvider();
     if (!now.isBefore(dueAt)) {
-      nextScheduledRun = null;
-      _addLog(
-        '⏳ Scheduled run time reached (${DateFormat('dd/MM/yyyy HH:mm').format(dueAt)}). Starting upload...',
+      final windowEnd = computeWindowEnd(
+        windowStart: dueAt,
+        runTime: runTime,
+        runEndTime: runEndTime,
       );
-      await _executeUploadPass(isScheduledRun: true);
+      if (windowEnd != null && !now.isBefore(windowEnd)) {
+        final missedFmt = DateFormat('dd/MM/yyyy HH:mm').format(dueAt);
+        final endFmt = DateFormat('dd/MM/yyyy HH:mm').format(windowEnd);
+        _addLog('⏭ Missed scheduled window ($missedFmt – $endFmt).');
+        nextScheduledRun = null;
+
+        if (onCompletionAction == 'repeat' &&
+            enableSchedule &&
+            hasCheckedScheduleDays) {
+          final activeNow = computeActiveWindow(
+            now: now,
+            runTime: runTime,
+            runEndTime: runEndTime,
+            runDays: runDays,
+          );
+          if (activeNow != null) {
+            _addLog(
+              '⏰ Inside current run window (${_formatTime24(runTime)} – ${_formatTime24(runEndTime)}). Starting upload...',
+            );
+            await _executeUploadPass(
+              isScheduledRun: true,
+              windowEnd: activeNow.end,
+            );
+            return;
+          }
+
+          final next = computeNextScheduledRun(
+            now: now,
+            runTime: runTime,
+            runDays: runDays,
+          );
+          nextScheduledRun = next;
+          if (next != null) {
+            final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+            final windowSuffix = hasEndTimeLimit
+                ? ' (until ${_formatTime24(runEndTime)})'
+                : '';
+            currentStatus = '⏰ Scheduled — Next run: $formatted$windowSuffix';
+            _addLog('⏰ Rescheduled for next window: $formatted$windowSuffix.');
+          } else {
+            isScheduleArmed = false;
+            _scheduleTimer?.cancel();
+            _scheduleTimer = null;
+            currentStatus = '⏭ Missed scheduled window';
+          }
+        } else {
+          isScheduleArmed = false;
+          _scheduleTimer?.cancel();
+          _scheduleTimer = null;
+          currentStatus = '⏭ Missed scheduled window';
+        }
+        notifyListeners();
+        return;
+      }
+
+      nextScheduledRun = null;
+      final stopSuffix = windowEnd != null
+          ? ' — stops at ${_formatTime24(runEndTime)}'
+          : '';
+      _addLog(
+        '⏳ Scheduled run time reached (${DateFormat('dd/MM/yyyy HH:mm').format(dueAt)}$stopSuffix). Starting upload...',
+      );
+      await _executeUploadPass(isScheduledRun: true, windowEnd: windowEnd);
     }
   }
 
@@ -1673,6 +2058,8 @@ class FtpFilesProvider with ChangeNotifier {
   void stop() {
     if (!isProcessing) return;
     _stopRequested = true;
+    _windowExpired = false;
+    _activeRunWindowEnd = null;
     _scheduleTimer?.cancel();
     _scheduleTimer = null;
     isScheduleArmed = false;
@@ -1823,7 +2210,9 @@ class FtpFilesProvider with ChangeNotifier {
     required List<_SubfolderWorkItem> out,
   }) async {
     final queue = <String>[startDir];
-    while (queue.isNotEmpty && !_stopRequested) {
+    //     while (queue.isNotEmpty && !_stopRequested) {
+    // Gene - Nov, 24, 2026: Abort iterative directory scan when scheduled end time is reached.
+    while (queue.isNotEmpty && !_shouldAbortPass && !_checkWindowExpiration()) {
       final currentPath = queue.removeAt(0);
       final rel = p.relative(currentPath, from: startDir);
       final mappedRemote = (rel == '.' || rel.isEmpty)
@@ -1841,7 +2230,9 @@ class FtpFilesProvider with ChangeNotifier {
         await for (final entity in Directory(
           currentPath,
         ).list(recursive: false, followLinks: false)) {
-          if (_stopRequested) break;
+          //           if (_stopRequested) break;
+          // Gene - Nov, 24, 2026: Abort directory listing on stop or run-window expiration.
+          if (_shouldAbortPass || _checkWindowExpiration()) break;
           if (entity is Directory) {
             if (await resolvesWithinRoot(rootPath, entity.path)) {
               queue.add(entity.path);
@@ -1944,7 +2335,9 @@ class FtpFilesProvider with ChangeNotifier {
       await for (final entity in Directory(
         item.localDir,
       ).list(recursive: false, followLinks: false)) {
-        if (_stopRequested) break;
+        //         if (_stopRequested) break;
+        // Gene - Nov, 24, 2026: Abort file scan on stop or run-window expiration.
+        if (_shouldAbortPass || _checkWindowExpiration()) break;
         if (entity is File) {
           if (!await resolvesWithinRoot(item.rootPath, entity.path)) {
             continue;
@@ -1987,7 +2380,9 @@ class FtpFilesProvider with ChangeNotifier {
     int checkedInFolder = 0;
     final matched = <_QueuedUploadFile>[];
     for (final file in candidateFiles) {
-      if (_stopRequested) break;
+      //       if (_stopRequested) break;
+      // Gene - Nov, 24, 2026: Abort date-filter scan loop on stop or run-window expiration.
+      if (_shouldAbortPass || _checkWindowExpiration()) break;
       final stats = statsByPath[file.path]!;
       checkedInFolder++;
       filesChecked++;
@@ -2438,10 +2833,21 @@ class FtpFilesProvider with ChangeNotifier {
     return (ok: true, sizes: null);
   }
 
-  Future<void> _executeUploadPass({required bool isScheduledRun}) async {
+  //   Future<void> _executeUploadPass({required bool isScheduledRun}) async {
+  //     if (isUploading) return;
+  //
+  //     _stopRequested = false;
+  //     isUploading = true;
+  // Gene - Nov, 24, 2026: Accept optional windowEnd for scheduled runs to enforce end-time cutoff.
+  Future<void> _executeUploadPass({
+    required bool isScheduledRun,
+    DateTime? windowEnd,
+  }) async {
     if (isUploading) return;
 
     _stopRequested = false;
+    _windowExpired = false;
+    _activeRunWindowEnd = isScheduledRun ? windowEnd : null;
     isUploading = true;
     filesUploaded = 0;
     filesSkipped = 0;
@@ -2515,6 +2921,13 @@ class FtpFilesProvider with ChangeNotifier {
         await _fileLogger.info('FTP', skipSrcMsg);
       }
     }
+    // Gene - Nov, 24, 2026: Log active scheduled run window bounds at start of pass.
+    if (isScheduledRun && _activeRunWindowEnd != null) {
+      final windowMsg =
+          '⏰ Active run window: ${_formatTime24(runTime)} – ${_formatTime24(runEndTime)} (stops at ${DateFormat('dd/MM/yyyy HH:mm').format(_activeRunWindowEnd!)})';
+      _addLog(windowMsg);
+      await _fileLogger.info('FTP', windowMsg);
+    }
     notifyListeners();
 
     bool hadFatalError = false;
@@ -2525,7 +2938,9 @@ class FtpFilesProvider with ChangeNotifier {
       final needsConnection = !dryRun || skipIfExists;
 
       for (final source in sources) {
-        if (_stopRequested) break;
+        //         if (_stopRequested) break;
+        // Gene - Nov, 24, 2026: Stop upload pass when user stops or scheduled run window ends.
+        if (_shouldAbortPass || _checkWindowExpiration()) break;
 
         final subFilterLabel = source.parsedSubfolders.isEmpty
             ? (includeSubfolders ? 'ALL (nested)' : 'Root only')
@@ -2544,7 +2959,9 @@ class FtpFilesProvider with ChangeNotifier {
         final workItems = await _buildWorkItems(source);
 
         for (final workItem in workItems) {
-          if (_stopRequested) break;
+          //           if (_stopRequested) break;
+          // Gene - Nov, 24, 2026: Stop work-item loop on stop or run-window expiration.
+          if (_shouldAbortPass || _checkWindowExpiration()) break;
           foldersProcessed++;
           currentStatus = dryRun
               ? '🧪 Scanning ${p.basename(workItem.localDir)}...'
@@ -2553,7 +2970,9 @@ class FtpFilesProvider with ChangeNotifier {
 
           // Step A: Local scan of current subfolder.
           final scanResult = await _scanSubfolderFiles(workItem, runRefNow);
-          if (_stopRequested) break;
+          //           if (_stopRequested) break;
+          // Gene - Nov, 24, 2026: Stop before connecting or uploading if scan aborted by stop or window end.
+          if (_shouldAbortPass || _checkWindowExpiration()) break;
 
           final miniQueue = scanResult.matched;
           if (miniQueue.isEmpty) {
@@ -2607,7 +3026,9 @@ class FtpFilesProvider with ChangeNotifier {
               remoteSizes = prep.sizes;
               folderReady = true;
             } catch (dirErr) {
-              if (_stopRequested) break;
+              //               if (_stopRequested) break;
+              // Gene - Nov, 24, 2026: Break cleanly without reconnect or error when aborted by stop or window end.
+              if (_shouldAbortPass || _checkWindowExpiration()) break;
               final safeDirErr = CredentialObfuscator.redact(
                 dirErr.toString(),
                 password,
@@ -2638,6 +3059,8 @@ class FtpFilesProvider with ChangeNotifier {
                 remoteSizes = retryPrep.sizes;
                 folderReady = true;
               } catch (retryErr) {
+                // Gene - Nov, 24, 2026: Skip error logging if reconnect aborted by stop or run-window expiration.
+                if (_shouldAbortPass || _checkWindowExpiration()) break;
                 final safeRetryErr = CredentialObfuscator.redact(
                   retryErr.toString(),
                   password,
@@ -2653,13 +3076,20 @@ class FtpFilesProvider with ChangeNotifier {
               }
             }
 
-            if (!folderReady || _stopRequested) {
+            //             if (!folderReady || _stopRequested) {
+            // Gene - Nov, 24, 2026: Break or skip folder cleanly when aborted by stop or window expiration.
+            if (_shouldAbortPass || _checkWindowExpiration()) {
+              break;
+            }
+            if (!folderReady) {
               continue;
             }
           }
 
           for (final item in miniQueue) {
-            if (_stopRequested) break;
+            //             if (_stopRequested) break;
+            // Gene - Nov, 24, 2026: Check stop or run-window expiration before each file.
+            if (_shouldAbortPass || _checkWindowExpiration()) break;
             final fileName = p.basename(item.file.path);
 
             if (skipIfExists && client != null) {
@@ -2676,6 +3106,8 @@ class FtpFilesProvider with ChangeNotifier {
                 existingSize = await client.getRemoteFileSize(fileName);
                 existsRemotely = existingSize != null;
               }
+              // Gene - Nov, 24, 2026: Abort cleanly if window expired during remote size check.
+              if (_shouldAbortPass || _checkWindowExpiration()) break;
 
               if (existsRemotely) {
                 if (existingSize == item.size) {
@@ -2724,7 +3156,9 @@ class FtpFilesProvider with ChangeNotifier {
             try {
               final maxAttempts = retryCount.clamp(1, 10);
               for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-                if (_stopRequested) break;
+                //                 if (_stopRequested) break;
+                // Gene - Nov, 24, 2026: Abort retry attempts if stop requested or run window ended.
+                if (_shouldAbortPass || _checkWindowExpiration()) break;
                 try {
                   if (client == null) {
                     final freshClient = _clientFactory(config);
@@ -2748,7 +3182,9 @@ class FtpFilesProvider with ChangeNotifier {
                     item.file,
                     remoteName: fileName,
                     onProgress: (percent, sent, total) {
-                      if (_stopRequested) return;
+                      //                       if (_stopRequested) return;
+                      // Gene - Nov, 24, 2026: Check run-window expiration during live upload progress ticks.
+                      if (_shouldAbortPass || _checkWindowExpiration()) return;
                       final effectiveTotal = total > 0 ? total : item.size;
                       final normalizedProgress = effectiveTotal > 0
                           ? (sent / effectiveTotal).clamp(0.0, 1.0)
@@ -2785,12 +3221,16 @@ class FtpFilesProvider with ChangeNotifier {
                       }
                     },
                   );
+                  // Gene - Nov, 24, 2026: Break immediately before rejection/verification checks if aborted during upload.
+                  if (_shouldAbortPass || _checkWindowExpiration()) break;
                   if (!uploaded) {
                     throw Exception('Server rejected upload of $fileName');
                   }
 
                   if (verifySizeAfterUpload) {
                     final remoteSize = await client.getRemoteFileSize(fileName);
+                    // Gene - Nov, 24, 2026: Break cleanly if window ended during post-upload SIZE check.
+                    if (_shouldAbortPass || _checkWindowExpiration()) break;
                     if (remoteSize == null) {
                       final warnMsg =
                           '⚠️ Size verification unavailable for $fileName (server did not return remote size)';
@@ -2816,7 +3256,9 @@ class FtpFilesProvider with ChangeNotifier {
                   notifyListeners();
                   break;
                 } catch (e) {
-                  if (_stopRequested) break;
+                  //                   if (_stopRequested) break;
+                  // Gene - Nov, 24, 2026: Skip error recording and retries when aborted by stop or window expiration.
+                  if (_shouldAbortPass || _checkWindowExpiration()) break;
                   final safeErr = CredentialObfuscator.redact(
                     e.toString(),
                     password,
@@ -2832,7 +3274,9 @@ class FtpFilesProvider with ChangeNotifier {
                     await _cancellableDelay(
                       Duration(seconds: retryDelaySeconds),
                     );
-                    if (_stopRequested) break;
+                    //                     if (_stopRequested) break;
+                    // Gene - Nov, 24, 2026: Break out of retry delay if stop requested or run window expired.
+                    if (_shouldAbortPass || _checkWindowExpiration()) break;
 
                     // Reconnect before retrying in case the socket dropped mid-transfer.
                     await client?.disconnect();
@@ -2853,6 +3297,8 @@ class FtpFilesProvider with ChangeNotifier {
                       }
                       client = nextClient;
                     } catch (reconnectErr) {
+                      // Gene - Nov, 24, 2026: Break without reconnect warning if aborted by stop or window end.
+                      if (_shouldAbortPass || _checkWindowExpiration()) break;
                       final safeReconnectErr = CredentialObfuscator.redact(
                         reconnectErr.toString(),
                         password,
@@ -2881,7 +3327,9 @@ class FtpFilesProvider with ChangeNotifier {
         }
       }
     } catch (e, stack) {
-      if (!_stopRequested) {
+      //       if (!_stopRequested) {
+      // Gene - Nov, 24, 2026: Suppress critical-error logging when connection closed due to window expiration.
+      if (!_shouldAbortPass && !_checkWindowExpiration()) {
         hadFatalError = true;
         errors++;
         final safeErr = CredentialObfuscator.redact(e.toString(), password);
@@ -2890,10 +3338,136 @@ class FtpFilesProvider with ChangeNotifier {
         await _fileLogger.error('FTP', 'Critical Error: $safeErr');
       }
     } finally {
+      //       _clearActiveUploadProgress();
+      //       _activeClient = null;
+      //       await client?.disconnect();
+      //       isUploading = false;
+      //
+      //       final endTime = _nowProvider();
+      //       final runId = _fileLogger.getRunId('FTP') ?? 'RUN-FTP';
+      //       await _fileLogger.logRunEnd(
+      //         operation: 'FTP',
+      //         filesProcessed: filesUploaded,
+      //         errors: errors,
+      //         wasStopped: _stopRequested,
+      //       );
+      //
+      //       final hasErrors = hadFatalError || errors > 0;
+      //       final statusLabel = _stopRequested
+      //           ? 'Stopped'
+      //           : (hasErrors ? 'Error' : 'Completed');
+      //       final summaryPrefix = dryRun ? '[DRY RUN] ' : '';
+      //       final configSummary =
+      //           '$summaryPrefix${config.protocol.shortLabel} | Date: ${dateMode.label} (${dateType.label}) | Checked: ${_numFmt.format(filesChecked)} | Skipped: ${_numFmt.format(filesSkipped)}';
+      //
+      //       await HistoryService().saveRecord(
+      //         RunRecord(
+      //           id: runId,
+      //           operation: 'FTP',
+      //           startTime: startTime,
+      //           endTime: endTime,
+      //           filesProcessed: filesUploaded,
+      //           foldersProcessed: foldersProcessed,
+      //           errors: errors,
+      //           status: statusLabel,
+      //           configSummary: configSummary,
+      //           sourcePath: sourceSummary,
+      //           destPath: endpointSummary,
+      //         ),
+      //       );
+      //
+      //       if (_stopRequested) {
+      //         _scheduleTimer?.cancel();
+      //         _scheduleTimer = null;
+      //         isScheduleArmed = false;
+      //         nextScheduledRun = null;
+      //         currentStatus = '⛔ Stopped';
+      //         _addLog(
+      //           '⛔ Run stopped. Uploaded: ${_numFmt.format(filesUploaded)}, Skipped: ${_numFmt.format(filesSkipped)}, Errors: ${_numFmt.format(errors)}.',
+      //         );
+      //       } else if (isScheduledRun) {
+      //         if (onCompletionAction == 'repeat' &&
+      //             enableSchedule &&
+      //             hasCheckedScheduleDays) {
+      //           final next = computeNextScheduledRun(
+      //             now: _nowProvider(),
+      //             runTime: runTime,
+      //             runDays: runDays,
+      //           );
+      //           nextScheduledRun = next;
+      //           if (next != null) {
+      //             final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+      //             currentStatus = hasErrors
+      //                 ? '⚠️ Completed with $errors error(s). Next run at $formatted'
+      //                 : '🏁 Completed. Next run at $formatted';
+      //             _addLog(
+      //               '🏁 ${dryRun ? "Dry run" : "Upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted.',
+      //             );
+      //             _ensureScheduleTimerRunning();
+      //           } else {
+      //             isScheduleArmed = false;
+      //             _scheduleTimer?.cancel();
+      //             _scheduleTimer = null;
+      //             currentStatus = hadFatalError
+      //                 ? '❌ Error'
+      //                 : (errors > 0
+      //                       ? '⚠️ Completed with $errors error(s)'
+      //                       : '✅ Completed');
+      //           }
+      //         } else {
+      //           isScheduleArmed = false;
+      //           nextScheduledRun = null;
+      //           _scheduleTimer?.cancel();
+      //           _scheduleTimer = null;
+      //           currentStatus = hadFatalError
+      //               ? '❌ Error'
+      //               : (errors > 0
+      //                     ? '⚠️ Completed with $errors error(s)'
+      //                     : '✅ Completed');
+      //           _addLog(
+      //             '✅ Scheduled ${dryRun ? "dry run" : "upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+      //           );
+      //         }
+      //       } else {
+      //         if (isScheduleArmed) {
+      //           final next = computeNextScheduledRun(
+      //             now: _nowProvider(),
+      //             runTime: runTime,
+      //             runDays: runDays,
+      //           );
+      //           nextScheduledRun = next;
+      //           if (next != null) {
+      //             final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+      //             currentStatus = hasErrors
+      //                 ? '⚠️ Finished with $errors error(s) — Next run: $formatted'
+      //                 : '⏰ Scheduled — Next run: $formatted';
+      //             _addLog(
+      //               '✅ Manual run finished (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Schedule remains armed for $formatted.',
+      //             );
+      //           }
+      //         } else {
+      //           currentStatus = hadFatalError
+      //               ? '❌ Error'
+      //               : (errors > 0
+      //                     ? '⚠️ Completed with $errors error(s)'
+      //                     : (dryRun ? '✅ Dry Run Completed' : '✅ Completed'));
+      //           _addLog(
+      //             '✅ ${dryRun ? "Dry run" : "Upload"} finished! Checked: $filesChecked, Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors.',
+      //           );
+      //         }
+      //       }
+      //
+      //       notifyListeners();
+      // Gene - Nov, 24, 2026: Handle window-ended shutdown separately from manual stop, preserving Repeat re-arming and clean History status.
+      final stoppedByWindow = _windowExpired && !_stopRequested;
+      _activeRunWindowEnd = null;
+      _windowExpired = false;
       _clearActiveUploadProgress();
       _activeClient = null;
       await client?.disconnect();
-      isUploading = false;
+      //       isUploading = false;
+      // Gene - Nov, 24, 2026: Keep isUploading true until run-end logging, History persistence, and schedule disarm/re-arm complete.
+      try {
 
       final endTime = _nowProvider();
       final runId = _fileLogger.getRunId('FTP') ?? 'RUN-FTP';
@@ -2901,16 +3475,19 @@ class FtpFilesProvider with ChangeNotifier {
         operation: 'FTP',
         filesProcessed: filesUploaded,
         errors: errors,
-        wasStopped: _stopRequested,
+        wasStopped: _stopRequested || stoppedByWindow,
       );
 
       final hasErrors = hadFatalError || errors > 0;
-      final statusLabel = _stopRequested
+      final statusLabel = (_stopRequested || stoppedByWindow)
           ? 'Stopped'
           : (hasErrors ? 'Error' : 'Completed');
       final summaryPrefix = dryRun ? '[DRY RUN] ' : '';
+      final windowSuffixSummary = stoppedByWindow
+          ? ' | Window Ended (${_formatTime24(runEndTime)})'
+          : '';
       final configSummary =
-          '$summaryPrefix${config.protocol.shortLabel} | Date: ${dateMode.label} (${dateType.label}) | Checked: ${_numFmt.format(filesChecked)} | Skipped: ${_numFmt.format(filesSkipped)}';
+          '$summaryPrefix${config.protocol.shortLabel} | Date: ${dateMode.label} (${dateType.label}) | Checked: ${_numFmt.format(filesChecked)} | Skipped: ${_numFmt.format(filesSkipped)}$windowSuffixSummary';
 
       await HistoryService().saveRecord(
         RunRecord(
@@ -2928,6 +3505,9 @@ class FtpFilesProvider with ChangeNotifier {
         ),
       );
 
+      final windowSuffix =
+          hasEndTimeLimit ? ' (until ${_formatTime24(runEndTime)})' : '';
+
       if (_stopRequested) {
         _scheduleTimer?.cancel();
         _scheduleTimer = null;
@@ -2937,6 +3517,44 @@ class FtpFilesProvider with ChangeNotifier {
         _addLog(
           '⛔ Run stopped. Uploaded: ${_numFmt.format(filesUploaded)}, Skipped: ${_numFmt.format(filesSkipped)}, Errors: ${_numFmt.format(errors)}.',
         );
+      } else if (stoppedByWindow) {
+        final endLabel = _formatTime24(runEndTime);
+        if (isScheduledRun &&
+            onCompletionAction == 'repeat' &&
+            enableSchedule &&
+            hasCheckedScheduleDays) {
+          final next = computeNextScheduledRun(
+            now: _nowProvider(),
+            runTime: runTime,
+            runDays: runDays,
+          );
+          nextScheduledRun = next;
+          if (next != null) {
+            final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+            currentStatus = '⏸ Window ended ($endLabel). Next run at $formatted';
+            _addLog(
+              '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
+            );
+            _ensureScheduleTimerRunning();
+          } else {
+            isScheduleArmed = false;
+            _scheduleTimer?.cancel();
+            _scheduleTimer = null;
+            currentStatus = '⏰ Window ended ($endLabel)';
+            _addLog(
+              '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+            );
+          }
+        } else {
+          isScheduleArmed = false;
+          nextScheduledRun = null;
+          _scheduleTimer?.cancel();
+          _scheduleTimer = null;
+          currentStatus = '⏰ Window ended ($endLabel)';
+          _addLog(
+            '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+          );
+        }
       } else if (isScheduledRun) {
         if (onCompletionAction == 'repeat' &&
             enableSchedule &&
@@ -2953,7 +3571,7 @@ class FtpFilesProvider with ChangeNotifier {
                 ? '⚠️ Completed with $errors error(s). Next run at $formatted'
                 : '🏁 Completed. Next run at $formatted';
             _addLog(
-              '🏁 ${dryRun ? "Dry run" : "Upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted.',
+              '🏁 ${dryRun ? "Dry run" : "Upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
             );
             _ensureScheduleTimerRunning();
           } else {
@@ -2991,10 +3609,10 @@ class FtpFilesProvider with ChangeNotifier {
           if (next != null) {
             final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
             currentStatus = hasErrors
-                ? '⚠️ Finished with $errors error(s) — Next run: $formatted'
-                : '⏰ Scheduled — Next run: $formatted';
+                ? '⚠️ Finished with $errors error(s) — Next run: $formatted$windowSuffix'
+                : '⏰ Scheduled — Next run: $formatted$windowSuffix';
             _addLog(
-              '✅ Manual run finished (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Schedule remains armed for $formatted.',
+              '✅ Manual run finished (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Schedule remains armed for $formatted$windowSuffix.',
             );
           }
         } else {
@@ -3008,14 +3626,26 @@ class FtpFilesProvider with ChangeNotifier {
           );
         }
       }
+      } finally {
+        isUploading = false;
+      }
 
       notifyListeners();
     }
   }
 
+  //   Future<void> _cancellableDelay(Duration duration) async {
+  //     final deadline = DateTime.now().add(duration);
+  //     while (DateTime.now().isBefore(deadline) && !_stopRequested) {
+  //       await Future<void>.delayed(const Duration(milliseconds: 200));
+  //     }
+  //   }
+  // Gene - Nov, 24, 2026: Cancel retry delay early when scheduled run window expires.
   Future<void> _cancellableDelay(Duration duration) async {
     final deadline = DateTime.now().add(duration);
-    while (DateTime.now().isBefore(deadline) && !_stopRequested) {
+    while (DateTime.now().isBefore(deadline) &&
+        !_shouldAbortPass &&
+        !_checkWindowExpiration()) {
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
   }

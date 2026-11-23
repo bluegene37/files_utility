@@ -90,7 +90,10 @@ void main() {
           ..setLogInterval(10)
           ..setLogKeepDays(90)
           ..setEnableSchedule(true)
+          //           ..setRunTime(const TimeOfDay(hour: 2, minute: 30))
+          // Gene - Nov, 24, 2026: Include runEndTime in FTP settings export/import round-trip test.
           ..setRunTime(const TimeOfDay(hour: 2, minute: 30))
+          ..setRunEndTime(const TimeOfDay(hour: 6, minute: 45))
           ..setRunDay(6, false)
           ..setOnCompletionAction('stop');
 
@@ -140,6 +143,8 @@ void main() {
         expect(target.logKeepDays, 90);
         expect(target.enableSchedule, isTrue);
         expect(target.runTime, const TimeOfDay(hour: 2, minute: 30));
+        // Gene - Nov, 24, 2026: Assert round-tripped runEndTime.
+        expect(target.runEndTime, const TimeOfDay(hour: 6, minute: 45));
         expect(target.runDays[6], isFalse);
         expect(target.onCompletionAction, 'stop');
       },
@@ -229,6 +234,41 @@ void main() {
         recipient2.importFromJsonString(fullSettingsJson, sourcesOnly: true);
         expect(recipient2.host, 'stay.example.com');
         expect(recipient2.uploadSources, hasLength(2));
+      },
+    );
+
+    // Gene - Nov, 24, 2026: Verify legacy start-only FTP JSON fallback and clamping for out-of-range runEndHour/Minute.
+    test(
+      'preserves no-cutoff fallback for legacy FTP schedule JSON and clamps invalid end time values',
+      () {
+        final legacyProvider = FtpFilesProvider(persistSettings: false);
+        addTearDown(legacyProvider.dispose);
+
+        final legacyJson = jsonEncode({
+          'type': 'ftp_settings',
+          'schedule': {
+            'enableSchedule': true,
+            'runHour': 3,
+            'runMinute': 15,
+          },
+        });
+        legacyProvider.importFromJsonString(legacyJson);
+        expect(legacyProvider.runTime, const TimeOfDay(hour: 3, minute: 15));
+        expect(legacyProvider.runEndTime, const TimeOfDay(hour: 3, minute: 15));
+
+        final clampedJson = jsonEncode({
+          'type': 'ftp_settings',
+          'schedule': {
+            'enableSchedule': true,
+            'runHour': 25,
+            'runMinute': -5,
+            'runEndHour': 99,
+            'runEndMinute': 75,
+          },
+        });
+        legacyProvider.importFromJsonString(clampedJson);
+        expect(legacyProvider.runTime, const TimeOfDay(hour: 23, minute: 0));
+        expect(legacyProvider.runEndTime, const TimeOfDay(hour: 23, minute: 59));
       },
     );
   });

@@ -430,8 +430,11 @@ class UserManualData {
         ),
         ManualSection(
           title: 'Weekday & Time Scheduler',
+          //           description:
+          //               'Enable Schedule in Advanced Settings, choose a Run At time, select the target weekdays (Mon–Sun), and choose Repeat or Stop on completion. Click Start Schedule to arm the timer while leaving Run Now available for immediate manual runs anytime.',
+          // Gene - Nov, 24, 2026: Document Start and End runtime window behavior including overnight windows and Repeat re-arming.
           description:
-              'Enable Schedule in Advanced Settings, choose a Run At time, select the target weekdays (Mon–Sun), and choose Repeat or Stop on completion. Click Start Schedule to arm the timer while leaving Run Now available for immediate manual runs anytime.',
+              'Enable Schedule in Advanced Settings, choose Start and End run times (supporting same-day or overnight windows such as 22:00–06:00), select target weekdays (Mon–Sun), and choose Repeat or Stop on completion. Click Start Schedule to run inside the active window (or wait for the next Start time); active scheduled uploads stop cleanly at End time and automatically re-arm when Repeat is selected. Set Start and End to the same time to run until completion with no cutoff, while Run Now remains available anytime without time limits.',
           tags: ['scheduler', 'automation', 'weekdays'],
         ),
         ManualSection(

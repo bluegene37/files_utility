@@ -1,4 +1,6 @@
 // Gene - Nov, 21, 2026: Unit tests for FtpFilesProvider upload flow, V1 features, scheduler, history, and redaction.
+// Gene - Nov, 24, 2026: Import dart:async for blocking upload / window-end disconnect tests.
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -31,6 +33,10 @@ class FakeRemoteServerState {
   bool returnNullRemoteSize = false;
   List<({double percent, int sent, int total})> simulatedProgressTicks =
       const [];
+  // Gene - Nov, 24, 2026: Hooks to block a specific file upload until disconnect() simulates mid-transfer socket close.
+  String? blockFileName;
+  Completer<void>? uploadStartedSignal;
+  Completer<void>? _pendingUploadGate;
 
   String _norm(String raw) {
     final clean = joinRemotePath(raw, '');
@@ -65,6 +71,11 @@ class FakeFtpClientAdapter implements FtpClientAdapter {
   @override
   Future<void> disconnect() async {
     state.disconnectCount++;
+    // Gene - Nov, 24, 2026: Abort any blocked in-flight upload when socket disconnects.
+    final gate = state._pendingUploadGate;
+    if (gate != null && !gate.isCompleted) {
+      gate.completeError(Exception('Simulated socket close on disconnect'));
+    }
   }
 
   @override
@@ -148,6 +159,18 @@ class FakeFtpClientAdapter implements FtpClientAdapter {
       for (final tick in state.simulatedProgressTicks) {
         onProgress(tick.percent, tick.sent, tick.total);
       }
+    }
+
+    // Gene - Nov, 24, 2026: Allow tests to pause a specific file upload until window expiration disconnects client.
+    if (state.blockFileName == name) {
+      final gate = Completer<void>();
+      state._pendingUploadGate = gate;
+      if (state.uploadStartedSignal != null &&
+          !state.uploadStartedSignal!.isCompleted) {
+        state.uploadStartedSignal!.complete();
+      }
+      await gate.future;
+      state._pendingUploadGate = null;
     }
 
     final bytes = await localFile.readAsBytes();
@@ -534,7 +557,10 @@ void main() {
           ..setDateMode(FtpDateMode.allFiles)
           ..setSkipIfExists(false)
           ..setEnableSchedule(true)
+          //           ..setRunTime(const TimeOfDay(hour: 10, minute: 0))
+          // Gene - Nov, 24, 2026: Bound test schedule window (10:00-10:30) so re-arming at 11:00 waits for next day.
           ..setRunTime(const TimeOfDay(hour: 10, minute: 0))
+          ..setRunEndTime(const TimeOfDay(hour: 10, minute: 30))
           ..setOnCompletionAction('repeat');
 
         provider.startSchedule();
@@ -917,6 +943,254 @@ void main() {
         expect(oldFtp.existsSync(), isFalse);
         expect(recentFtp.existsSync(), isTrue);
         expect(oldTransfer.existsSync(), isTrue);
+      },
+    );
+
+    // Gene - Nov, 24, 2026: Comprehensive tests for FTP start/end run-time windows, auto-cutoff, missed windows, manual bypass, and SQLite migration.
+    test(
+      'startSchedule starts immediately inside active same-day or overnight window',
+      () async {
+        await LocalDbService().init('ftp_test_active_win');
+        HistoryService().init('ftp_test_active_win');
+
+        final src = Directory(p.join(tempSourcesDir.path, 'active_win_case'))
+          ..createSync(recursive: true);
+        File(p.join(src.path, 'inside.txt')).writeAsBytesSync([1, 2, 3]);
+
+        // Case 1: Same-day active window (Monday 10:15 inside 10:00-10:30).
+        final server1 = FakeRemoteServerState();
+        final p1 = buildProvider(
+          server: server1,
+          nowProvider: () => DateTime(2026, 11, 23, 10, 15),
+        );
+        addTearDown(p1.dispose);
+        p1
+          ..setHost('ftp.example.com')
+          ..setSourcePath(src.path)
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(false)
+          ..setEnableSchedule(true)
+          ..setRunTime(const TimeOfDay(hour: 10, minute: 0))
+          ..setRunEndTime(const TimeOfDay(hour: 10, minute: 30))
+          ..setOnCompletionAction('stop');
+
+        p1.startSchedule();
+        while (p1.isUploading) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(p1.filesUploaded, 1);
+        expect(p1.isScheduleArmed, isFalse);
+
+        // Case 2: Overnight window (Tuesday 02:00 inside Mon 22:00 - Tue 06:00, only Mon checked).
+        final server2 = FakeRemoteServerState();
+        final p2 = buildProvider(
+          server: server2,
+          nowProvider: () => DateTime(2026, 11, 24, 2, 0),
+        );
+        addTearDown(p2.dispose);
+        p2
+          ..setHost('ftp.example.com')
+          ..setSourcePath(src.path)
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(false)
+          ..setEnableSchedule(true)
+          ..setRunTime(const TimeOfDay(hour: 22, minute: 0))
+          ..setRunEndTime(const TimeOfDay(hour: 6, minute: 0))
+          ..setOnCompletionAction('repeat');
+        for (int d = 1; d <= 7; d++) {
+          p2.setRunDay(d, d == 1);
+        }
+
+        p2.startSchedule();
+        while (p2.isUploading) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(p2.filesUploaded, 1);
+        expect(p2.isScheduleArmed, isTrue);
+        expect(p2.nextScheduledRun, DateTime(2026, 11, 30, 22, 0));
+      },
+    );
+
+    test(
+      'active scheduled upload stops cleanly at runEndTime without errors and respects repeat vs stop',
+      () async {
+        await LocalDbService().init('ftp_test_win_cutoff');
+        HistoryService().init('ftp_test_win_cutoff');
+        await HistoryService().clearHistory(allProfiles: false);
+
+        final src = Directory(p.join(tempSourcesDir.path, 'win_cutoff_case'))
+          ..createSync(recursive: true);
+        File(p.join(src.path, 'a_first.txt')).writeAsBytesSync([1, 2]);
+        File(p.join(src.path, 'b_blocked.txt')).writeAsBytesSync([3, 4]);
+
+        // Start armed at 09:55 for window 10:00 - 10:30 on Repeat.
+        DateTime clock = DateTime(2026, 11, 23, 9, 55);
+        final startedSignal = Completer<void>();
+        final server = FakeRemoteServerState()
+          ..blockFileName = 'b_blocked.txt'
+          ..uploadStartedSignal = startedSignal;
+        final provider = buildProvider(
+          server: server,
+          nowProvider: () => clock,
+        );
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setSourcePath(src.path)
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(false)
+          ..setEnableSchedule(true)
+          ..setRunTime(const TimeOfDay(hour: 10, minute: 0))
+          ..setRunEndTime(const TimeOfDay(hour: 10, minute: 30))
+          ..setOnCompletionAction('repeat');
+
+        provider.startSchedule();
+        clock = DateTime(2026, 11, 23, 10, 0);
+        final runFuture = provider.triggerScheduleTickForTest();
+        await startedSignal.future;
+        expect(provider.isUploading, isTrue);
+
+        // Advance clock to 10:30 (End time) and tick -> disconnects cleanly.
+        clock = DateTime(2026, 11, 23, 10, 30);
+        await provider.triggerScheduleTickForTest();
+        await runFuture;
+
+        expect(provider.isUploading, isFalse);
+        expect(provider.errors, 0);
+        expect(provider.filesUploaded, 1);
+        expect(server.uploadCalls, ['a_first.txt', 'b_blocked.txt']);
+        expect(server.getFile('', 'a_first.txt'), [1, 2]);
+        expect(server.getFile('', 'b_blocked.txt'), isNull);
+        expect(provider.isScheduleArmed, isTrue);
+        expect(provider.nextScheduledRun, DateTime(2026, 11, 24, 10, 0));
+        expect(provider.currentStatus, contains('Window ended (10:30)'));
+
+        final records = await HistoryService().loadHistory(
+          operation: 'FTP',
+          allProfiles: false,
+        );
+        expect(records, hasLength(1));
+        expect(records.first.status, 'Stopped');
+        expect(records.first.errors, 0);
+        expect(records.first.configSummary, contains('Window Ended (10:30)'));
+
+        // Repeat the cutoff test with onCompletionAction == 'stop' -> disarms cleanly.
+        clock = DateTime(2026, 11, 24, 9, 55);
+        final startedSignal2 = Completer<void>();
+        server
+          ..uploadCalls.clear()
+          ..uploadStartedSignal = startedSignal2;
+        provider
+          ..setOnCompletionAction('stop')
+          ..stop()
+          ..startSchedule();
+
+        clock = DateTime(2026, 11, 24, 10, 0);
+        final runFuture2 = provider.triggerScheduleTickForTest();
+        await startedSignal2.future;
+        clock = DateTime(2026, 11, 24, 10, 30);
+        await provider.triggerScheduleTickForTest();
+        await runFuture2;
+
+        expect(provider.errors, 0);
+        expect(provider.isScheduleArmed, isFalse);
+        expect(provider.nextScheduledRun, isNull);
+        expect(provider.currentStatus, '⏰ Window ended (10:30)');
+      },
+    );
+
+    test(
+      'manual runNow ignores runEndTime even outside window, and missed windows skip cleanly',
+      () async {
+        await LocalDbService().init('ftp_test_manual_missed');
+        HistoryService().init('ftp_test_manual_missed');
+
+        final src = Directory(p.join(tempSourcesDir.path, 'manual_missed_case'))
+          ..createSync(recursive: true);
+        File(p.join(src.path, 'manual.txt')).writeAsBytesSync([5, 6]);
+
+        DateTime clock = DateTime(2026, 11, 23, 14, 0); // Outside 10:00-10:30
+        final server = FakeRemoteServerState();
+        final provider = buildProvider(
+          server: server,
+          nowProvider: () => clock,
+        );
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setSourcePath(src.path)
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(false)
+          ..setEnableSchedule(true)
+          ..setRunTime(const TimeOfDay(hour: 10, minute: 0))
+          ..setRunEndTime(const TimeOfDay(hour: 10, minute: 30))
+          ..setOnCompletionAction('repeat');
+
+        await provider.runNow();
+        expect(provider.filesUploaded, 1);
+        expect(provider.errors, 0);
+
+        // Arm before 10:00 next day, jump clock past 10:30 (missed window) -> skips upload & reschedules.
+        clock = DateTime(2026, 11, 24, 9, 50);
+        server.uploadCalls.clear();
+        provider.startSchedule();
+        expect(provider.nextScheduledRun, DateTime(2026, 11, 24, 10, 0));
+
+        clock = DateTime(2026, 11, 24, 10, 45);
+        await provider.triggerScheduleTickForTest();
+        expect(server.uploadCalls, isEmpty);
+        expect(provider.isScheduleArmed, isTrue);
+        expect(provider.nextScheduledRun, DateTime(2026, 11, 25, 10, 0));
+
+        // Missed window with onCompletionAction == 'stop' disarms schedule.
+        provider.setOnCompletionAction('stop');
+        clock = DateTime(2026, 11, 25, 11, 0);
+        await provider.triggerScheduleTickForTest();
+        expect(server.uploadCalls, isEmpty);
+        expect(provider.isScheduleArmed, isFalse);
+        expect(provider.nextScheduledRun, isNull);
+        expect(provider.currentStatus, '⏭ Missed scheduled window');
+      },
+    );
+
+    test(
+      'persists ftp_runEndHour/Minute and migrates legacy profiles missing end time keys',
+      () async {
+        await LocalDbService().init('ftp_test_end_persist');
+        final provider = buildProvider(server: FakeRemoteServerState());
+        addTearDown(provider.dispose);
+
+        provider
+          ..setEnableSchedule(true)
+          ..setRunTime(const TimeOfDay(hour: 1, minute: 15))
+          ..setRunEndTime(const TimeOfDay(hour: 5, minute: 45));
+        await provider.flushSavesForTest();
+
+        expect(LocalDbService().getInt('ftp_runEndHour'), 5);
+        expect(LocalDbService().getInt('ftp_runEndMinute'), 45);
+
+        await provider.reloadSettings();
+        expect(provider.runEndTime, const TimeOfDay(hour: 5, minute: 45));
+
+        // Legacy active profile without ftp_runEndHour/Minute preserves no-cutoff (runEndTime == runTime).
+        await LocalDbService().init('ftp_test_legacy_active');
+        await LocalDbService().setBool('ftp_enableSchedule', true);
+        await LocalDbService().setInt('ftp_runHour', 3);
+        await LocalDbService().setInt('ftp_runMinute', 20);
+        await provider.reloadSettings();
+        expect(provider.runTime, const TimeOfDay(hour: 3, minute: 20));
+        expect(provider.runEndTime, const TimeOfDay(hour: 3, minute: 20));
+
+        // Legacy inactive profile without ftp_runEndHour/Minute defaults runEndTime to 06:00.
+        await LocalDbService().init('ftp_test_legacy_inactive');
+        await LocalDbService().setBool('ftp_enableSchedule', false);
+        await LocalDbService().setInt('ftp_runHour', 2);
+        await LocalDbService().setInt('ftp_runMinute', 0);
+        await provider.reloadSettings();
+        expect(provider.runTime, const TimeOfDay(hour: 2, minute: 0));
+        expect(provider.runEndTime, const TimeOfDay(hour: 6, minute: 0));
       },
     );
   });
