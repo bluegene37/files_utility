@@ -55,8 +55,54 @@ class UpdateCheckButton extends StatelessWidget {
   //     );
   //   }
   // Gene - Nov, 22, 2026: Wrapped UpdateCheckButton in a matching 38x38 soft Neumorphic button container.
+  // @override
+  // Widget build(BuildContext context) {
+  //   final isChecking = context.select<UpdateProvider, bool>(
+  //     (p) => p.isChecking,
+  //   );
+  //   return Container(
+  //     width: 38,
+  //     height: 38,
+  //     decoration: BoxDecoration(
+  //       color: context.cardBg,
+  //       borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+  //       border: NeumorphicTheme.rimBorder(context),
+  //       boxShadow: NeumorphicTheme.softShadows(
+  //         context,
+  //         distance: 2.5,
+  //         blur: 5.0,
+  //       ),
+  //     ),
+  //     child: IconButton(
+  //       constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+  //       padding: EdgeInsets.zero,
+  //       tooltip: 'Check for updates',
+  //       onPressed: isChecking ? null : () => _check(context),
+  //       icon: isChecking
+  //           ? SizedBox(
+  //               width: 18,
+  //               height: 18,
+  //               child: CircularProgressIndicator(
+  //                 strokeWidth: 2,
+  //                 color: context.primaryAccent,
+  //               ),
+  //             )
+  //           : Icon(
+  //               Icons.system_update_alt_rounded,
+  //               color: context.textSecondary,
+  //               size: 19,
+  //             ),
+  //     ),
+  //   );
+  // }
+  // Gene - Nov, 23, 2026: Hide manual update check button in Microsoft Store builds
   @override
   Widget build(BuildContext context) {
+    final updatesDisabled = context.select<UpdateProvider, bool>(
+      (p) => p.updatesDisabled,
+    );
+    if (updatesDisabled) return const SizedBox.shrink();
+
     final isChecking = context.select<UpdateProvider, bool>(
       (p) => p.isChecking,
     );

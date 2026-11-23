@@ -87,4 +87,30 @@ void main() {
     await future;
     expect(provider.isChecking, isFalse);
   });
+
+  // Gene - Nov, 23, 2026: Verify updatesDisabled (STORE_BUILD) prevents network checks and install handoffs
+  test('updatesDisabled skips silent/manual checks and applyUpdate', () async {
+    var fetchCalls = 0;
+    final provider = UpdateProvider(
+      updatesDisabled: true,
+      service: UpdateService(
+        currentVersion: '1.0.0',
+        platform: UpdatePlatform.windows,
+        fetchRelease: (_) async {
+          fetchCalls++;
+          return release('v2.0.0');
+        },
+      ),
+    );
+
+    expect(provider.updatesDisabled, isTrue);
+    await provider.checkSilently();
+    await provider.checkManually();
+    await provider.applyUpdate();
+
+    expect(fetchCalls, 0);
+    expect(provider.availableUpdate, isNull);
+    expect(provider.lastResult, isNull);
+    expect(provider.isChecking, isFalse);
+  });
 }

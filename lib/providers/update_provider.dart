@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+// Gene - Nov, 23, 2026: Import AppInfo for compile-time STORE_BUILD detection
+import '../app_info.dart';
 import '../services/update/update_info.dart';
 import '../services/update/update_service.dart';
 
@@ -7,10 +9,17 @@ import '../services/update/update_service.dart';
 /// available, whether a check or download is in flight, and the actions the
 /// update dialog exposes (install, skip, later).
 class UpdateProvider extends ChangeNotifier {
-  UpdateProvider({UpdateService? service})
-    : _service = service ?? UpdateService();
+  // UpdateProvider({UpdateService? service})
+  //   : _service = service ?? UpdateService();
+  // Gene - Nov, 23, 2026: Allow disabling in-app GitHub updates for Microsoft Store builds (and widget/unit tests)
+  UpdateProvider({UpdateService? service, bool? updatesDisabled})
+    : _service = service ?? UpdateService(),
+      _updatesDisabled = updatesDisabled ?? AppInfo.isStoreBuild;
 
   final UpdateService _service;
+  final bool _updatesDisabled;
+
+  bool get updatesDisabled => _updatesDisabled;
 
   UpdateInfo? _availableUpdate;
   UpdateCheckResult? _lastResult;
@@ -37,10 +46,32 @@ class UpdateProvider extends ChangeNotifier {
   /// the caller can show feedback.
   Future<void> checkManually() => _check(force: true, ignoreSkipped: true);
 
+  // Future<void> _check({
+  //   required bool force,
+  //   required bool ignoreSkipped,
+  // }) async {
+  //   _isChecking = true;
+  //   notifyListeners();
+  //   try {
+  //     final result = await _service.checkForUpdate(
+  //       force: force,
+  //       ignoreSkipped: ignoreSkipped,
+  //     );
+  //     _lastResult = result;
+  //     _availableUpdate = result.status == UpdateStatus.available
+  //         ? result.info
+  //         : null;
+  //   } finally {
+  //     _isChecking = false;
+  //     notifyListeners();
+  //   }
+  // }
+  // Gene - Nov, 23, 2026: No-op update check when updates are disabled (Microsoft Store builds)
   Future<void> _check({
     required bool force,
     required bool ignoreSkipped,
   }) async {
+    if (_updatesDisabled) return;
     _isChecking = true;
     notifyListeners();
     try {
@@ -75,7 +106,36 @@ class UpdateProvider extends ChangeNotifier {
 
   /// Windows: download the installer and hand off to the silent install
   /// script (the app exits). Elsewhere: open the release page in the browser.
+  // Future<void> applyUpdate() async {
+  //   final update = _availableUpdate;
+  //   if (update == null) return;
+  //   _installError = null;
+  //
+  //   if (platform == UpdatePlatform.windows && update.asset != null) {
+  //     _isDownloading = true;
+  //     _downloadProgress = 0;
+  //     notifyListeners();
+  //     try {
+  //       await _service.downloadAndInstallWindows(
+  //         update,
+  //         onProgress: (received, total) {
+  //           _downloadProgress = total > 0 ? received / total : 0;
+  //           notifyListeners();
+  //         },
+  //       );
+  //     } catch (e) {
+  //       _installError = e;
+  //     } finally {
+  //       _isDownloading = false;
+  //       notifyListeners();
+  //     }
+  //   } else {
+  //     await _service.openReleasePage(update);
+  //   }
+  // }
+  // Gene - Nov, 23, 2026: Block installer download or browser update launch when updates are disabled
   Future<void> applyUpdate() async {
+    if (_updatesDisabled) return;
     final update = _availableUpdate;
     if (update == null) return;
     _installError = null;

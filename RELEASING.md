@@ -232,6 +232,36 @@ dart run msix:create
 # Output location: build/windows/x64/runner/Release/files_utility.msix
 ```
 
+<!-- Gene - Nov, 23, 2026: Document Microsoft Store MSIX packaging, CI secrets, STORE_BUILD flag, WACK verification, and runFullTrust justification -->
+### Windows Microsoft Store (`.msix`)
+
+Microsoft Store builds are compiled with `--dart-define=STORE_BUILD=true` (disabling the GitHub Releases self-updater to comply with Microsoft Store Policy 10.2) and packaged unsigned via `dart run msix:create --store` so Microsoft can sign the package upon Partner Center ingestion.
+
+#### GitHub Actions Secrets (Store Artifact Pipeline)
+Add the following secrets from **Partner Center → Product management → Product identity** under **Settings → Secrets and variables → Actions** to enable the `build-windows-store` job in [`.github/workflows/release.yml`](.github/workflows/release.yml):
+
+| Secret | Value |
+| :--- | :--- |
+| `MSSTORE_IDENTITY_NAME` | Partner Center `Package/Identity/Name` (e.g. `<YOUR_MSSTORE_IDENTITY_NAME>`) |
+| `MSSTORE_PUBLISHER` | Partner Center `Package/Identity/Publisher` (`CN=<YOUR-PUBLISHER-GUID>`) |
+| `MSSTORE_DISPLAY_NAME` | Reserved Store display name (default: `Files Utility`) |
+| `MSSTORE_PUBLISHER_DISPLAY_NAME` | Partner Center `Package/Properties/PublisherDisplayName` (default: `genexis.dev`) |
+
+When `MSSTORE_IDENTITY_NAME` and `MSSTORE_PUBLISHER` are set, tagged releases automatically build `dist/files_utility-<version>-msstore.msix` and upload it to the **GitHub Actions workflow artifact** (`windows-store-msix`) rather than the public GitHub Release (unsigned `--store` packages cannot be sideloaded directly by end users).
+
+#### Local Microsoft Store MSIX Build (Windows)
+```powershell
+$env:MSSTORE_IDENTITY_NAME = "<YOUR_MSSTORE_IDENTITY_NAME>"
+$env:MSSTORE_PUBLISHER = "CN=<YOUR-PUBLISHER-GUID>"
+.\scripts\build_windows_store_msix.ps1
+# Output location: dist/files_utility-<version>-msstore.msix
+```
+
+#### Partner Center Pre-Submission Checks
+- **WACK Verification:** On Windows, run the **Windows App Certification Kit (WACK)** against the built release/package before uploading to Partner Center.
+- **`runFullTrust` Justification:** Flutter Windows desktop apps automatically declare the `runFullTrust` restricted capability. Provide a clear explanation in Partner Center notes explaining that Files Utility is a Win32 desktop utility built with Flutter that performs user-initiated operations across local drives, NAS/SMB shares, and FTP/SFTP servers.
+- **Privacy Policy URL:** Link to [`PRIVACY.md`](PRIVACY.md) (`https://github.com/bluegene37/files_utility/blob/main/PRIVACY.md`).
+
 ### macOS Disk Image (.dmg)
 ```bash
 # Package, sign with Developer ID Application, and create DMG:
@@ -261,7 +291,10 @@ dart run flutter_launcher_icons
 | Platform | Current Status | User Experience & Workaround | Production Remedy |
 | :--- | :--- | :--- | :--- |
 | **Windows (`.exe`)** | **Unsigned by default — signing wired up, awaiting a certificate** | Microsoft Defender SmartScreen warns "Windows protected your PC / Unknown Publisher". Users click **More info** $\rightarrow$ **Run anyway**. | Add the two repository secrets below; `release.yml` then signs automatically via `signtool.exe`. |
-| **Windows (`.msix`)** | **Self-signed** | Requires installing the publisher certificate into the local `Trusted People` certificate store. | Acquire Microsoft Partner Center certificate or sign with organization CA. |
+<!-- Gene - Nov, 23, 2026: Distinguish Microsoft Store MSIX signing from local sideloaded MSIX -->
+<!-- | **Windows (`.msix`)** | **Self-signed** | Requires installing the publisher certificate into the local `Trusted People` certificate store. | Acquire Microsoft Partner Center certificate or sign with organization CA. | -->
+| **Windows Microsoft Store (`.msix`)** | **Signed by Microsoft upon Store ingestion (`--store`)** | Trusted automatically by Windows when installed via Microsoft Store; no manual certificate purchase required. | Configure `MSSTORE_*` GitHub Secrets and upload the `windows-store-msix` CI artifact to Partner Center. |
+| **Windows (`.msix`, local sideload)** | **Self-signed / Test certificate** | Requires installing the test certificate into the local `Trusted People` certificate store. | Use Microsoft Store distribution or sign with a trusted organization CA certificate. |
 <!-- Gene - Oct, 07, 2026: Updated macOS signing status to Developer ID Application signed with notarization pipeline -->
 <!-- Previous implementation:
 | **macOS (`.dmg`)** | **Unsigned / Not Notarized** | Apple Gatekeeper blocks untrusted execution on first launch. Users right-click `.app` in `/Applications` $\rightarrow$ **Open**, or run: `xattr -dr com.apple.quarantine "/Applications/Files Utility.app"`. | Join Apple Developer Program, sign with Developer ID Application certificate, and notarize via `xcrun notarytool`. |

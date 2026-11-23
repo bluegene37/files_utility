@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../providers/history_provider.dart';
+// Gene - Nov, 23, 2026: Import UpdateProvider to check updatesDisabled in Store builds
+import '../providers/update_provider.dart';
 import '../services/global_db_service.dart';
 import '../services/local_db_service.dart';
 import '../models/run_record.dart';
@@ -434,8 +436,15 @@ class _MainScreenState extends State<MainScreen> {
         const SizedBox(width: 10),
         const HelpManualButton(topicId: 'getting_started'),
         const SizedBox(width: 8),
-        const UpdateCheckButton(),
-        const SizedBox(width: 8),
+        // const UpdateCheckButton(),
+        // const SizedBox(width: 8),
+        // Gene - Nov, 23, 2026: Hide update button and its spacer in Microsoft Store builds
+        if (!context.select<UpdateProvider, bool>(
+          (p) => p.updatesDisabled,
+        )) ...[
+          const UpdateCheckButton(),
+          const SizedBox(width: 8),
+        ],
         // Theme Switcher Button on the FAR RIGHT side
         const ThemeToggleButton(),
       ],

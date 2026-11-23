@@ -8,7 +8,9 @@ publish_to: "none"
 # test/update/version_consistency_test.dart fails if any of the three drift,
 # and the release workflow runs it before packaging.
 # Gene - Nov, 22, 2026: Bump version to 1.2.0+4 for FTP Upload, transfer filter presets, Neumorphism UI, and opaque macOS title bar fix
-version: "1.2.0+4"
+# Gene - Nov, 23, 2026: Bump version to 1.2.1+5 for Microsoft Store MSIX release
+# version: "1.2.0+4"
+version: "1.2.1+5"
 # version: "1.1.2+3"
 environment:
   sdk: "^3.10.8"
@@ -63,9 +65,12 @@ msix_config:
   identity_name: "dev.genexis.filesutility"
   # Keep in sync with version: above (four segments).
   # Gene - Nov, 22, 2026: Sync msix_version with 1.2.0 release
-  msix_version: "1.2.0.0"
+  # Gene - Nov, 23, 2026: Sync msix_version with 1.2.1 release and switch logo_path to 1024x1024 PNG for Store tile scaling
+  # msix_version: "1.2.0.0"
+  msix_version: "1.2.1.0"
   # msix_version: "1.1.2.0"
-  logo_path: "windows/runner/resources/app_icon.ico"
+  # logo_path: "windows/runner/resources/app_icon.ico"
+  logo_path: "assets/icon/app_icon.png"
   capabilities: "internetClient"
 inno_bundle:
   # AppId GUID — the installer's upgrade identity. It MUST NEVER change, or

@@ -23,9 +23,17 @@ class _UpdateGateState extends State<UpdateGate> {
   @override
   void initState() {
     super.initState();
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   if (!mounted) return;
+    //   _provider = context.read<UpdateProvider>();
+    //   _provider!.addListener(_onUpdateStateChanged);
+    //   _provider!.checkSilently();
+    // });
+    // Gene - Nov, 23, 2026: Skip update listener and startup check when updates are disabled (e.g. Microsoft Store builds)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _provider = context.read<UpdateProvider>();
+      if (_provider!.updatesDisabled) return;
       _provider!.addListener(_onUpdateStateChanged);
       _provider!.checkSilently();
     });

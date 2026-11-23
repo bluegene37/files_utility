@@ -49,6 +49,53 @@ jobs:
             dist/*.zip
           if-no-files-found: error
 
+  # Gene - Nov, 23, 2026: Build unsigned Microsoft Store MSIX (with STORE_BUILD=true) as a separate artifact for Partner Center ingestion
+  build-windows-store:
+    name: Build Microsoft Store MSIX
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Run Static Analysis
+        run: flutter analyze --fatal-infos
+
+      - name: Run Test Suite
+        run: flutter test
+
+      - name: Package Microsoft Store MSIX
+        shell: pwsh
+        env:
+          MSSTORE_IDENTITY_NAME: ${{ secrets.MSSTORE_IDENTITY_NAME }}
+          MSSTORE_PUBLISHER: ${{ secrets.MSSTORE_PUBLISHER }}
+          MSSTORE_DISPLAY_NAME: ${{ secrets.MSSTORE_DISPLAY_NAME }}
+          MSSTORE_PUBLISHER_DISPLAY_NAME: ${{ secrets.MSSTORE_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:MSSTORE_IDENTITY_NAME) -or [string]::IsNullOrWhiteSpace($env:MSSTORE_PUBLISHER)) {
+            Write-Host "::warning ::MSSTORE_IDENTITY_NAME / MSSTORE_PUBLISHER secrets not set. Skipping Microsoft Store MSIX packaging."
+            exit 0
+          }
+          ./scripts/build_windows_store_msix.ps1
+          "MSIX_BUILT=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload Microsoft Store MSIX Artifact
+        if: env.MSIX_BUILT == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-store-msix
+          path: dist/*-msstore.msix
+          retention-days: 90
+          if-no-files-found: error
+
   build-macos:
     name: Build macOS DMG
     runs-on: macos-latest

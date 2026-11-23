@@ -61,4 +61,25 @@ void main() {
 
     expect(find.byType(SnackBar), findsNothing);
   });
+
+  // Gene - Nov, 23, 2026: Verify UpdateCheckButton hides itself when updatesDisabled is true
+  testWidgets('renders nothing when updatesDisabled is true', (tester) async {
+    final provider = UpdateProvider(
+      updatesDisabled: true,
+      service: UpdateService(
+        currentVersion: '1.0.0',
+        platform: UpdatePlatform.windows,
+        fetchRelease: (_) async => {
+          'tag_name': 'v2.0.0',
+          'html_url': 'https://example.com/releases/v2.0.0',
+          'assets': <dynamic>[],
+        },
+      ),
+    );
+
+    await tester.pumpWidget(host(provider));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(IconButton), findsNothing);
+  });
 }

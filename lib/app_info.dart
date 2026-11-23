@@ -12,5 +12,13 @@ class AppInfo {
   static const String appName = 'Files Utility';
   // Gene - Nov, 22, 2026: Bump appVersion to 1.2.0 to stay synchronized with pubspec.yaml
   // static const String appVersion = '1.1.2';
-  static const String appVersion = '1.2.0';
+  // Gene - Nov, 23, 2026: Bump appVersion to 1.2.1 for Microsoft Store release and gate external updates on STORE_BUILD
+  // static const String appVersion = '1.2.0';
+  static const String appVersion = '1.2.1';
+
+  // Gene - Nov, 23, 2026: Support compile-time STORE_BUILD flag to disable external self-updates in Microsoft Store builds
+  static const bool isStoreBuild = bool.fromEnvironment(
+    'STORE_BUILD',
+    defaultValue: false,
+  );
 }

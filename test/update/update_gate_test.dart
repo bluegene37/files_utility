@@ -87,4 +87,29 @@ void main() {
     expect(find.text('Download'), findsOneWidget);
     expect(find.text('Install & Restart'), findsNothing);
   });
+
+  // Gene - Nov, 23, 2026: Verify UpdateGate does not check or display dialog when updatesDisabled is true
+  testWidgets('does not check or show dialog when updatesDisabled is true', (
+    tester,
+  ) async {
+    var fetchCalls = 0;
+    final provider = UpdateProvider(
+      updatesDisabled: true,
+      service: UpdateService(
+        currentVersion: '1.0.0',
+        platform: UpdatePlatform.windows,
+        fetchRelease: (_) async {
+          fetchCalls++;
+          return release('v2.0.0');
+        },
+      ),
+    );
+
+    await tester.pumpWidget(host(provider));
+    await tester.pumpAndSettle();
+
+    expect(fetchCalls, 0);
+    expect(find.text('app body'), findsOneWidget);
+    expect(find.text('Update Available'), findsNothing);
+  });
 }

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<!-- Gene - Nov, 23, 2026: Added v1.2.1 changelog entry for Microsoft Store MSIX release and recent FTP/security updates -->
+## [1.2.1] - 2026-11-23
+
+### Added
+- **Microsoft Store MSIX Release Pipeline**: Added `scripts/build_windows_store_msix.ps1`, the `build-windows-store` CI job in `.github/workflows/release.yml`, and `PRIVACY.md` for Microsoft Store submissions.
+- **Compile-Time Store Update Gate**: Added `STORE_BUILD` support (`AppInfo.isStoreBuild` / `UpdateProvider.updatesDisabled`) to disable GitHub Releases self-update checks and hide the manual update button in Microsoft Store builds.
+- **FTP Progress, Reconnect & JSON Import/Export**: Added live per-file FTP upload progress, idle reconnect recovery, configurable log retention pruning, `config.ini`/`.env` migration import, and credential-free JSON Import/Export for FTP and Copy settings.
+
+### Changed
+- **Store-Compliant MSIX Icon Scaling**: Switched `msix_config.logo_path` in `pubspec.yaml` from `.ico` to `assets/icon/app_icon.png` (`1024x1024`) for clean Windows Store tile generation.
+
+### Security
+- **Zero-Secrets Cleanup**: Removed credentials, personal identities, and internal server names from repository files and settings exports.
+
 <!-- Gene - Nov, 22, 2026: Added v1.2.0 changelog entry -->
 ## [1.2.0] - 2026-11-22
 
