@@ -90,8 +90,15 @@ void main() {
   Widget buildFtpTestApp(FtpFilesProvider ftpProvider) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => HistoryProvider()),
+        // ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        // ChangeNotifierProvider(create: (_) => HistoryProvider()),
+        // Gene - Nov, 23, 2026: Disable constructor SQLite queries in widget tests to avoid sqflite FakeAsync 10s timer leaks
+        ChangeNotifierProvider(
+          create: (_) => ThemeProvider(persistSettings: false),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => HistoryProvider(loadOnInit: false),
+        ),
         ChangeNotifierProvider<FtpFilesProvider>.value(value: ftpProvider),
       ],
       child: MaterialApp(
@@ -105,8 +112,15 @@ void main() {
   Widget buildMainTestApp(FtpFilesProvider ftpProvider) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => HistoryProvider()),
+        // ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        // ChangeNotifierProvider(create: (_) => HistoryProvider()),
+        // Gene - Nov, 23, 2026: Disable constructor SQLite queries in widget tests to avoid sqflite FakeAsync 10s timer leaks
+        ChangeNotifierProvider(
+          create: (_) => ThemeProvider(persistSettings: false),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => HistoryProvider(loadOnInit: false),
+        ),
         ChangeNotifierProvider<FtpFilesProvider>.value(value: ftpProvider),
         ChangeNotifierProvider(
           create: (_) => UpdateProvider(

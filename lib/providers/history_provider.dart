@@ -6,7 +6,9 @@ class HistoryProvider with ChangeNotifier {
   final HistoryService _service = HistoryService();
 
   List<RunRecord> _records = [];
-  bool _isLoading = true;
+  // bool _isLoading = true;
+  // Gene - Nov, 23, 2026: Allow disabling automatic SQLite load in widget tests to prevent sqflite FakeAsync pending timer failures
+  bool _isLoading;
 
   List<RunRecord> get records => _records;
   bool get isLoading => _isLoading;
@@ -43,8 +45,14 @@ class HistoryProvider with ChangeNotifier {
     return _records.fold(0, (sum, r) => sum + r.errors);
   }
 
-  HistoryProvider() {
-    refreshHistory();
+  // HistoryProvider() {
+  //   refreshHistory();
+  // }
+  // Gene - Nov, 23, 2026: Only query SQLite on init when loadOnInit is true
+  HistoryProvider({bool loadOnInit = true}) : _isLoading = loadOnInit {
+    if (loadOnInit) {
+      refreshHistory();
+    }
   }
 
   Future<void> refreshHistory({bool allProfiles = true}) async {

@@ -70,6 +70,7 @@ done
 INSTALLED_SIZE="$(du -sk "$DEB_ROOT/usr" | cut -f1)"
 # libsqlite3-0 is required because sqflite_common_ffi loads the system SQLite on
 # Linux - unlike Windows, where the sqlite3 DLL ships inside the bundle.
+# Gene - Nov, 23, 2026: Remove hardcoded personal email (allow override via LINUX_MAINTAINER) and keep comments outside the DEBIAN/control heredoc because dpkg-deb rejects '#' lines in control files.
 cat > "$DEB_ROOT/DEBIAN/control" <<EOF
 Package: $DEB_PKG
 Version: $VERSION
@@ -78,7 +79,6 @@ Priority: optional
 Architecture: amd64
 Installed-Size: $INSTALLED_SIZE
 Depends: libgtk-3-0 (>= 3.24), libsqlite3-0
-# Gene - Nov, 23, 2026: Remove hardcoded personal email; allow override via LINUX_MAINTAINER.
 Maintainer: ${LINUX_MAINTAINER:-genexis.dev <maintainer@genexis.dev>}
 Homepage: https://github.com/bluegene37/files_utility
 Description: File transfer and cleanup utility for network shares and NAS
