@@ -246,11 +246,7 @@ void main() {
 
         final legacyJson = jsonEncode({
           'type': 'ftp_settings',
-          'schedule': {
-            'enableSchedule': true,
-            'runHour': 3,
-            'runMinute': 15,
-          },
+          'schedule': {'enableSchedule': true, 'runHour': 3, 'runMinute': 15},
         });
         legacyProvider.importFromJsonString(legacyJson);
         expect(legacyProvider.runTime, const TimeOfDay(hour: 3, minute: 15));
@@ -268,7 +264,10 @@ void main() {
         });
         legacyProvider.importFromJsonString(clampedJson);
         expect(legacyProvider.runTime, const TimeOfDay(hour: 23, minute: 0));
-        expect(legacyProvider.runEndTime, const TimeOfDay(hour: 23, minute: 59));
+        expect(
+          legacyProvider.runEndTime,
+          const TimeOfDay(hour: 23, minute: 59),
+        );
       },
     );
   });

@@ -1271,9 +1271,7 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
         else ...[
           ElevatedButton.icon(
             key: const Key('ftp_start_schedule_btn'),
-            onPressed: provider.canArmSchedule
-                ? provider.startSchedule
-                : null,
+            onPressed: provider.canArmSchedule ? provider.startSchedule : null,
             icon: const Icon(Icons.schedule_rounded, size: 18),
             label: const Text('Start Schedule'),
           ),

@@ -452,13 +452,14 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      final provider = FtpFilesProvider(
-        clientFactory: (_) => _NoopFtpClient(),
-        persistSettings: false,
-      )
-        ..setEnableSchedule(true)
-        ..setRunTime(const TimeOfDay(hour: 22, minute: 0))
-        ..setRunEndTime(const TimeOfDay(hour: 6, minute: 0));
+      final provider =
+          FtpFilesProvider(
+              clientFactory: (_) => _NoopFtpClient(),
+              persistSettings: false,
+            )
+            ..setEnableSchedule(true)
+            ..setRunTime(const TimeOfDay(hour: 22, minute: 0))
+            ..setRunEndTime(const TimeOfDay(hour: 6, minute: 0));
       addTearDown(provider.dispose);
 
       await tester.pumpWidget(buildFtpTestApp(provider));

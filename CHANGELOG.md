@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<!-- Gene - Nov, 24, 2026: Added v1.2.2 changelog entry for FTP start/end run-time window and Microsoft Store release pipeline polish -->
+## [1.2.2] - 2026-11-24
+
+### Added
+- **FTP Start & End Run-Time Window**: Added configurable Start and End run times for scheduled FTP uploads (same-day and overnight midnight-crossover windows), automatic clean shutdown at End time with Repeat re-arming, missed-window handling, `Start == End` unlimited runtime mode, SQLite persistence with legacy migration, and JSON settings export/import support.
+
+### Fixed
+- **FTP Screen Layout & Store CI Artifact Isolation**: Wrapped the FTP action/stats bar responsively below `1060px` to prevent overflow at `980x680` when Schedule is enabled; isolated unsigned `windows-store-msix` CI artifacts from public GitHub Releases and guarded `publish-release` to run only on `v*` tag pushes.
+
 <!-- Gene - Nov, 23, 2026: Added v1.2.1 changelog entry for Microsoft Store MSIX release and recent FTP/security updates -->
 ## [1.2.1] - 2026-11-23
 

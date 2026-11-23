@@ -1740,8 +1740,9 @@ class FtpFilesProvider with ChangeNotifier {
     nextScheduledRun = next;
     if (next != null) {
       final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-      final windowSuffix =
-          hasEndTimeLimit ? ' (until ${_formatTime24(runEndTime)})' : '';
+      final windowSuffix = hasEndTimeLimit
+          ? ' (until ${_formatTime24(runEndTime)})'
+          : '';
       currentStatus = '⏰ Scheduled — Next run: $formatted$windowSuffix';
       _addLog('⏰ Schedule updated — next run at $formatted$windowSuffix.');
     }
@@ -1949,8 +1950,9 @@ class FtpFilesProvider with ChangeNotifier {
     nextScheduledRun = next;
 
     final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-    final windowSuffix =
-        hasEndTimeLimit ? ' (until ${_formatTime24(runEndTime)})' : '';
+    final windowSuffix = hasEndTimeLimit
+        ? ' (until ${_formatTime24(runEndTime)})'
+        : '';
     currentStatus = '⏰ Scheduled — Next run: $formatted$windowSuffix';
     _addLog('⏰ Schedule armed. Waiting for $formatted$windowSuffix...');
     notifyListeners();
@@ -3468,76 +3470,87 @@ class FtpFilesProvider with ChangeNotifier {
       //       isUploading = false;
       // Gene - Nov, 24, 2026: Keep isUploading true until run-end logging, History persistence, and schedule disarm/re-arm complete.
       try {
-
-      final endTime = _nowProvider();
-      final runId = _fileLogger.getRunId('FTP') ?? 'RUN-FTP';
-      await _fileLogger.logRunEnd(
-        operation: 'FTP',
-        filesProcessed: filesUploaded,
-        errors: errors,
-        wasStopped: _stopRequested || stoppedByWindow,
-      );
-
-      final hasErrors = hadFatalError || errors > 0;
-      final statusLabel = (_stopRequested || stoppedByWindow)
-          ? 'Stopped'
-          : (hasErrors ? 'Error' : 'Completed');
-      final summaryPrefix = dryRun ? '[DRY RUN] ' : '';
-      final windowSuffixSummary = stoppedByWindow
-          ? ' | Window Ended (${_formatTime24(runEndTime)})'
-          : '';
-      final configSummary =
-          '$summaryPrefix${config.protocol.shortLabel} | Date: ${dateMode.label} (${dateType.label}) | Checked: ${_numFmt.format(filesChecked)} | Skipped: ${_numFmt.format(filesSkipped)}$windowSuffixSummary';
-
-      await HistoryService().saveRecord(
-        RunRecord(
-          id: runId,
+        final endTime = _nowProvider();
+        final runId = _fileLogger.getRunId('FTP') ?? 'RUN-FTP';
+        await _fileLogger.logRunEnd(
           operation: 'FTP',
-          startTime: startTime,
-          endTime: endTime,
           filesProcessed: filesUploaded,
-          foldersProcessed: foldersProcessed,
           errors: errors,
-          status: statusLabel,
-          configSummary: configSummary,
-          sourcePath: sourceSummary,
-          destPath: endpointSummary,
-        ),
-      );
-
-      final windowSuffix =
-          hasEndTimeLimit ? ' (until ${_formatTime24(runEndTime)})' : '';
-
-      if (_stopRequested) {
-        _scheduleTimer?.cancel();
-        _scheduleTimer = null;
-        isScheduleArmed = false;
-        nextScheduledRun = null;
-        currentStatus = '⛔ Stopped';
-        _addLog(
-          '⛔ Run stopped. Uploaded: ${_numFmt.format(filesUploaded)}, Skipped: ${_numFmt.format(filesSkipped)}, Errors: ${_numFmt.format(errors)}.',
+          wasStopped: _stopRequested || stoppedByWindow,
         );
-      } else if (stoppedByWindow) {
-        final endLabel = _formatTime24(runEndTime);
-        if (isScheduledRun &&
-            onCompletionAction == 'repeat' &&
-            enableSchedule &&
-            hasCheckedScheduleDays) {
-          final next = computeNextScheduledRun(
-            now: _nowProvider(),
-            runTime: runTime,
-            runDays: runDays,
+
+        final hasErrors = hadFatalError || errors > 0;
+        final statusLabel = (_stopRequested || stoppedByWindow)
+            ? 'Stopped'
+            : (hasErrors ? 'Error' : 'Completed');
+        final summaryPrefix = dryRun ? '[DRY RUN] ' : '';
+        final windowSuffixSummary = stoppedByWindow
+            ? ' | Window Ended (${_formatTime24(runEndTime)})'
+            : '';
+        final configSummary =
+            '$summaryPrefix${config.protocol.shortLabel} | Date: ${dateMode.label} (${dateType.label}) | Checked: ${_numFmt.format(filesChecked)} | Skipped: ${_numFmt.format(filesSkipped)}$windowSuffixSummary';
+
+        await HistoryService().saveRecord(
+          RunRecord(
+            id: runId,
+            operation: 'FTP',
+            startTime: startTime,
+            endTime: endTime,
+            filesProcessed: filesUploaded,
+            foldersProcessed: foldersProcessed,
+            errors: errors,
+            status: statusLabel,
+            configSummary: configSummary,
+            sourcePath: sourceSummary,
+            destPath: endpointSummary,
+          ),
+        );
+
+        final windowSuffix = hasEndTimeLimit
+            ? ' (until ${_formatTime24(runEndTime)})'
+            : '';
+
+        if (_stopRequested) {
+          _scheduleTimer?.cancel();
+          _scheduleTimer = null;
+          isScheduleArmed = false;
+          nextScheduledRun = null;
+          currentStatus = '⛔ Stopped';
+          _addLog(
+            '⛔ Run stopped. Uploaded: ${_numFmt.format(filesUploaded)}, Skipped: ${_numFmt.format(filesSkipped)}, Errors: ${_numFmt.format(errors)}.',
           );
-          nextScheduledRun = next;
-          if (next != null) {
-            final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-            currentStatus = '⏸ Window ended ($endLabel). Next run at $formatted';
-            _addLog(
-              '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
+        } else if (stoppedByWindow) {
+          final endLabel = _formatTime24(runEndTime);
+          if (isScheduledRun &&
+              onCompletionAction == 'repeat' &&
+              enableSchedule &&
+              hasCheckedScheduleDays) {
+            final next = computeNextScheduledRun(
+              now: _nowProvider(),
+              runTime: runTime,
+              runDays: runDays,
             );
-            _ensureScheduleTimerRunning();
+            nextScheduledRun = next;
+            if (next != null) {
+              final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+              currentStatus =
+                  '⏸ Window ended ($endLabel). Next run at $formatted';
+              _addLog(
+                '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
+              );
+              _ensureScheduleTimerRunning();
+            } else {
+              isScheduleArmed = false;
+              _scheduleTimer?.cancel();
+              _scheduleTimer = null;
+              currentStatus = '⏰ Window ended ($endLabel)';
+              _addLog(
+                '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+              );
+            }
           } else {
             isScheduleArmed = false;
+            nextScheduledRun = null;
             _scheduleTimer?.cancel();
             _scheduleTimer = null;
             currentStatus = '⏰ Window ended ($endLabel)';
@@ -3545,37 +3558,38 @@ class FtpFilesProvider with ChangeNotifier {
               '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
             );
           }
-        } else {
-          isScheduleArmed = false;
-          nextScheduledRun = null;
-          _scheduleTimer?.cancel();
-          _scheduleTimer = null;
-          currentStatus = '⏰ Window ended ($endLabel)';
-          _addLog(
-            '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
-          );
-        }
-      } else if (isScheduledRun) {
-        if (onCompletionAction == 'repeat' &&
-            enableSchedule &&
-            hasCheckedScheduleDays) {
-          final next = computeNextScheduledRun(
-            now: _nowProvider(),
-            runTime: runTime,
-            runDays: runDays,
-          );
-          nextScheduledRun = next;
-          if (next != null) {
-            final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-            currentStatus = hasErrors
-                ? '⚠️ Completed with $errors error(s). Next run at $formatted'
-                : '🏁 Completed. Next run at $formatted';
-            _addLog(
-              '🏁 ${dryRun ? "Dry run" : "Upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
+        } else if (isScheduledRun) {
+          if (onCompletionAction == 'repeat' &&
+              enableSchedule &&
+              hasCheckedScheduleDays) {
+            final next = computeNextScheduledRun(
+              now: _nowProvider(),
+              runTime: runTime,
+              runDays: runDays,
             );
-            _ensureScheduleTimerRunning();
+            nextScheduledRun = next;
+            if (next != null) {
+              final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+              currentStatus = hasErrors
+                  ? '⚠️ Completed with $errors error(s). Next run at $formatted'
+                  : '🏁 Completed. Next run at $formatted';
+              _addLog(
+                '🏁 ${dryRun ? "Dry run" : "Upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
+              );
+              _ensureScheduleTimerRunning();
+            } else {
+              isScheduleArmed = false;
+              _scheduleTimer?.cancel();
+              _scheduleTimer = null;
+              currentStatus = hadFatalError
+                  ? '❌ Error'
+                  : (errors > 0
+                        ? '⚠️ Completed with $errors error(s)'
+                        : '✅ Completed');
+            }
           } else {
             isScheduleArmed = false;
+            nextScheduledRun = null;
             _scheduleTimer?.cancel();
             _scheduleTimer = null;
             currentStatus = hadFatalError
@@ -3583,49 +3597,38 @@ class FtpFilesProvider with ChangeNotifier {
                 : (errors > 0
                       ? '⚠️ Completed with $errors error(s)'
                       : '✅ Completed');
-          }
-        } else {
-          isScheduleArmed = false;
-          nextScheduledRun = null;
-          _scheduleTimer?.cancel();
-          _scheduleTimer = null;
-          currentStatus = hadFatalError
-              ? '❌ Error'
-              : (errors > 0
-                    ? '⚠️ Completed with $errors error(s)'
-                    : '✅ Completed');
-          _addLog(
-            '✅ Scheduled ${dryRun ? "dry run" : "upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
-          );
-        }
-      } else {
-        if (isScheduleArmed) {
-          final next = computeNextScheduledRun(
-            now: _nowProvider(),
-            runTime: runTime,
-            runDays: runDays,
-          );
-          nextScheduledRun = next;
-          if (next != null) {
-            final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-            currentStatus = hasErrors
-                ? '⚠️ Finished with $errors error(s) — Next run: $formatted$windowSuffix'
-                : '⏰ Scheduled — Next run: $formatted$windowSuffix';
             _addLog(
-              '✅ Manual run finished (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Schedule remains armed for $formatted$windowSuffix.',
+              '✅ Scheduled ${dryRun ? "dry run" : "upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
             );
           }
         } else {
-          currentStatus = hadFatalError
-              ? '❌ Error'
-              : (errors > 0
-                    ? '⚠️ Completed with $errors error(s)'
-                    : (dryRun ? '✅ Dry Run Completed' : '✅ Completed'));
-          _addLog(
-            '✅ ${dryRun ? "Dry run" : "Upload"} finished! Checked: $filesChecked, Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors.',
-          );
+          if (isScheduleArmed) {
+            final next = computeNextScheduledRun(
+              now: _nowProvider(),
+              runTime: runTime,
+              runDays: runDays,
+            );
+            nextScheduledRun = next;
+            if (next != null) {
+              final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+              currentStatus = hasErrors
+                  ? '⚠️ Finished with $errors error(s) — Next run: $formatted$windowSuffix'
+                  : '⏰ Scheduled — Next run: $formatted$windowSuffix';
+              _addLog(
+                '✅ Manual run finished (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Schedule remains armed for $formatted$windowSuffix.',
+              );
+            }
+          } else {
+            currentStatus = hadFatalError
+                ? '❌ Error'
+                : (errors > 0
+                      ? '⚠️ Completed with $errors error(s)'
+                      : (dryRun ? '✅ Dry Run Completed' : '✅ Completed'));
+            _addLog(
+              '✅ ${dryRun ? "Dry run" : "Upload"} finished! Checked: $filesChecked, Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors.',
+            );
+          }
         }
-      }
       } finally {
         isUploading = false;
       }
