@@ -1,4 +1,6 @@
 // Gene - Nov, 21, 2026: FTP Upload screen with collapsible connection settings, single/multi-source config, dry-run/retry options, and weekday+time scheduler.
+// Gene - Nov, 24, 2026: Import dart:async for unawaited Run Selected execution from dialog confirmation.
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -368,16 +370,60 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
               //                 '${provider.uploadSources.length} source${provider.uploadSources.length == 1 ? '' : 's'} configured',
               //                 style: TextStyle(fontSize: 13, color: context.textSecondary),
               //               ),
-              // Gene - Nov, 23, 2026: Show active vs total source counts when some sources are disabled.
+              //               // Gene - Nov, 23, 2026: Show active vs total source counts when some sources are disabled.
+              //               Builder(
+              //                 builder: (_) {
+              //                   final total = provider.uploadSources.length;
+              //                   final active = provider.uploadSources
+              //                       .where((s) => s.enabled)
+              //                       .length;
+              //                   final label = active == total
+              //                       ? '$total source${total == 1 ? '' : 's'} configured'
+              //                       : '$active/$total sources active';
+              //                   return Text(
+              //                     label,
+              //                     style: TextStyle(
+              //                       fontSize: 13,
+              //                       color: context.textSecondary,
+              //                     ),
+              //                   );
+              //                 },
+              //               ),
+              // Gene - Nov, 24, 2026: Summarize active source count alongside non-default schedule cadence counts.
               Builder(
                 builder: (_) {
                   final total = provider.uploadSources.length;
-                  final active = provider.uploadSources
+                  final enabledSources = provider.uploadSources
                       .where((s) => s.enabled)
-                      .length;
-                  final label = active == total
+                      .toList();
+                  final active = enabledSources.length;
+                  final baseLabel = active == total
                       ? '$total source${total == 1 ? '' : 's'} configured'
                       : '$active/$total sources active';
+                  final monthlyCount = enabledSources
+                      .where(
+                        (s) => s.scheduleMode == FtpSourceScheduleMode.monthly,
+                      )
+                      .length;
+                  final weeklyCount = enabledSources
+                      .where(
+                        (s) => s.scheduleMode == FtpSourceScheduleMode.weekly,
+                      )
+                      .length;
+                  final manualCount = enabledSources
+                      .where(
+                        (s) =>
+                            s.scheduleMode == FtpSourceScheduleMode.manualOnly,
+                      )
+                      .length;
+                  final tags = <String>[
+                    if (monthlyCount > 0) '$monthlyCount monthly',
+                    if (weeklyCount > 0) '$weeklyCount weekly',
+                    if (manualCount > 0) '$manualCount manual',
+                  ];
+                  final label = tags.isEmpty
+                      ? baseLabel
+                      : '$baseLabel (${tags.join(', ')})';
                   return Text(
                     label,
                     style: TextStyle(
@@ -1258,7 +1304,149 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     //         ),
     //       ],
     //     );
-    // Gene - Nov, 24, 2026: Wrap action controls and stat badges on narrower desktop viewports (980x680) when schedule buttons are visible.
+    //     // Gene - Nov, 24, 2026: Wrap action controls and stat badges on narrower desktop viewports (980x680) when schedule buttons are visible.
+    //     final actionButtons = <Widget>[
+    //       if (!provider.isProcessing) ...[
+    //         if (!provider.enableSchedule)
+    //           ElevatedButton.icon(
+    //             key: const Key('ftp_start_upload_btn'),
+    //             onPressed: provider.canRunNow ? provider.runNow : null,
+    //             icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+    //             label: const Text('Start Upload'),
+    //           )
+    //         else ...[
+    //           ElevatedButton.icon(
+    //             key: const Key('ftp_start_schedule_btn'),
+    //             onPressed: provider.canArmSchedule ? provider.startSchedule : null,
+    //             icon: const Icon(Icons.schedule_rounded, size: 18),
+    //             label: const Text('Start Schedule'),
+    //           ),
+    //           const SizedBox(width: 8),
+    //           OutlinedButton.icon(
+    //             key: const Key('ftp_run_now_btn'),
+    //             onPressed: provider.canRunNow ? provider.runNow : null,
+    //             icon: const Icon(Icons.play_arrow_rounded, size: 18),
+    //             label: const Text('Run Now'),
+    //           ),
+    //         ],
+    //       ] else ...[
+    //         ElevatedButton.icon(
+    //           key: const Key('ftp_stop_btn'),
+    //           onPressed: provider.stop,
+    //           icon: const Icon(Icons.stop, size: 18),
+    //           label: const Text('Stop'),
+    //           style: ElevatedButton.styleFrom(
+    //             backgroundColor: AppColors.error,
+    //             foregroundColor: Colors.white,
+    //           ),
+    //         ),
+    //         if (provider.isScheduleArmed && !provider.isUploading) ...[
+    //           const SizedBox(width: 8),
+    //           OutlinedButton.icon(
+    //             key: const Key('ftp_run_now_btn'),
+    //             onPressed: provider.canRunNow ? provider.runNow : null,
+    //             icon: const Icon(Icons.play_arrow_rounded, size: 18),
+    //             label: const Text('Run Now'),
+    //           ),
+    //         ],
+    //       ],
+    //     ];
+    //
+    //     final spinner = (provider.isUploading || provider.isTestingConnection)
+    //         ? Container(
+    //             width: 14,
+    //             height: 14,
+    //             margin: const EdgeInsets.only(right: 8),
+    //             child: CircularProgressIndicator(
+    //               strokeWidth: 2,
+    //               valueColor: AlwaysStoppedAnimation<Color>(accentColor),
+    //             ),
+    //           )
+    //         : null;
+    //
+    //     final statusText = Text(
+    //       provider.currentStatus,
+    //       style: TextStyle(
+    //         fontWeight: FontWeight.w600,
+    //         color: context.textPrimary,
+    //         fontSize: 13,
+    //       ),
+    //       maxLines: 1,
+    //       overflow: TextOverflow.ellipsis,
+    //     );
+    //
+    //     final statBadges = [
+    //       StatBadge(
+    //         title: 'Uploaded',
+    //         value: provider.filesUploaded.toString(),
+    //         color: context.successColor,
+    //         icon: Icons.cloud_done_rounded,
+    //       ),
+    //       StatBadge(
+    //         title: 'Skipped',
+    //         value: provider.filesSkipped.toString(),
+    //         color: context.warningColor,
+    //         icon: Icons.fast_forward_rounded,
+    //       ),
+    //       StatBadge(
+    //         title: 'Errors',
+    //         value: provider.errors.toString(),
+    //         color: context.errorColor,
+    //         icon: Icons.error,
+    //       ),
+    //     ];
+    //
+    //     return LayoutBuilder(
+    //       builder: (context, constraints) {
+    //         if (constraints.maxWidth >= 1060) {
+    //           return Row(
+    //             children: [
+    //               ...actionButtons,
+    //               const SizedBox(width: 14),
+    //               ?spinner,
+    //               Expanded(child: statusText),
+    //               const SizedBox(width: 8),
+    //               statBadges[0],
+    //               const SizedBox(width: 8),
+    //               statBadges[1],
+    //               const SizedBox(width: 8),
+    //               statBadges[2],
+    //             ],
+    //           );
+    //         }
+    //
+    //         return SizedBox(
+    //           width: double.infinity,
+    //           child: Wrap(
+    //             spacing: 12,
+    //             runSpacing: 8,
+    //             alignment: WrapAlignment.spaceBetween,
+    //             crossAxisAlignment: WrapCrossAlignment.center,
+    //             children: [
+    //               Row(
+    //                 mainAxisSize: MainAxisSize.min,
+    //                 children: [
+    //                   ...actionButtons,
+    //                   const SizedBox(width: 12),
+    //                   ?spinner,
+    //                   ConstrainedBox(
+    //                     constraints: BoxConstraints(
+    //                       maxWidth: (constraints.maxWidth - 360).clamp(
+    //                         160.0,
+    //                         420.0,
+    //                       ),
+    //                     ),
+    //                     child: statusText,
+    //                   ),
+    //                 ],
+    //               ),
+    //               Wrap(spacing: 8, runSpacing: 6, children: statBadges),
+    //             ],
+    //           ),
+    //         );
+    //       },
+    //     );
+    // Gene - Nov, 24, 2026: Add Run Selected... button for Multiple Sources and wrap action buttons cleanly to prevent 980x680 overflow.
     final actionButtons = <Widget>[
       if (!provider.isProcessing) ...[
         if (!provider.enableSchedule)
@@ -1275,7 +1463,6 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
             icon: const Icon(Icons.schedule_rounded, size: 18),
             label: const Text('Start Schedule'),
           ),
-          const SizedBox(width: 8),
           OutlinedButton.icon(
             key: const Key('ftp_run_now_btn'),
             onPressed: provider.canRunNow ? provider.runNow : null,
@@ -1294,17 +1481,31 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
             foregroundColor: Colors.white,
           ),
         ),
-        if (provider.isScheduleArmed && !provider.isUploading) ...[
-          const SizedBox(width: 8),
+        if (provider.isScheduleArmed && !provider.isUploading)
           OutlinedButton.icon(
             key: const Key('ftp_run_now_btn'),
             onPressed: provider.canRunNow ? provider.runNow : null,
             icon: const Icon(Icons.play_arrow_rounded, size: 18),
             label: const Text('Run Now'),
           ),
-        ],
       ],
+      if (provider.useMultipleSources && !provider.isUploading)
+        OutlinedButton.icon(
+          key: const Key('ftp_run_selected_btn'),
+          onPressed: provider.canRunSelected
+              ? () => _showRunSelectedSourcesDialog(context, provider)
+              : null,
+          icon: const Icon(Icons.checklist_rounded, size: 18),
+          label: const Text('Run Selected...'),
+        ),
     ];
+
+    final actionButtonsWrap = Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: actionButtons,
+    );
 
     final spinner = (provider.isUploading || provider.isTestingConnection)
         ? Container(
@@ -1350,12 +1551,21 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
       ),
     ];
 
+    //     final singleRowBreakpoint =
+    //         (provider.useMultipleSources && provider.enableSchedule)
+    //         ? 1220.0
+    //         : 1060.0;
+    // Gene - Nov, 24, 2026: Raise single-row breakpoint when Run Selected... is paired with schedule or single-source buttons so 1280px viewports never overflow.
+    final singleRowBreakpoint = provider.useMultipleSources
+        ? (provider.enableSchedule ? 1380.0 : 1140.0)
+        : 1060.0;
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth >= 1060) {
+        if (constraints.maxWidth >= singleRowBreakpoint) {
           return Row(
             children: [
-              ...actionButtons,
+              actionButtonsWrap,
               const SizedBox(width: 14),
               ?spinner,
               Expanded(child: statusText),
@@ -1377,22 +1587,18 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ...actionButtons,
-                  const SizedBox(width: 12),
-                  ?spinner,
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: (constraints.maxWidth - 360).clamp(
-                        160.0,
-                        420.0,
-                      ),
-                    ),
-                    child: statusText,
-                  ),
-                ],
+              actionButtonsWrap,
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: (constraints.maxWidth - 280).clamp(160.0, 440.0),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ?spinner,
+                    Flexible(child: statusText),
+                  ],
+                ),
               ),
               Wrap(spacing: 8, runSpacing: 6, children: statBadges),
             ],
@@ -1478,6 +1684,17 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     showDialog(
       context: context,
       builder: (_) => _FtpUploadSourcesDialog(provider: provider),
+    );
+  }
+
+  // Gene - Nov, 24, 2026: Show one-off Run Selected Sources picker dialog.
+  void _showRunSelectedSourcesDialog(
+    BuildContext context,
+    FtpFilesProvider provider,
+  ) {
+    showDialog(
+      context: context,
+      builder: (_) => _RunSelectedSourcesDialog(provider: provider),
     );
   }
 
@@ -1901,6 +2118,20 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                             ),
                           ),
                         ] else if (provider.enableSchedule &&
+                            provider.hasCheckedScheduleDays &&
+                            provider.useMultipleSources &&
+                            !provider.hasSchedulableSources) ...[
+                          // Gene - Nov, 24, 2026: Warn user when all active sources are Manual Only and cannot arm schedule.
+                          const SizedBox(height: 6),
+                          Text(
+                            'All active upload sources are set to Manual Only. Change at least one source schedule to arm.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: context.errorColor,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ] else if (provider.enableSchedule &&
                             provider.hasCheckedScheduleDays) ...[
                           // Gene - Nov, 24, 2026: Explain active Start/End runtime window behavior (same-day, overnight, or no end cutoff).
                           const SizedBox(height: 6),
@@ -2262,10 +2493,309 @@ class _FtpUploadSourcesDialog extends StatefulWidget {
       _FtpUploadSourcesDialogState();
 }
 
+// class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
+//   final List<TextEditingController> _nameControllers = [];
+//   final List<TextEditingController> _subfoldersControllers = [];
+//   final List<TextEditingController> _destControllers = [];
+// 
+//   @override
+//   void initState() {
+//     super.initState();
+//     _rebuildControllers();
+//   }
+// 
+//   @override
+//   void dispose() {
+//     _disposeControllers();
+//     super.dispose();
+//   }
+// 
+//   void _disposeControllers() {
+//     for (final c in _nameControllers) {
+//       c.dispose();
+//     }
+//     for (final c in _subfoldersControllers) {
+//       c.dispose();
+//     }
+//     for (final c in _destControllers) {
+//       c.dispose();
+//     }
+//     _nameControllers.clear();
+//     _subfoldersControllers.clear();
+//     _destControllers.clear();
+//   }
+// 
+//   void _rebuildControllers() {
+//     _disposeControllers();
+//     for (final source in widget.provider.uploadSources) {
+//       _nameControllers.add(TextEditingController(text: source.name));
+//       _subfoldersControllers.add(
+//         TextEditingController(text: source.subfolders),
+//       );
+//       _destControllers.add(TextEditingController(text: source.ftpDest));
+//     }
+//   }
+// 
+//   @override
+//   Widget build(BuildContext context) {
+//     final sources = widget.provider.uploadSources;
+//     final accentColor = context.ftpAccent;
+// 
+//     return AlertDialog(
+//       // Gene - Nov, 23, 2026: Add Import and Export Upload Sources actions to Upload Sources dialog title bar.
+//       title: Row(
+//         children: [
+//           Icon(Icons.folder_copy, size: 22, color: accentColor),
+//           const SizedBox(width: 8),
+//           const Text('Upload Sources', style: TextStyle(fontSize: 18)),
+//           const Spacer(),
+//           TextButton.icon(
+//             key: const Key('ftp_sources_import_btn'),
+//             icon: const Icon(Icons.file_upload_outlined, size: 17),
+//             label: const Text('Import', style: TextStyle(fontSize: 12)),
+//             style: TextButton.styleFrom(
+//               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+//               visualDensity: VisualDensity.compact,
+//             ),
+//             onPressed: () async {
+//               final message = await widget.provider
+//                   .importUploadSourcesFromDisk();
+//               if (!context.mounted || message == null) return;
+//               setState(_rebuildControllers);
+//               _showFtpActionSnackBar(context, message);
+//             },
+//           ),
+//           TextButton.icon(
+//             key: const Key('ftp_sources_export_btn'),
+//             icon: const Icon(Icons.file_download_outlined, size: 17),
+//             label: const Text('Export', style: TextStyle(fontSize: 12)),
+//             style: TextButton.styleFrom(
+//               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+//               visualDensity: VisualDensity.compact,
+//             ),
+//             onPressed: () async {
+//               final message = await widget.provider.exportUploadSourcesToDisk();
+//               if (!context.mounted || message == null) return;
+//               _showFtpActionSnackBar(context, message);
+//             },
+//           ),
+//           TextButton.icon(
+//             icon: const Icon(Icons.add, size: 18),
+//             label: const Text('Add Source', style: TextStyle(fontSize: 13)),
+//             onPressed: () {
+//               widget.provider.addUploadSource();
+//               setState(_rebuildControllers);
+//             },
+//           ),
+//         ],
+//       ),
+//       contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+//       content: SizedBox(
+//         width: MediaQuery.of(context).size.width * 0.72,
+//         height: MediaQuery.of(context).size.height * 0.54,
+//         child: ListView.separated(
+//           itemCount: sources.length,
+//           // Gene - Nov, 22, 2026: Use theme-aware context.border in Upload Sources divider.
+//           separatorBuilder: (_, _) =>
+//               Divider(height: 18, color: context.border.withValues(alpha: 0.5)),
+//           itemBuilder: (context, i) {
+//             final FtpUploadSource src = sources[i];
+//             return Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 Row(
+//                   children: [
+//                     // Gene - Nov, 23, 2026: Per-source enable/disable checkbox to pause a source without deleting it.
+//                     SizedBox(
+//                       width: 24,
+//                       height: 24,
+//                       child: Checkbox(
+//                         key: Key('ftp_source_enabled_$i'),
+//                         value: src.enabled,
+//                         onChanged: (val) {
+//                           widget.provider.setSourceEnabledAt(i, val ?? true);
+//                           setState(() {});
+//                         },
+//                         visualDensity: VisualDensity.compact,
+//                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+//                       ),
+//                     ),
+//                     const SizedBox(width: 6),
+//                     Text(
+//                       'Source ${i + 1}',
+//                       style: TextStyle(
+//                         fontWeight: FontWeight.bold,
+//                         fontSize: 13,
+//                         color: src.enabled
+//                             ? context.textMuted
+//                             : context.textMuted.withValues(alpha: 0.6),
+//                       ),
+//                     ),
+//                     const SizedBox(width: 12),
+//                     SizedBox(
+//                       width: 170,
+//                       child: TextField(
+//                         controller: _nameControllers[i],
+//                         onChanged: (val) =>
+//                             widget.provider.setSourceNameAt(i, val),
+//                         style: TextStyle(
+//                           fontSize: 12,
+//                           color: context.textPrimary,
+//                         ),
+//                         decoration: const InputDecoration(
+//                           labelText: 'Label',
+//                           hintText: 'e.g. Backups',
+//                           isDense: true,
+//                           contentPadding: EdgeInsets.symmetric(
+//                             horizontal: 8,
+//                             vertical: 6,
+//                           ),
+//                         ),
+//                       ),
+//                     ),
+//                     const SizedBox(width: 12),
+//                     Text(
+//                       'Run Order:',
+//                       style: TextStyle(
+//                         fontSize: 12,
+//                         color: context.textSecondary,
+//                       ),
+//                     ),
+//                     const SizedBox(width: 4),
+//                     SizedBox(
+//                       width: 52,
+//                       height: 28,
+//                       child: DropdownButton<int>(
+//                         value: src.runOrder.clamp(1, 20),
+//                         isDense: true,
+//                         dropdownColor: context.cardBg,
+//                         underline: Container(height: 1, color: context.border),
+//                         items: List.generate(20, (n) => n + 1)
+//                             .map(
+//                               (v) => DropdownMenuItem<int>(
+//                                 value: v,
+//                                 child: Text(
+//                                   '$v',
+//                                   style: TextStyle(
+//                                     fontSize: 13,
+//                                     color: context.textPrimary,
+//                                   ),
+//                                 ),
+//                               ),
+//                             )
+//                             .toList(),
+//                         onChanged: (val) {
+//                           if (val != null) {
+//                             widget.provider.setSourceRunOrderAt(i, val);
+//                             setState(() {});
+//                           }
+//                         },
+//                       ),
+//                     ),
+//                     const Spacer(),
+//                     // Gene - Nov, 22, 2026: Use theme-aware errorColor for remove upload source icon.
+//                     if (sources.length > 1)
+//                       IconButton(
+//                         icon: Icon(
+//                           Icons.delete_outline,
+//                           size: 18,
+//                           color: context.errorColor,
+//                         ),
+//                         tooltip: 'Remove source',
+//                         onPressed: () {
+//                           widget.provider.removeUploadSource(i);
+//                           setState(_rebuildControllers);
+//                         },
+//                       ),
+//                   ],
+//                 ),
+//                 const SizedBox(height: 6),
+//                 // Gene - Nov, 23, 2026: Dim disabled upload sources visually and clarify blank Subfolders hint.
+//                 Opacity(
+//                   opacity: src.enabled ? 1.0 : 0.55,
+//                   child: Column(
+//                     children: [
+//                       PathRow(
+//                         label: 'Local Path',
+//                         path: src.localPath,
+//                         onPick: () async {
+//                           await widget.provider.pickSourceAt(i);
+//                           if (mounted) setState(() {});
+//                         },
+//                         onChanged: (val) {
+//                           widget.provider.setSourcePathAt(i, val);
+//                         },
+//                       ),
+//                       const SizedBox(height: 6),
+//                       Row(
+//                         children: [
+//                           Expanded(
+//                             child: TextField(
+//                               controller: _subfoldersControllers[i],
+//                               onChanged: (val) =>
+//                                   widget.provider.setSourceSubfoldersAt(i, val),
+//                               style: TextStyle(
+//                                 fontSize: 12,
+//                                 color: context.textPrimary,
+//                               ),
+//                               decoration: const InputDecoration(
+//                                 labelText:
+//                                     'Subfolders (optional, comma-separated)',
+//                                 hintText: 'Blank = root (or all if nested on)',
+//                                 isDense: true,
+//                                 contentPadding: EdgeInsets.symmetric(
+//                                   horizontal: 10,
+//                                   vertical: 8,
+//                                 ),
+//                               ),
+//                             ),
+//                           ),
+//                           const SizedBox(width: 8),
+//                           Expanded(
+//                             child: TextField(
+//                               controller: _destControllers[i],
+//                               onChanged: (val) =>
+//                                   widget.provider.setSourceFtpDestAt(i, val),
+//                               style: TextStyle(
+//                                 fontSize: 12,
+//                                 color: context.textPrimary,
+//                               ),
+//                               decoration: const InputDecoration(
+//                                 labelText: 'FTP Dest Folder (optional)',
+//                                 hintText: 'Leave blank for FTP root',
+//                                 isDense: true,
+//                                 contentPadding: EdgeInsets.symmetric(
+//                                   horizontal: 10,
+//                                   vertical: 8,
+//                                 ),
+//                               ),
+//                             ),
+//                           ),
+//                         ],
+//                       ),
+//                     ],
+//                   ),
+//                 ),
+//               ],
+//             );
+//           },
+//         ),
+//       ),
+//       actions: [
+//         TextButton(
+//           onPressed: () => Navigator.of(context).pop(),
+//           child: const Text('Done'),
+//         ),
+//       ],
+//     );
+//   }
+// }
+// Gene - Nov, 24, 2026: Add per-source schedule cadence, weekly/monthly pickers, monthly reset, and date filter override controls in Upload Sources dialog, plus _RunSelectedSourcesDialog.
 class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
   final List<TextEditingController> _nameControllers = [];
   final List<TextEditingController> _subfoldersControllers = [];
   final List<TextEditingController> _destControllers = [];
+  final List<TextEditingController> _dateDaysControllers = [];
 
   @override
   void initState() {
@@ -2289,9 +2819,13 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
     for (final c in _destControllers) {
       c.dispose();
     }
+    for (final c in _dateDaysControllers) {
+      c.dispose();
+    }
     _nameControllers.clear();
     _subfoldersControllers.clear();
     _destControllers.clear();
+    _dateDaysControllers.clear();
   }
 
   void _rebuildControllers() {
@@ -2302,32 +2836,40 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
         TextEditingController(text: source.subfolders),
       );
       _destControllers.add(TextEditingController(text: source.ftpDest));
+      _dateDaysControllers.add(
+        TextEditingController(text: source.dateFilterDays.toString()),
+      );
     }
+  }
+
+  Widget _statusChip(BuildContext context, String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final sources = widget.provider.uploadSources;
     final accentColor = context.ftpAccent;
+    //     final now = DateTime.now();
+    // Gene - Nov, 24, 2026: Use provider.currentNow for deterministic monthly status evaluation.
+    final now = widget.provider.currentNow;
 
     return AlertDialog(
-      //       title: Row(
-      //         children: [
-      //           Icon(Icons.folder_copy, size: 22, color: accentColor),
-      //           const SizedBox(width: 8),
-      //           const Text('Upload Sources', style: TextStyle(fontSize: 18)),
-      //           const Spacer(),
-      //           TextButton.icon(
-      //             icon: const Icon(Icons.add, size: 18),
-      //             label: const Text('Add Source', style: TextStyle(fontSize: 13)),
-      //             onPressed: () {
-      //               widget.provider.addUploadSource();
-      //               setState(_rebuildControllers);
-      //             },
-      //           ),
-      //         ],
-      //       ),
-      // Gene - Nov, 23, 2026: Add Import and Export Upload Sources actions to Upload Sources dialog title bar.
       title: Row(
         children: [
           Icon(Icons.folder_copy, size: 22, color: accentColor),
@@ -2376,25 +2918,28 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
       ),
       contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
       content: SizedBox(
-        width: MediaQuery.of(context).size.width * 0.72,
-        height: MediaQuery.of(context).size.height * 0.54,
+        width: MediaQuery.of(context).size.width * 0.76,
+        height: MediaQuery.of(context).size.height * 0.62,
         child: ListView.separated(
           itemCount: sources.length,
-          //           separatorBuilder: (_, _) => Divider(
-          //             height: 18,
-          //             color: AppColors.cardBorder.withValues(alpha: 0.5),
-          //           ),
-          // Gene - Nov, 22, 2026: Use theme-aware context.border in Upload Sources divider.
           separatorBuilder: (_, _) =>
               Divider(height: 18, color: context.border.withValues(alpha: 0.5)),
           itemBuilder: (context, i) {
             final FtpUploadSource src = sources[i];
+            final hasWeeklyOverlap = src.weeklyDays.any(
+              (d) => widget.provider.runDays[d] == true,
+            );
+            final targetDay = src.resolveMonthlyTargetDay(now.year, now.month);
+            final isDoneThisMonth = src.isCompletedForMonth(now);
+
             return Column(
+              key: ValueKey(
+                'ftp_source_item_${i}_${widget.provider.settingsVersion}',
+              ),
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    // Gene - Nov, 23, 2026: Per-source enable/disable checkbox to pause a source without deleting it.
                     SizedBox(
                       width: 24,
                       height: 24,
@@ -2482,14 +3027,6 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
                       ),
                     ),
                     const Spacer(),
-                    //                     if (sources.length > 1)
-                    //                       IconButton(
-                    //                         icon: const Icon(
-                    //                           Icons.delete_outline,
-                    //                           size: 18,
-                    //                           color: AppColors.error,
-                    //                         ),
-                    // Gene - Nov, 22, 2026: Use theme-aware errorColor for remove upload source icon.
                     if (sources.length > 1)
                       IconButton(
                         icon: Icon(
@@ -2506,67 +3043,10 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
                   ],
                 ),
                 const SizedBox(height: 6),
-                //                 PathRow(
-                //                   label: 'Local Path',
-                //                   path: src.localPath,
-                //                   onPick: () async {
-                //                     await widget.provider.pickSourceAt(i);
-                //                     if (mounted) setState(() {});
-                //                   },
-                //                   onChanged: (val) {
-                //                     widget.provider.setSourcePathAt(i, val);
-                //                   },
-                //                 ),
-                //                 const SizedBox(height: 6),
-                //                 Row(
-                //                   children: [
-                //                     Expanded(
-                //                       child: TextField(
-                //                         controller: _subfoldersControllers[i],
-                //                         onChanged: (val) =>
-                //                             widget.provider.setSourceSubfoldersAt(i, val),
-                //                         style: TextStyle(
-                //                           fontSize: 12,
-                //                           color: context.textPrimary,
-                //                         ),
-                //                         decoration: const InputDecoration(
-                //                           labelText: 'Subfolders (optional, comma-separated)',
-                //                           hintText: 'FolderA, FolderB',
-                //                           isDense: true,
-                //                           contentPadding: EdgeInsets.symmetric(
-                //                             horizontal: 10,
-                //                             vertical: 8,
-                //                           ),
-                //                         ),
-                //                       ),
-                //                     ),
-                //                     const SizedBox(width: 8),
-                //                     Expanded(
-                //                       child: TextField(
-                //                         controller: _destControllers[i],
-                //                         onChanged: (val) =>
-                //                             widget.provider.setSourceFtpDestAt(i, val),
-                //                         style: TextStyle(
-                //                           fontSize: 12,
-                //                           color: context.textPrimary,
-                //                         ),
-                //                         decoration: const InputDecoration(
-                //                           labelText: 'FTP Dest Folder (optional)',
-                //                           hintText: 'Leave blank for FTP root',
-                //                           isDense: true,
-                //                           contentPadding: EdgeInsets.symmetric(
-                //                             horizontal: 10,
-                //                             vertical: 8,
-                //                           ),
-                //                         ),
-                //                       ),
-                //                     ),
-                //                   ],
-                //                 ),
-                // Gene - Nov, 23, 2026: Dim disabled upload sources visually and clarify blank Subfolders hint.
                 Opacity(
                   opacity: src.enabled ? 1.0 : 0.55,
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       PathRow(
                         label: 'Local Path',
@@ -2626,6 +3106,275 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 138,
+                            child:
+                                DropdownButtonFormField<FtpSourceScheduleMode>(
+                              key: Key('ftp_source_schedule_$i'),
+                              isExpanded: true,
+                              initialValue: src.scheduleMode,
+                              decoration: const InputDecoration(
+                                labelText: 'Schedule',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                              ),
+                              dropdownColor: context.cardBg,
+                              items: FtpSourceScheduleMode.values
+                                  .map(
+                                    (mode) =>
+                                        DropdownMenuItem<FtpSourceScheduleMode>(
+                                      value: mode,
+                                      child: Text(
+                                        mode.label,
+                                        style: TextStyle(
+                                          color: context.textPrimary,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (val) {
+                                if (val != null) {
+                                  widget.provider.setSourceScheduleModeAt(
+                                    i,
+                                    val,
+                                  );
+                                  setState(() {});
+                                }
+                              },
+                            ),
+                          ),
+                          if (src.scheduleMode ==
+                              FtpSourceScheduleMode.weekly) ...[
+                            for (final entry in {
+                              1: 'Mon',
+                              2: 'Tue',
+                              3: 'Wed',
+                              4: 'Thu',
+                              5: 'Fri',
+                              6: 'Sat',
+                              7: 'Sun',
+                            }.entries)
+                              FilterChip(
+                                key: Key(
+                                  'ftp_source_weekly_day_${i}_${entry.key}',
+                                ),
+                                label: Text(
+                                  entry.value,
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                selected: src.weeklyDays.contains(entry.key),
+                                onSelected: (val) {
+                                  widget.provider.setSourceWeeklyDayAt(
+                                    i,
+                                    entry.key,
+                                    val,
+                                  );
+                                  setState(() {});
+                                },
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                              ),
+                            if (widget.provider.enableSchedule &&
+                                !hasWeeklyOverlap)
+                              Text(
+                                'No overlap with global schedule days',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: context.warningColor,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                          ],
+                          if (src.scheduleMode ==
+                              FtpSourceScheduleMode.monthly) ...[
+                            SizedBox(
+                              width: 116,
+                              child: DropdownButtonFormField<int>(
+                                key: Key('ftp_source_monthly_day_$i'),
+                                isExpanded: true,
+                                initialValue: src.monthlyDay.clamp(0, 31),
+                                decoration: const InputDecoration(
+                                  labelText: 'Month Day',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                ),
+                                dropdownColor: context.cardBg,
+                                items: [
+                                  DropdownMenuItem<int>(
+                                    value: 0,
+                                    child: Text(
+                                      'Last day',
+                                      style: TextStyle(
+                                        color: context.textPrimary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                  for (int d = 1; d <= 31; d++)
+                                    DropdownMenuItem<int>(
+                                      value: d,
+                                      child: Text(
+                                        'Day $d',
+                                        style: TextStyle(
+                                          color: context.textPrimary,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    widget.provider.setSourceMonthlyDayAt(
+                                      i,
+                                      val,
+                                    );
+                                    setState(() {});
+                                  }
+                                },
+                              ),
+                            ),
+                            if (isDoneThisMonth) ...[
+                              _statusChip(
+                                context,
+                                'Done ${DateFormat('MMM yyyy').format(now)}',
+                                context.successColor,
+                              ),
+                              TextButton.icon(
+                                key: Key('ftp_source_monthly_reset_$i'),
+                                onPressed: () {
+                                  widget.provider
+                                      .resetSourceMonthlyCompletionAt(i);
+                                  setState(() {});
+                                },
+                                icon: const Icon(Icons.refresh, size: 15),
+                                label: const Text(
+                                  'Reset',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                            ] else if (now.day >= targetDay)
+                              _statusChip(
+                                context,
+                                'Due now (catch-up)',
+                                context.warningColor,
+                              )
+                            else
+                              _statusChip(
+                                context,
+                                'Due Day $targetDay',
+                                context.textMuted,
+                              ),
+                          ],
+                          SizedBox(
+                            width: 138,
+                            child: DropdownButtonFormField<
+                                FtpSourceDateFilterMode>(
+                              key: Key('ftp_source_date_filter_$i'),
+                              isExpanded: true,
+                              initialValue: src.dateFilterMode,
+                              decoration: const InputDecoration(
+                                labelText: 'Date Filter',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                              ),
+                              dropdownColor: context.cardBg,
+                              items: FtpSourceDateFilterMode.values
+                                  .map(
+                                    (mode) => DropdownMenuItem<
+                                        FtpSourceDateFilterMode>(
+                                      value: mode,
+                                      child: Text(
+                                        mode.label,
+                                        style: TextStyle(
+                                          color: context.textPrimary,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (val) {
+                                if (val != null) {
+                                  widget.provider.setSourceDateFilterModeAt(
+                                    i,
+                                    val,
+                                  );
+                                  _dateDaysControllers[i].text = widget
+                                      .provider
+                                      .uploadSources[i]
+                                      .dateFilterDays
+                                      .toString();
+                                  setState(() {});
+                                }
+                              },
+                            ),
+                          ),
+                          if (src.dateFilterMode ==
+                                  FtpSourceDateFilterMode.daysAgo ||
+                              src.dateFilterMode ==
+                                  FtpSourceDateFilterMode.lastNDays)
+                            SizedBox(
+                              width: 78,
+                              child: TextField(
+                                key: Key('ftp_source_date_days_$i'),
+                                controller: _dateDaysControllers[i],
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                onChanged: (val) {
+                                  final parsed = int.tryParse(val);
+                                  if (parsed != null) {
+                                    widget.provider.setSourceDateFilterDaysAt(
+                                      i,
+                                      parsed,
+                                    );
+                                  }
+                                },
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: context.textPrimary,
+                                ),
+                                decoration: const InputDecoration(
+                                  labelText: 'Days',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -2638,6 +3387,318 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Done'),
+        ),
+      ],
+    );
+  }
+}
+
+class _RunSelectedSourcesDialog extends StatefulWidget {
+  final FtpFilesProvider provider;
+
+  const _RunSelectedSourcesDialog({required this.provider});
+
+  @override
+  State<_RunSelectedSourcesDialog> createState() =>
+      _RunSelectedSourcesDialogState();
+}
+
+class _RunSelectedSourcesDialogState extends State<_RunSelectedSourcesDialog> {
+  late final List<({int index, FtpUploadSource source})> _orderedValidSources;
+  late final Set<int> _selected;
+  bool _markMonthlyCompleted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final entries = <({int index, FtpUploadSource source})>[];
+    for (int i = 0; i < widget.provider.uploadSources.length; i++) {
+      final src = widget.provider.uploadSources[i];
+      if (src.isValid) {
+        entries.add((index: i, source: src));
+      }
+    }
+    entries.sort((a, b) {
+      final cmp = a.source.runOrder.compareTo(b.source.runOrder);
+      return cmp != 0 ? cmp : a.index.compareTo(b.index);
+    });
+    _orderedValidSources = entries;
+    _selected = {
+      for (final e in entries)
+        if (e.source.enabled) e.index,
+    };
+  }
+
+  Widget _tagPill(BuildContext context, String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accentColor = context.ftpAccent;
+    //     final now = DateTime.now();
+    // Gene - Nov, 24, 2026: Use provider.currentNow for deterministic monthly status pills in Run Selected dialog.
+    final now = widget.provider.currentNow;
+    final hasSelectedMonthly = _orderedValidSources.any(
+      (e) =>
+          _selected.contains(e.index) &&
+          e.source.scheduleMode == FtpSourceScheduleMode.monthly,
+    );
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.checklist_rounded, size: 22, color: accentColor),
+          const SizedBox(width: 8),
+          const Text('Run Selected Sources', style: TextStyle(fontSize: 18)),
+        ],
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
+      content: SizedBox(
+        width: (MediaQuery.of(context).size.width * 0.62).clamp(420.0, 720.0),
+        height: (MediaQuery.of(context).size.height * 0.56).clamp(240.0, 460.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Pick sources for an immediate one-off upload without changing saved settings.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.textSecondary,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _selected
+                        ..clear()
+                        ..addAll(_orderedValidSources.map((e) => e.index));
+                    });
+                  },
+                  child: const Text('Select All', style: TextStyle(fontSize: 12)),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(_selected.clear);
+                  },
+                  child: const Text('Clear', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: ListView.separated(
+                itemCount: _orderedValidSources.length,
+                separatorBuilder: (_, _) => Divider(
+                  height: 8,
+                  color: context.border.withValues(alpha: 0.45),
+                ),
+                itemBuilder: (context, pos) {
+                  final entry = _orderedValidSources[pos];
+                  final idx = entry.index;
+                  final src = entry.source;
+                  final isChecked = _selected.contains(idx);
+                  final destText = src.ftpDest.trim().isEmpty
+                      ? '/'
+                      : src.ftpDest.trim();
+
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      setState(() {
+                        if (isChecked) {
+                          _selected.remove(idx);
+                        } else {
+                          _selected.add(idx);
+                        }
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 6,
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Checkbox(
+                            key: Key('ftp_select_source_$idx'),
+                            value: isChecked,
+                            onChanged: (val) {
+                              setState(() {
+                                if (val ?? false) {
+                                  _selected.add(idx);
+                                } else {
+                                  _selected.remove(idx);
+                                }
+                              });
+                            },
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(
+                                      src.displayName,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                        color: context.textPrimary,
+                                      ),
+                                    ),
+                                    _tagPill(
+                                      context,
+                                      'Order #${src.runOrder}',
+                                      context.textSecondary,
+                                    ),
+                                    _tagPill(
+                                      context,
+                                      src.scheduleSummary,
+                                      accentColor,
+                                    ),
+                                    _tagPill(
+                                      context,
+                                      src.dateFilterSummary,
+                                      context.textMuted,
+                                    ),
+                                    if (!src.enabled)
+                                      _tagPill(
+                                        context,
+                                        'Disabled',
+                                        context.warningColor,
+                                      ),
+                                    if (src.scheduleMode ==
+                                            FtpSourceScheduleMode.monthly &&
+                                        src.isCompletedForMonth(now))
+                                      _tagPill(
+                                        context,
+                                        'Done ${DateFormat('MMM yyyy').format(now)}',
+                                        context.successColor,
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '${src.localPath} -> $destText',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: context.textMuted,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (hasSelectedMonthly) ...[
+              const SizedBox(height: 8),
+              Divider(height: 1, color: context.border.withValues(alpha: 0.6)),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Checkbox(
+                    key: const Key('ftp_select_mark_monthly_checkbox'),
+                    value: !widget.provider.dryRun && _markMonthlyCompleted,
+                    onChanged: widget.provider.dryRun
+                        ? null
+                        : (val) {
+                            setState(() {
+                              _markMonthlyCompleted = val ?? false;
+                            });
+                          },
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Also mark selected Monthly source(s) as completed for this month',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: widget.provider.dryRun
+                                ? context.textMuted
+                                : context.textPrimary,
+                          ),
+                        ),
+                        if (widget.provider.dryRun)
+                          Text(
+                            'Disabled in Dry-Run mode',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: context.textMuted,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton.icon(
+          key: const Key('ftp_run_selected_confirm_btn'),
+          onPressed: _selected.isEmpty
+              ? null
+              : () {
+                  final picked = Set<int>.from(_selected);
+                  final mark =
+                      !widget.provider.dryRun && _markMonthlyCompleted;
+                  Navigator.of(context).pop();
+                  unawaited(
+                    widget.provider.runSelectedSources(
+                      picked,
+                      markMonthlyCompleted: mark,
+                    ),
+                  );
+                },
+          icon: const Icon(Icons.cloud_upload_rounded, size: 17),
+          label: Text('Upload Selected (${_selected.length})'),
         ),
       ],
     );

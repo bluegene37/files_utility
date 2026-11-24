@@ -6,6 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+// Gene - Nov, 24, 2026: Import FtpUploadSource and path for per-source schedule/filter and Run Selected widget tests.
+import 'package:path/path.dart' as p;
+import 'package:files_utility/models/ftp_upload_source.dart';
 import 'package:files_utility/providers/ftp_files_provider.dart';
 import 'package:files_utility/providers/history_provider.dart';
 import 'package:files_utility/providers/theme_provider.dart';
@@ -494,4 +497,151 @@ void main() {
       expect(find.textContaining('–'), findsNothing);
     },
   );
+
+  // Gene - Nov, 24, 2026: Verify per-source schedule/filter UI, monthly Reset button, Run Selected dialog, and 980x680 layout with both Schedule + Multiple Sources.
+  testWidgets(
+    'FtpFilesScreen renders per-source schedule/filter controls, resets monthly completion, and executes Run Selected without 980x680 overflow',
+    (tester) async {
+      tester.view.physicalSize = const Size(980, 680);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final tempRoot = Directory.systemTemp.createTempSync(
+        'files_utility_ftp_screen_sel_',
+      );
+      addTearDown(() {
+        if (tempRoot.existsSync()) {
+          tempRoot.deleteSync(recursive: true);
+        }
+      });
+      final dailyDir = Directory(p.join(tempRoot.path, 'daily'))
+        ..createSync(recursive: true);
+      final dbDir = Directory(p.join(tempRoot.path, 'database'))
+        ..createSync(recursive: true);
+      final dailyFile = File(p.join(dailyDir.path, 'daily.txt'))
+        ..writeAsBytesSync([1, 2]);
+      final dbFile = File(p.join(dbDir.path, 'db.bak'))
+        ..writeAsBytesSync([3, 4, 5]);
+      dailyFile.setLastModifiedSync(DateTime(2026, 11, 24, 8, 0));
+      dbFile.setLastModifiedSync(DateTime(2026, 11, 20, 12, 0));
+
+      final uploadedNames = <String>[];
+      final fakeClient = _RecordingNoopFtpClient(uploadedNames);
+
+      final provider = FtpFilesProvider(
+        clientFactory: (_) => fakeClient,
+        nowProvider: () => DateTime(2026, 11, 24, 9, 0),
+        persistSettings: false,
+      )
+        ..setHost('ftp.example.com')
+        ..setUseMultipleSources(true)
+        ..setEnableSchedule(true)
+        ..setSkipIfExists(false)
+        ..setDateType(FtpDateType.modified)
+        ..setDateMode(FtpDateMode.allFiles)
+        ..setSourceNameAt(0, 'Daily')
+        ..setSourcePathAt(0, dailyDir.path)
+        ..addUploadSource()
+        ..setSourceNameAt(1, 'Database')
+        ..setSourcePathAt(1, dbDir.path)
+        ..setSourceScheduleModeAt(1, FtpSourceScheduleMode.monthly)
+        ..setSourceMonthlyDayAt(1, 1)
+        ..setSourceDateFilterModeAt(1, FtpSourceDateFilterMode.lastNDays)
+        ..setSourceDateFilterDaysAt(1, 30);
+
+      provider.uploadSources[1] = provider.uploadSources[1].copyWith(
+        lastCompletedMonth: '2026-11',
+        lastCompletedAt: '2026-11-01T00:05:00.000',
+      );
+      addTearDown(provider.dispose);
+
+      // Pump with BOTH enableSchedule + useMultipleSources active at 980x680 -> no RenderFlex overflow.
+      await tester.pumpWidget(buildFtpTestApp(provider));
+      await tester.pumpAndSettle();
+
+      expect(find.text('2 sources configured (1 monthly)'), findsOneWidget);
+      expect(find.byKey(const Key('ftp_run_selected_btn')), findsOneWidget);
+      expect(find.byKey(const Key('ftp_start_schedule_btn')), findsOneWidget);
+      expect(find.byKey(const Key('ftp_run_now_btn')), findsOneWidget);
+
+      // Open Edit Sources dialog and verify cadence/filter controls + monthly Done/Reset.
+      await tester.tap(find.text('Edit Sources'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('ftp_source_schedule_0')), findsOneWidget);
+      expect(find.byKey(const Key('ftp_source_date_filter_0')), findsOneWidget);
+
+      final monthlyDayFinder = find.byKey(const Key('ftp_source_monthly_day_1'));
+      await tester.ensureVisible(monthlyDayFinder);
+      await tester.pumpAndSettle();
+      expect(monthlyDayFinder, findsOneWidget);
+      expect(find.byKey(const Key('ftp_source_date_days_1')), findsOneWidget);
+      expect(find.text('Done Nov 2026'), findsOneWidget);
+
+      final resetBtn = find.byKey(const Key('ftp_source_monthly_reset_1'));
+      await tester.ensureVisible(resetBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(resetBtn);
+      await tester.pump();
+      expect(provider.uploadSources[1].lastCompletedMonth, isNull);
+      expect(find.text('Due now (catch-up)'), findsOneWidget);
+
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+
+      // Open Run Selected... dialog, uncheck Daily (0), keep Database (1), and run!
+      final runSelectedBtn = find.byKey(const Key('ftp_run_selected_btn'));
+      await tester.ensureVisible(runSelectedBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(runSelectedBtn);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Run Selected Sources'), findsOneWidget);
+      expect(find.byKey(const Key('ftp_select_source_0')), findsOneWidget);
+      expect(find.byKey(const Key('ftp_select_source_1')), findsOneWidget);
+      expect(
+        find.byKey(const Key('ftp_select_mark_monthly_checkbox')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('ftp_select_source_0')));
+      await tester.pump();
+      expect(find.text('Upload Selected (1)'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('ftp_run_selected_confirm_btn')));
+      await tester.pump();
+      for (int tick = 0; tick < 50 && provider.isUploading; tick++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+
+      expect(
+        uploadedNames,
+        ['db.bak'],
+        reason:
+            'isUploading=${provider.isUploading}, errors=${provider.errors}, logs=${provider.logs}',
+      );
+      expect(provider.uploadSources[1].lastCompletedMonth, isNull);
+    },
+  );
+}
+
+class _RecordingNoopFtpClient extends _NoopFtpClient {
+  final List<String> uploadedNames;
+
+  _RecordingNoopFtpClient(this.uploadedNames);
+
+  @override
+  Future<bool> uploadFile(
+    File localFile, {
+    String? remoteName,
+    FtpUploadProgressCallback? onProgress,
+  }) async {
+    uploadedNames.add(remoteName ?? p.basename(localFile.path));
+    return true;
+  }
 }

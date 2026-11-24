@@ -1,6 +1,8 @@
 // Gene - Nov, 21, 2026: Unit tests for FTP scheduler next-run calculation and date filter modes.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+// Gene - Nov, 24, 2026: Import FtpUploadSource to test per-source date filter matching.
+import 'package:files_utility/models/ftp_upload_source.dart';
 import 'package:files_utility/providers/ftp_files_provider.dart';
 
 Map<int, bool> _days({List<int> enabled = const []}) {
@@ -291,6 +293,80 @@ void main() {
         ),
         isTrue,
       );
+    });
+  });
+
+  // Gene - Nov, 24, 2026: Unit tests for per-source date filter overrides including inclusive Last N Days boundaries.
+  group('FtpFilesProvider.matchesSourceDateFilter', () {
+    final refNow = DateTime(2026, 11, 24, 9, 30);
+
+    bool eval(FtpUploadSource source, DateTime fileDate, {FtpDateMode globalMode = FtpDateMode.yesterday}) {
+      return FtpFilesProvider.matchesSourceDateFilter(
+        fileDate: fileDate,
+        source: source,
+        globalDateMode: globalMode,
+        referenceNow: refNow,
+        globalDaysAgo: 1,
+        globalSpecificDate: refNow,
+        globalFromDate: refNow,
+        globalToDate: refNow,
+      );
+    }
+
+    test('delegates to global filter when useGlobal and supports allFiles/today/yesterday/daysAgo', () {
+      const globalSrc = FtpUploadSource(localPath: '/tmp/global');
+      expect(eval(globalSrc, DateTime(2026, 11, 23, 18, 0)), isTrue);
+      expect(eval(globalSrc, DateTime(2026, 11, 24, 8, 0)), isFalse);
+
+      const allSrc = FtpUploadSource(
+        localPath: '/tmp/all',
+        dateFilterMode: FtpSourceDateFilterMode.allFiles,
+      );
+      expect(eval(allSrc, DateTime(2020, 1, 1)), isTrue);
+
+      const todaySrc = FtpUploadSource(
+        localPath: '/tmp/today',
+        dateFilterMode: FtpSourceDateFilterMode.today,
+      );
+      expect(eval(todaySrc, DateTime(2026, 11, 24, 23, 59)), isTrue);
+      expect(eval(todaySrc, DateTime(2026, 11, 23, 23, 59)), isFalse);
+
+      const yesterdaySrc = FtpUploadSource(
+        localPath: '/tmp/yest',
+        dateFilterMode: FtpSourceDateFilterMode.yesterday,
+      );
+      expect(eval(yesterdaySrc, DateTime(2026, 11, 23, 12, 0)), isTrue);
+      expect(eval(yesterdaySrc, DateTime(2026, 11, 24, 12, 0)), isFalse);
+
+      const daysAgoSrc = FtpUploadSource(
+        localPath: '/tmp/ago',
+        dateFilterMode: FtpSourceDateFilterMode.daysAgo,
+        dateFilterDays: 3,
+      );
+      expect(eval(daysAgoSrc, DateTime(2026, 11, 21, 10, 0)), isTrue);
+      expect(eval(daysAgoSrc, DateTime(2026, 11, 22, 10, 0)), isFalse);
+    });
+
+    test('evaluates lastNDays inclusively for N=1 and N=7 boundaries', () {
+      const oneDaySrc = FtpUploadSource(
+        localPath: '/tmp/last1',
+        dateFilterMode: FtpSourceDateFilterMode.lastNDays,
+        dateFilterDays: 1,
+      );
+      expect(eval(oneDaySrc, DateTime(2026, 11, 24, 1, 0)), isTrue);
+      expect(eval(oneDaySrc, DateTime(2026, 11, 23, 23, 59)), isFalse);
+
+      const sevenDaySrc = FtpUploadSource(
+        localPath: '/tmp/last7',
+        dateFilterMode: FtpSourceDateFilterMode.lastNDays,
+        dateFilterDays: 7,
+      );
+      // refDay = Nov 24 -> [Nov 18 .. Nov 24] inclusive.
+      expect(eval(sevenDaySrc, DateTime(2026, 11, 18, 0, 0)), isTrue);
+      expect(eval(sevenDaySrc, DateTime(2026, 11, 21, 12, 0)), isTrue);
+      expect(eval(sevenDaySrc, DateTime(2026, 11, 24, 23, 59)), isTrue);
+      expect(eval(sevenDaySrc, DateTime(2026, 11, 17, 23, 59)), isFalse);
+      expect(eval(sevenDaySrc, DateTime(2026, 11, 25, 0, 0)), isFalse);
     });
   });
 }

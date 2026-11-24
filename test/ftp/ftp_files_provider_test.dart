@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+// Gene - Nov, 24, 2026: Import FtpUploadSource to test per-source scheduling, monthly tracking, and Run Selected.
+import 'package:files_utility/models/ftp_upload_source.dart';
 import 'package:files_utility/providers/ftp_files_provider.dart';
 import 'package:files_utility/services/app_sqlite_service.dart';
 // Gene - Nov, 23, 2026: Import FileLogger to verify retention pruning and error footer output.
@@ -1191,6 +1193,338 @@ void main() {
         await provider.reloadSettings();
         expect(provider.runTime, const TimeOfDay(hour: 2, minute: 0));
         expect(provider.runEndTime, const TimeOfDay(hour: 6, minute: 0));
+      },
+    );
+
+    // Gene - Nov, 24, 2026: Verify per-source cadence filtering, monthly once-per-month completion + catch-up + rollover + reset, date overrides, and Run Selected.
+    test(
+      'scheduled run filters sources by cadence, marks monthly completed once per month, persists across reload, and rolls over next month',
+      () async {
+        await LocalDbService().init('ftp_test_monthly_cadence');
+        HistoryService().init('ftp_test_monthly_cadence');
+        await HistoryService().clearHistory(allProfiles: false);
+
+        final dailyDir = Directory(p.join(tempSourcesDir.path, 'cadence_daily'))
+          ..createSync(recursive: true);
+        final dbDir = Directory(p.join(tempSourcesDir.path, 'cadence_db'))
+          ..createSync(recursive: true);
+        final manualDir = Directory(
+          p.join(tempSourcesDir.path, 'cadence_manual'),
+        )..createSync(recursive: true);
+        final weeklyDir = Directory(
+          p.join(tempSourcesDir.path, 'cadence_weekly'),
+        )..createSync(recursive: true);
+
+        final dailyFile = File(p.join(dailyDir.path, 'daily.log'))
+          ..writeAsBytesSync([1, 2]);
+        final dbFile = File(p.join(dbDir.path, 'app_db.bak'))
+          ..writeAsBytesSync([3, 4, 5]);
+        final manualFile = File(p.join(manualDir.path, 'manual.txt'))
+          ..writeAsBytesSync([6]);
+        final weeklyFile = File(p.join(weeklyDir.path, 'weekly.txt'))
+          ..writeAsBytesSync([7]);
+
+        // Start on Monday Nov 2, 2026 at 00:55 (target monthly day = 1 -> catch-up due!).
+        // dailyFile modified Nov 1 (matches global Yesterday), dbFile older (Oct 20) -> needs All Files override.
+        dailyFile.setLastModifiedSync(DateTime(2026, 11, 1, 14, 0));
+        dbFile.setLastModifiedSync(DateTime(2026, 10, 20, 12, 0));
+        manualFile.setLastModifiedSync(DateTime(2026, 11, 1, 12, 0));
+        weeklyFile.setLastModifiedSync(DateTime(2026, 11, 1, 12, 0));
+
+        DateTime clock = DateTime(2026, 11, 2, 0, 55);
+        final server = FakeRemoteServerState();
+        final provider = buildProvider(
+          server: server,
+          nowProvider: () => clock,
+        );
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setUseMultipleSources(true)
+          ..setDateType(FtpDateType.modified)
+          ..setDateMode(FtpDateMode.yesterday)
+          ..setSkipIfExists(true)
+          ..setEnableSchedule(true)
+          ..setRunTime(const TimeOfDay(hour: 1, minute: 0))
+          ..setRunEndTime(const TimeOfDay(hour: 1, minute: 0))
+          ..setOnCompletionAction('repeat')
+          ..setSourceNameAt(0, 'Daily')
+          ..setSourcePathAt(0, dailyDir.path)
+          ..setSourceFtpDestAt(0, 'Daily')
+          ..setSourceScheduleModeAt(0, FtpSourceScheduleMode.everyRun)
+          ..addUploadSource()
+          ..setSourceNameAt(1, 'Database')
+          ..setSourcePathAt(1, dbDir.path)
+          ..setSourceFtpDestAt(1, 'Database')
+          ..setSourceScheduleModeAt(1, FtpSourceScheduleMode.monthly)
+          ..setSourceMonthlyDayAt(1, 1)
+          ..setSourceDateFilterModeAt(1, FtpSourceDateFilterMode.allFiles)
+          ..addUploadSource()
+          ..setSourceNameAt(2, 'ManualOnly')
+          ..setSourcePathAt(2, manualDir.path)
+          ..setSourceFtpDestAt(2, 'Manual')
+          ..setSourceScheduleModeAt(2, FtpSourceScheduleMode.manualOnly)
+          ..addUploadSource()
+          ..setSourceNameAt(3, 'WeeklyFri')
+          ..setSourcePathAt(3, weeklyDir.path)
+          ..setSourceFtpDestAt(3, 'Weekly')
+          ..setSourceScheduleModeAt(3, FtpSourceScheduleMode.weekly)
+          ..setSourceWeeklyDayAt(3, 7, false)
+          ..setSourceWeeklyDayAt(3, 5, true); // Friday only
+
+        provider.startSchedule();
+        clock = DateTime(2026, 11, 2, 1, 0); // Monday
+        await provider.triggerScheduleTickForTest();
+
+        expect(server.uploadCalls, ['Daily/daily.log', 'Database/app_db.bak']);
+        expect(provider.errors, 0);
+        expect(provider.uploadSources[1].lastCompletedMonth, '2026-11');
+        expect(provider.uploadSources[1].lastCompletedAt, isNotNull);
+
+        // Persists across reloadSettings().
+        await _flushDbWrites();
+        await provider.reloadSettings();
+        expect(provider.uploadSources[1].lastCompletedMonth, '2026-11');
+
+        // Next day (Tuesday Nov 3): Daily runs (with new yesterday file), Database is skipped because 2026-11 is done.
+        final dailyFileNov2 = File(p.join(dailyDir.path, 'daily_nov2.log'))
+          ..writeAsBytesSync([9, 10]);
+        dailyFileNov2.setLastModifiedSync(DateTime(2026, 11, 2, 18, 0));
+        server.uploadCalls.clear();
+        clock = DateTime(2026, 11, 3, 1, 0);
+        await provider.triggerScheduleTickForTest();
+        expect(server.uploadCalls, ['Daily/daily_nov2.log']);
+        expect(
+          provider.logs.any(
+            (l) => l.contains('already completed for 2026-11'),
+          ),
+          isTrue,
+        );
+
+        // Next month (Dec 1, 2026): Database becomes due again and marks 2026-12 after clean pass (even when skipped by size match).
+        server.uploadCalls.clear();
+        dailyFile.setLastModifiedSync(DateTime(2026, 11, 30, 10, 0));
+        // Update dbFile bytes to trigger fresh upload in Dec, or verify skip-only pass also marks completed.
+        clock = DateTime(2026, 12, 1, 1, 0);
+        await provider.triggerScheduleTickForTest();
+        // app_db.bak is skipped (matching size on server), daily.log uploaded -> Database still marks 2026-12!
+        expect(provider.uploadSources[1].lastCompletedMonth, '2026-12');
+        expect(
+          provider.logs.any(
+            (l) => l.contains(
+              'Monthly source "Database" marked completed for 2026-12',
+            ),
+          ),
+          isTrue,
+        );
+
+        // Reset monthly completion clears state cleanly.
+        provider.resetSourceMonthlyCompletionAt(1);
+        expect(provider.uploadSources[1].lastCompletedMonth, isNull);
+        expect(provider.uploadSources[1].lastCompletedAt, isNull);
+      },
+    );
+
+    test(
+      'monthly source does not mark completed on 0 matched files, dry run, error, or window cutoff, and resumes cleanly',
+      () async {
+        await LocalDbService().init('ftp_test_monthly_guards');
+        HistoryService().init('ftp_test_monthly_guards');
+
+        final dbDir = Directory(p.join(tempSourcesDir.path, 'monthly_guards'))
+          ..createSync(recursive: true);
+
+        DateTime clock = DateTime(2026, 11, 5, 0, 55);
+        final server = FakeRemoteServerState();
+        final provider = buildProvider(
+          server: server,
+          nowProvider: () => clock,
+        );
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setUseMultipleSources(true)
+          ..setDateType(FtpDateType.modified)
+          ..setSkipIfExists(true)
+          ..setRetryCount(1)
+          ..setEnableSchedule(true)
+          ..setRunTime(const TimeOfDay(hour: 1, minute: 0))
+          ..setRunEndTime(const TimeOfDay(hour: 2, minute: 0))
+          ..setOnCompletionAction('repeat')
+          ..setSourceNameAt(0, 'Database')
+          ..setSourcePathAt(0, dbDir.path)
+          ..setSourceFtpDestAt(0, 'DB')
+          ..setSourceScheduleModeAt(0, FtpSourceScheduleMode.monthly)
+          ..setSourceMonthlyDayAt(0, 1)
+          ..setSourceDateFilterModeAt(0, FtpSourceDateFilterMode.allFiles);
+
+        // 1) 0 matched files -> does NOT mark completed.
+        provider.startSchedule();
+        clock = DateTime(2026, 11, 5, 1, 0);
+        await provider.triggerScheduleTickForTest();
+        expect(provider.uploadSources[0].lastCompletedMonth, isNull);
+        expect(
+          provider.logs.any((l) => l.contains('matched 0 files')),
+          isTrue,
+        );
+
+        // Add two backup files now.
+        File(p.join(dbDir.path, 'a_done.bak')).writeAsBytesSync([1, 2, 3]);
+        File(p.join(dbDir.path, 'b_block.bak')).writeAsBytesSync([4, 5, 6]);
+
+        // 2) Dry run -> does NOT mark completed.
+        provider.setDryRun(true);
+        clock = DateTime(2026, 11, 6, 1, 0);
+        await provider.triggerScheduleTickForTest();
+        expect(provider.uploadSources[0].lastCompletedMonth, isNull);
+        expect(
+          provider.logs.any(
+            (l) => l.contains('dry run will not mark completed'),
+          ),
+          isTrue,
+        );
+        provider.setDryRun(false);
+
+        // 3) Upload error -> does NOT mark completed.
+        server.failUploadAttemptsRemaining = 1;
+        clock = DateTime(2026, 11, 7, 1, 0);
+        await provider.triggerScheduleTickForTest();
+        expect(provider.errors, 1);
+        expect(provider.uploadSources[0].lastCompletedMonth, isNull);
+
+        // Reset server state for window-cutoff test: a_done.bak succeeds, b_block.bak blocks until 02:00 End time.
+        server
+          ..dirs.clear()
+          ..dirs[''] = {}
+          ..uploadCalls.clear()
+          ..failUploadAttemptsRemaining = 0
+          ..blockFileName = 'b_block.bak'
+          ..uploadStartedSignal = Completer<void>();
+
+        clock = DateTime(2026, 11, 8, 1, 0);
+        final passFuture = provider.triggerScheduleTickForTest();
+        await server.uploadStartedSignal!.future;
+        clock = DateTime(2026, 11, 8, 2, 0); // Hit runEndTime
+        await provider.triggerScheduleTickForTest();
+        await passFuture;
+
+        expect(provider.uploadSources[0].lastCompletedMonth, isNull);
+        expect(server.getFile('DB', 'a_done.bak'), [1, 2, 3]);
+        expect(server.getFile('DB', 'b_block.bak'), isNull);
+
+        // 4) Next scheduled pass resumes: skips a_done.bak, uploads b_block.bak, and marks 2026-11 completed.
+        server
+          ..blockFileName = null
+          ..uploadStartedSignal = null
+          ..uploadCalls.clear();
+        clock = DateTime(2026, 11, 9, 1, 0);
+        await provider.triggerScheduleTickForTest();
+
+        expect(server.uploadCalls, ['DB/b_block.bak']);
+        expect(provider.filesSkipped, 1);
+        expect(provider.filesUploaded, 1);
+        expect(provider.errors, 0);
+        expect(provider.uploadSources[0].lastCompletedMonth, '2026-11');
+      },
+    );
+
+    test(
+      'runSelectedSources runs only chosen sources without mutating enabled flags or monthly completion unless requested, and zero-due scheduled pass skips FTP connect',
+      () async {
+        await LocalDbService().init('ftp_test_run_selected');
+        HistoryService().init('ftp_test_run_selected');
+
+        final dailyDir = Directory(p.join(tempSourcesDir.path, 'sel_daily'))
+          ..createSync(recursive: true);
+        final dbDir = Directory(p.join(tempSourcesDir.path, 'sel_db'))
+          ..createSync(recursive: true);
+        final manualDir = Directory(p.join(tempSourcesDir.path, 'sel_manual'))
+          ..createSync(recursive: true);
+
+        final dailyFile = File(p.join(dailyDir.path, 'd.txt'))
+          ..writeAsBytesSync([1]);
+        final dbFile = File(p.join(dbDir.path, 'db.bak'))
+          ..writeAsBytesSync([2, 3]);
+        final manualFile = File(p.join(manualDir.path, 'm.txt'))
+          ..writeAsBytesSync([4]);
+
+        dailyFile.setLastModifiedSync(DateTime(2026, 11, 23, 10, 0));
+        dbFile.setLastModifiedSync(DateTime(2026, 11, 10, 10, 0));
+        manualFile.setLastModifiedSync(DateTime(2026, 11, 23, 10, 0));
+
+        DateTime clock = DateTime(2026, 11, 24, 1, 0);
+        final server = FakeRemoteServerState();
+        final provider = buildProvider(
+          server: server,
+          nowProvider: () => clock,
+        );
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setUseMultipleSources(true)
+          ..setDateType(FtpDateType.modified)
+          ..setDateMode(FtpDateMode.yesterday)
+          ..setSkipIfExists(false)
+          ..setSourceNameAt(0, 'Daily')
+          ..setSourcePathAt(0, dailyDir.path)
+          ..setSourceFtpDestAt(0, 'Daily')
+          ..setSourceScheduleModeAt(0, FtpSourceScheduleMode.manualOnly)
+          ..addUploadSource()
+          ..setSourceNameAt(1, 'Database')
+          ..setSourcePathAt(1, dbDir.path)
+          ..setSourceFtpDestAt(1, 'Database')
+          ..setSourceEnabledAt(1, false)
+          ..setSourceScheduleModeAt(1, FtpSourceScheduleMode.monthly)
+          ..setSourceMonthlyDayAt(1, 28)
+          ..setSourceDateFilterModeAt(1, FtpSourceDateFilterMode.allFiles)
+          ..addUploadSource()
+          ..setSourceNameAt(2, 'Manual')
+          ..setSourcePathAt(2, manualDir.path)
+          ..setSourceFtpDestAt(2, 'Manual')
+          ..setSourceScheduleModeAt(2, FtpSourceScheduleMode.manualOnly);
+
+        // canArmSchedule is false when all enabled sources are Manual Only.
+        provider.setEnableSchedule(true);
+        expect(provider.hasSchedulableSources, isFalse);
+        expect(provider.canArmSchedule, isFalse);
+
+        // Manual Run Selected can run a disabled Monthly source by index without enabling it or marking month done.
+        await provider.runSelectedSources({1});
+        expect(server.uploadCalls, ['Database/db.bak']);
+        expect(provider.uploadSources[1].enabled, isFalse);
+        expect(provider.uploadSources[1].lastCompletedMonth, isNull);
+
+        // Run Selected with markMonthlyCompleted: true marks month done.
+        server.uploadCalls.clear();
+        await provider.runSelectedSources({1, 2}, markMonthlyCompleted: true);
+        expect(server.uploadCalls, ['Database/db.bak', 'Manual/m.txt']);
+        expect(provider.uploadSources[1].lastCompletedMonth, '2026-11');
+        expect(provider.uploadSources[1].enabled, isFalse);
+
+        // Scheduled pass when only enabled schedulable source is Monthly Day 28 (currently Nov 24) -> 0 due -> 0 FTP connects.
+        provider
+          ..setSourceEnabledAt(1, true)
+          ..setSourceMonthlyDayAt(1, 28)
+          ..resetSourceMonthlyCompletionAt(1)
+          ..setRunTime(const TimeOfDay(hour: 2, minute: 0))
+          ..setRunEndTime(const TimeOfDay(hour: 2, minute: 0))
+          ..setOnCompletionAction('repeat');
+        expect(provider.canArmSchedule, isTrue);
+
+        server
+          ..connectCount = 0
+          ..uploadCalls.clear();
+        provider.startSchedule();
+        clock = DateTime(2026, 11, 24, 2, 0);
+        await provider.triggerScheduleTickForTest();
+
+        expect(server.connectCount, 0);
+        expect(server.uploadCalls, isEmpty);
+        expect(provider.isScheduleArmed, isTrue);
+        expect(provider.nextScheduledRun, DateTime(2026, 11, 25, 2, 0));
       },
     );
   });
