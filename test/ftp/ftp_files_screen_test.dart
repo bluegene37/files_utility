@@ -529,26 +529,27 @@ void main() {
       final uploadedNames = <String>[];
       final fakeClient = _RecordingNoopFtpClient(uploadedNames);
 
-      final provider = FtpFilesProvider(
-        clientFactory: (_) => fakeClient,
-        nowProvider: () => DateTime(2026, 11, 24, 9, 0),
-        persistSettings: false,
-      )
-        ..setHost('ftp.example.com')
-        ..setUseMultipleSources(true)
-        ..setEnableSchedule(true)
-        ..setSkipIfExists(false)
-        ..setDateType(FtpDateType.modified)
-        ..setDateMode(FtpDateMode.allFiles)
-        ..setSourceNameAt(0, 'Daily')
-        ..setSourcePathAt(0, dailyDir.path)
-        ..addUploadSource()
-        ..setSourceNameAt(1, 'Database')
-        ..setSourcePathAt(1, dbDir.path)
-        ..setSourceScheduleModeAt(1, FtpSourceScheduleMode.monthly)
-        ..setSourceMonthlyDayAt(1, 1)
-        ..setSourceDateFilterModeAt(1, FtpSourceDateFilterMode.lastNDays)
-        ..setSourceDateFilterDaysAt(1, 30);
+      final provider =
+          FtpFilesProvider(
+              clientFactory: (_) => fakeClient,
+              nowProvider: () => DateTime(2026, 11, 24, 9, 0),
+              persistSettings: false,
+            )
+            ..setHost('ftp.example.com')
+            ..setUseMultipleSources(true)
+            ..setEnableSchedule(true)
+            ..setSkipIfExists(false)
+            ..setDateType(FtpDateType.modified)
+            ..setDateMode(FtpDateMode.allFiles)
+            ..setSourceNameAt(0, 'Daily')
+            ..setSourcePathAt(0, dailyDir.path)
+            ..addUploadSource()
+            ..setSourceNameAt(1, 'Database')
+            ..setSourcePathAt(1, dbDir.path)
+            ..setSourceScheduleModeAt(1, FtpSourceScheduleMode.monthly)
+            ..setSourceMonthlyDayAt(1, 1)
+            ..setSourceDateFilterModeAt(1, FtpSourceDateFilterMode.lastNDays)
+            ..setSourceDateFilterDaysAt(1, 30);
 
       provider.uploadSources[1] = provider.uploadSources[1].copyWith(
         lastCompletedMonth: '2026-11',
@@ -572,7 +573,9 @@ void main() {
       expect(find.byKey(const Key('ftp_source_schedule_0')), findsOneWidget);
       expect(find.byKey(const Key('ftp_source_date_filter_0')), findsOneWidget);
 
-      final monthlyDayFinder = find.byKey(const Key('ftp_source_monthly_day_1'));
+      final monthlyDayFinder = find.byKey(
+        const Key('ftp_source_monthly_day_1'),
+      );
       await tester.ensureVisible(monthlyDayFinder);
       await tester.pumpAndSettle();
       expect(monthlyDayFinder, findsOneWidget);
@@ -638,13 +641,14 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      final provider = FtpFilesProvider(
-        clientFactory: (_) => _NoopFtpClient(),
-        persistSettings: false,
-      )
-        ..setEnableSchedule(true)
-        ..setRunTime(const TimeOfDay(hour: 2, minute: 0))
-        ..setRunEndTime(const TimeOfDay(hour: 2, minute: 0));
+      final provider =
+          FtpFilesProvider(
+              clientFactory: (_) => _NoopFtpClient(),
+              persistSettings: false,
+            )
+            ..setEnableSchedule(true)
+            ..setRunTime(const TimeOfDay(hour: 2, minute: 0))
+            ..setRunEndTime(const TimeOfDay(hour: 2, minute: 0));
       addTearDown(provider.dispose);
 
       await tester.pumpWidget(buildFtpTestApp(provider));
@@ -710,10 +714,7 @@ void main() {
       await tester.tap(find.text('Monthly (Once a Month)').last);
       await tester.pumpAndSettle();
 
-      expect(
-        provider.scheduleFrequency,
-        FtpScheduleFrequency.monthly,
-      );
+      expect(provider.scheduleFrequency, FtpScheduleFrequency.monthly);
       expect(find.byKey(const Key('ftp_schedule_day_1')), findsNothing);
 
       final monthlyDropdown = find.byKey(
@@ -730,7 +731,10 @@ void main() {
 
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Monthly (Last day) (Repeat)'), findsOneWidget);
+      expect(
+        find.textContaining('Monthly (Last day) (Repeat)'),
+        findsOneWidget,
+      );
       expect(find.textContaining('–'), findsNothing);
     },
   );

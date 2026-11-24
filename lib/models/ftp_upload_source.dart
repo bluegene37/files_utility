@@ -80,7 +80,7 @@ import 'package:path/path.dart' as p;
 //   final String ftpDest;
 //   final int runOrder;
 //   final bool enabled;
-// 
+//
 //   const FtpUploadSource({
 //     this.name = '',
 //     this.localPath,
@@ -89,15 +89,15 @@ import 'package:path/path.dart' as p;
 //     this.runOrder = 1,
 //     this.enabled = true,
 //   });
-// 
+//
 //   List<String> get parsedSubfolders => subfolders
 //       .split(',')
 //       .map((s) => s.trim())
 //       .where((s) => s.isNotEmpty)
 //       .toList();
-// 
+//
 //   bool get isValid => localPath != null && localPath!.trim().isNotEmpty;
-// 
+//
 //   String get displayName {
 //     final trimmed = name.trim();
 //     if (trimmed.isNotEmpty) return trimmed;
@@ -108,7 +108,7 @@ import 'package:path/path.dart' as p;
 //     }
 //     return 'Source';
 //   }
-// 
+//
 //   FtpUploadSource copyWith({
 //     String? name,
 //     String? localPath,
@@ -127,7 +127,7 @@ import 'package:path/path.dart' as p;
 //       enabled: enabled ?? this.enabled,
 //     );
 //   }
-// 
+//
 //   Map<String, dynamic> toJson() {
 //     return {
 //       'name': name,
@@ -138,7 +138,7 @@ import 'package:path/path.dart' as p;
 //       'enabled': enabled,
 //     };
 //   }
-// 
+//
 //   factory FtpUploadSource.fromJson(Map<String, dynamic> json) {
 //     return FtpUploadSource(
 //       name: json['name'] as String? ?? '',

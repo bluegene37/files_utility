@@ -197,6 +197,8 @@ class FtpFilesProvider with ChangeNotifier {
   bool _saveInFlight = false;
   bool _savePending = false;
   Completer<void>? _saveIdleCompleter;
+  // Gene - Nov, 24, 2026: Track loaded profile ID so in-flight settings writes abort if profile switches or provider disposes.
+  String? _loadedProfileId;
 
   FtpFilesProvider({
     FtpClientAdapter Function(FtpConnectionConfig config)? clientFactory,
@@ -215,7 +217,12 @@ class FtpFilesProvider with ChangeNotifier {
     }
   }
 
+  // Gene - Nov, 24, 2026: Clear pending saves on profile switch before reloading settings.
+  // void _onProfileChanged() {
+  //   reloadSettings();
+  // }
   void _onProfileChanged() {
+    _savePending = false;
     reloadSettings();
   }
 
@@ -226,9 +233,20 @@ class FtpFilesProvider with ChangeNotifier {
     }
   }
 
+  // Gene - Nov, 24, 2026: Clear pending saves on dispose so in-flight writes cannot continue after disposal.
+  // @override
+  // void dispose() {
+  //   _disposed = true;
+  //   LocalDbService().removeListener(_onProfileChanged);
+  //   _scheduleTimer?.cancel();
+  //   _scheduleTimer = null;
+  //   unawaited(_activeClient?.disconnect());
+  //   super.dispose();
+  // }
   @override
   void dispose() {
     _disposed = true;
+    _savePending = false;
     LocalDbService().removeListener(_onProfileChanged);
     _scheduleTimer?.cancel();
     _scheduleTimer = null;
@@ -809,6 +827,8 @@ class FtpFilesProvider with ChangeNotifier {
   Future<void> _loadSettings() async {
     final db = LocalDbService();
     final profileId = db.currentProfileId;
+    // Gene - Nov, 24, 2026: Record loaded profile ID for cross-profile write guards.
+    _loadedProfileId = profileId;
 
     host = db.getString('ftp_host') ?? '';
     protocol = FtpProtocol.fromStorage(db.getString('ftp_protocol'));
@@ -911,7 +931,10 @@ class FtpFilesProvider with ChangeNotifier {
     scheduleFrequency = FtpScheduleFrequency.fromStorage(
       db.getString('ftp_scheduleFrequency'),
     );
-    scheduleMonthlyDay = (db.getInt('ftp_scheduleMonthlyDay') ?? 1).clamp(0, 31);
+    scheduleMonthlyDay = (db.getInt('ftp_scheduleMonthlyDay') ?? 1).clamp(
+      0,
+      31,
+    );
 
     onCompletionAction = db.getString('ftp_onCompletionAction') ?? 'repeat';
 
@@ -924,7 +947,9 @@ class FtpFilesProvider with ChangeNotifier {
   }
 
   Future<void> _saveSettings() {
-    if (!_persistSettings) return Future.value();
+    // if (!_persistSettings) return Future.value();
+    // Gene - Nov, 24, 2026: Skip scheduling settings saves after provider disposal.
+    if (!_persistSettings || _disposed) return Future.value();
     _savePending = true;
     _saveIdleCompleter ??= Completer<void>();
     if (!_saveInFlight) {
@@ -978,79 +1003,153 @@ class FtpFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Gene - Nov, 24, 2026: Guard each sequential SQLite write against profile switching or provider disposal.
+  // Future<void> _writeSettings() async {
+  //   final db = LocalDbService();
+  //   final profileId = db.currentProfileId;
+  //   if (db.currentProfileId != profileId) return;
+  //
+  //   await db.setOrRemoveString('ftp_host', _nullIfEmpty(host));
+  //   await db.setString('ftp_protocol', protocol.storageKey);
+  //   await db.setInt('ftp_port', port);
+  //   await db.setOrRemoveString('ftp_username', _nullIfEmpty(username));
+  //
+  //   if (password.isEmpty) {
+  //     await db.setOrRemoveString('ftp_password', null);
+  //   } else {
+  //     await db.setString(
+  //       'ftp_password',
+  //       CredentialObfuscator.encode(password, profileId: profileId),
+  //     );
+  //   }
+  //
+  //   await db.setString('ftp_transferMode', transferMode.storageKey);
+  //   await db.setInt('ftp_timeoutSeconds', timeoutSeconds);
+  //
+  //   await db.setBool('ftp_useMultipleSources', useMultipleSources);
+  //   await db.setOrRemoveString('ftp_sourcePath', sourcePath);
+  //   await db.setOrRemoveString('ftp_subfolders', _nullIfEmpty(subfolders));
+  //   await db.setOrRemoveString(
+  //     'ftp_remoteDirectory',
+  //     _nullIfEmpty(remoteDirectory),
+  //   );
+  //   await db.setString(
+  //     'ftp_uploadSources',
+  //     jsonEncode(uploadSources.map((s) => s.toJson()).toList()),
+  //   );
+  //
+  //   await db.setString('ftp_dateMode', dateMode.name);
+  //   await db.setInt('ftp_daysAgo', daysAgo);
+  //   await db.setString('ftp_dateType', dateType.name);
+  //
+  //   await db.setInt('ftp_specificDate_year', specificDate.year);
+  //   await db.setInt('ftp_specificDate_month', specificDate.month);
+  //   await db.setInt('ftp_specificDate_day', specificDate.day);
+  //
+  //   await db.setInt('ftp_fromDate_year', fromDate.year);
+  //   await db.setInt('ftp_fromDate_month', fromDate.month);
+  //   await db.setInt('ftp_fromDate_day', fromDate.day);
+  //
+  //   await db.setInt('ftp_toDate_year', toDate.year);
+  //   await db.setInt('ftp_toDate_month', toDate.month);
+  //   await db.setInt('ftp_toDate_day', toDate.day);
+  //
+  //   await db.setBool('ftp_includeSubfolders', includeSubfolders);
+  //   await db.setBool('ftp_skipIfExists', skipIfExists);
+  //   await db.setBool('ftp_verifySizeAfterUpload', verifySizeAfterUpload);
+  //   await db.setBool('ftp_dryRun', dryRun);
+  //   await db.setInt('ftp_retryCount', retryCount);
+  //   await db.setInt('ftp_retryDelaySeconds', retryDelaySeconds);
+  //   await db.setInt('ftp_logInterval', logInterval);
+  //   // Gene - Nov, 23, 2026: Persist FTP log retention days.
+  //   await db.setInt('ftp_logKeepDays', logKeepDays);
+  //
+  //   await db.setBool('ftp_enableSchedule', enableSchedule);
+  //   await db.setInt('ftp_runHour', runTime.hour);
+  //   await db.setInt('ftp_runMinute', runTime.minute);
+  //   // Gene - Nov, 24, 2026: Persist schedule window end time.
+  //   await db.setInt('ftp_runEndHour', runEndTime.hour);
+  //   await db.setInt('ftp_runEndMinute', runEndTime.minute);
+  //   for (int day = 1; day <= 7; day++) {
+  //     await db.setBool('ftp_runDay_$day', runDays[day] ?? true);
+  //   }
+  //   // Gene - Nov, 24, 2026: Persist global schedule frequency and monthly day.
+  //   await db.setString('ftp_scheduleFrequency', scheduleFrequency.name);
+  //   await db.setInt('ftp_scheduleMonthlyDay', scheduleMonthlyDay);
+  //   await db.setString('ftp_onCompletionAction', onCompletionAction);
+  // }
   Future<void> _writeSettings() async {
     final db = LocalDbService();
-    final profileId = db.currentProfileId;
-    if (db.currentProfileId != profileId) return;
+    final expectedProfileId = _loadedProfileId ?? db.currentProfileId;
+    bool isAborted() => _disposed || db.currentProfileId != expectedProfileId;
+    if (isAborted()) return;
 
-    await db.setOrRemoveString('ftp_host', _nullIfEmpty(host));
-    await db.setString('ftp_protocol', protocol.storageKey);
-    await db.setInt('ftp_port', port);
-    await db.setOrRemoveString('ftp_username', _nullIfEmpty(username));
+    final writes = <Future<void> Function()>[
+      () => db.setOrRemoveString('ftp_host', _nullIfEmpty(host)),
+      () => db.setString('ftp_protocol', protocol.storageKey),
+      () => db.setInt('ftp_port', port),
+      () => db.setOrRemoveString('ftp_username', _nullIfEmpty(username)),
+      () => password.isEmpty
+          ? db.setOrRemoveString('ftp_password', null)
+          : db.setString(
+              'ftp_password',
+              CredentialObfuscator.encode(
+                password,
+                profileId: expectedProfileId,
+              ),
+            ),
+      () => db.setString('ftp_transferMode', transferMode.storageKey),
+      () => db.setInt('ftp_timeoutSeconds', timeoutSeconds),
+      () => db.setBool('ftp_useMultipleSources', useMultipleSources),
+      () => db.setOrRemoveString('ftp_sourcePath', sourcePath),
+      () => db.setOrRemoveString('ftp_subfolders', _nullIfEmpty(subfolders)),
+      () => db.setOrRemoveString(
+        'ftp_remoteDirectory',
+        _nullIfEmpty(remoteDirectory),
+      ),
+      () => db.setString(
+        'ftp_uploadSources',
+        jsonEncode(uploadSources.map((s) => s.toJson()).toList()),
+      ),
+      () => db.setString('ftp_dateMode', dateMode.name),
+      () => db.setInt('ftp_daysAgo', daysAgo),
+      () => db.setString('ftp_dateType', dateType.name),
+      () => db.setInt('ftp_specificDate_year', specificDate.year),
+      () => db.setInt('ftp_specificDate_month', specificDate.month),
+      () => db.setInt('ftp_specificDate_day', specificDate.day),
+      () => db.setInt('ftp_fromDate_year', fromDate.year),
+      () => db.setInt('ftp_fromDate_month', fromDate.month),
+      () => db.setInt('ftp_fromDate_day', fromDate.day),
+      () => db.setInt('ftp_toDate_year', toDate.year),
+      () => db.setInt('ftp_toDate_month', toDate.month),
+      () => db.setInt('ftp_toDate_day', toDate.day),
+      () => db.setBool('ftp_includeSubfolders', includeSubfolders),
+      () => db.setBool('ftp_skipIfExists', skipIfExists),
+      () => db.setBool('ftp_verifySizeAfterUpload', verifySizeAfterUpload),
+      () => db.setBool('ftp_dryRun', dryRun),
+      () => db.setInt('ftp_retryCount', retryCount),
+      () => db.setInt('ftp_retryDelaySeconds', retryDelaySeconds),
+      () => db.setInt('ftp_logInterval', logInterval),
+      // Gene - Nov, 23, 2026: Persist FTP log retention days.
+      () => db.setInt('ftp_logKeepDays', logKeepDays),
+      () => db.setBool('ftp_enableSchedule', enableSchedule),
+      () => db.setInt('ftp_runHour', runTime.hour),
+      () => db.setInt('ftp_runMinute', runTime.minute),
+      // Gene - Nov, 24, 2026: Persist schedule window end time.
+      () => db.setInt('ftp_runEndHour', runEndTime.hour),
+      () => db.setInt('ftp_runEndMinute', runEndTime.minute),
+      for (int day = 1; day <= 7; day++)
+        () => db.setBool('ftp_runDay_$day', runDays[day] ?? true),
+      // Gene - Nov, 24, 2026: Persist global schedule frequency and monthly day.
+      () => db.setString('ftp_scheduleFrequency', scheduleFrequency.name),
+      () => db.setInt('ftp_scheduleMonthlyDay', scheduleMonthlyDay),
+      () => db.setString('ftp_onCompletionAction', onCompletionAction),
+    ];
 
-    if (password.isEmpty) {
-      await db.setOrRemoveString('ftp_password', null);
-    } else {
-      await db.setString(
-        'ftp_password',
-        CredentialObfuscator.encode(password, profileId: profileId),
-      );
+    for (final write in writes) {
+      if (isAborted()) return;
+      await write();
     }
-
-    await db.setString('ftp_transferMode', transferMode.storageKey);
-    await db.setInt('ftp_timeoutSeconds', timeoutSeconds);
-
-    await db.setBool('ftp_useMultipleSources', useMultipleSources);
-    await db.setOrRemoveString('ftp_sourcePath', sourcePath);
-    await db.setOrRemoveString('ftp_subfolders', _nullIfEmpty(subfolders));
-    await db.setOrRemoveString(
-      'ftp_remoteDirectory',
-      _nullIfEmpty(remoteDirectory),
-    );
-    await db.setString(
-      'ftp_uploadSources',
-      jsonEncode(uploadSources.map((s) => s.toJson()).toList()),
-    );
-
-    await db.setString('ftp_dateMode', dateMode.name);
-    await db.setInt('ftp_daysAgo', daysAgo);
-    await db.setString('ftp_dateType', dateType.name);
-
-    await db.setInt('ftp_specificDate_year', specificDate.year);
-    await db.setInt('ftp_specificDate_month', specificDate.month);
-    await db.setInt('ftp_specificDate_day', specificDate.day);
-
-    await db.setInt('ftp_fromDate_year', fromDate.year);
-    await db.setInt('ftp_fromDate_month', fromDate.month);
-    await db.setInt('ftp_fromDate_day', fromDate.day);
-
-    await db.setInt('ftp_toDate_year', toDate.year);
-    await db.setInt('ftp_toDate_month', toDate.month);
-    await db.setInt('ftp_toDate_day', toDate.day);
-
-    await db.setBool('ftp_includeSubfolders', includeSubfolders);
-    await db.setBool('ftp_skipIfExists', skipIfExists);
-    await db.setBool('ftp_verifySizeAfterUpload', verifySizeAfterUpload);
-    await db.setBool('ftp_dryRun', dryRun);
-    await db.setInt('ftp_retryCount', retryCount);
-    await db.setInt('ftp_retryDelaySeconds', retryDelaySeconds);
-    await db.setInt('ftp_logInterval', logInterval);
-    // Gene - Nov, 23, 2026: Persist FTP log retention days.
-    await db.setInt('ftp_logKeepDays', logKeepDays);
-
-    await db.setBool('ftp_enableSchedule', enableSchedule);
-    await db.setInt('ftp_runHour', runTime.hour);
-    await db.setInt('ftp_runMinute', runTime.minute);
-    // Gene - Nov, 24, 2026: Persist schedule window end time.
-    await db.setInt('ftp_runEndHour', runEndTime.hour);
-    await db.setInt('ftp_runEndMinute', runEndTime.minute);
-    for (int day = 1; day <= 7; day++) {
-      await db.setBool('ftp_runDay_$day', runDays[day] ?? true);
-    }
-    // Gene - Nov, 24, 2026: Persist global schedule frequency and monthly day.
-    await db.setString('ftp_scheduleFrequency', scheduleFrequency.name);
-    await db.setInt('ftp_scheduleMonthlyDay', scheduleMonthlyDay);
-    await db.setString('ftp_onCompletionAction', onCompletionAction);
   }
 
   String? _nullIfEmpty(String value) {
@@ -1278,8 +1377,9 @@ class FtpFilesProvider with ChangeNotifier {
   void setSourceDateFilterDaysAt(int index, int days) {
     if (index < 0 || index >= uploadSources.length) return;
     final current = uploadSources[index];
-    final minDays =
-        current.dateFilterMode == FtpSourceDateFilterMode.lastNDays ? 1 : 0;
+    final minDays = current.dateFilterMode == FtpSourceDateFilterMode.lastNDays
+        ? 1
+        : 0;
     uploadSources[index] = current.copyWith(
       dateFilterDays: days.clamp(minDays, 3650),
     );
@@ -1653,8 +1753,9 @@ class FtpFilesProvider with ChangeNotifier {
     for (final entry in rawList) {
       if (entry is! Map) continue;
       final src = FtpUploadSource.fromJson(Map<String, dynamic>.from(entry));
-      final minDays =
-          src.dateFilterMode == FtpSourceDateFilterMode.lastNDays ? 1 : 0;
+      final minDays = src.dateFilterMode == FtpSourceDateFilterMode.lastNDays
+          ? 1
+          : 0;
       parsed.add(
         FtpUploadSource(
           name: src.name.trim(),
@@ -2867,6 +2968,8 @@ class FtpFilesProvider with ChangeNotifier {
       );
 
       try {
+        // Gene - Nov, 24, 2026: Sort discovered subdirectories deterministically across filesystems.
+        final childDirs = <String>[];
         await for (final entity in Directory(
           currentPath,
         ).list(recursive: false, followLinks: false)) {
@@ -2875,10 +2978,13 @@ class FtpFilesProvider with ChangeNotifier {
           if (_shouldAbortPass || _checkWindowExpiration()) break;
           if (entity is Directory) {
             if (await resolvesWithinRoot(rootPath, entity.path)) {
-              queue.add(entity.path);
+              // queue.add(entity.path);
+              childDirs.add(entity.path);
             }
           }
         }
+        childDirs.sort();
+        queue.addAll(childDirs);
       } catch (e) {
         final safeErr = CredentialObfuscator.redact(e.toString(), password);
         _addLog('⚠️ Unable to list directory $currentPath: $safeErr');
@@ -3091,6 +3197,9 @@ class FtpFilesProvider with ChangeNotifier {
     if (candidateFiles.isEmpty) {
       return const _SubfolderScanResult(checkedCount: 0, matched: []);
     }
+
+    // Gene - Nov, 24, 2026: Sort scanned files deterministically across Linux/macOS/Windows filesystems.
+    candidateFiles.sort((a, b) => a.path.compareTo(b.path));
 
     Map<String, DateTime> creationDates = const {};
     if (dateType == FtpDateType.creation) {
@@ -3809,8 +3918,7 @@ class FtpFilesProvider with ChangeNotifier {
       await _fileLogger.info('FTP', skipMsg);
     }
     if (useMultipleSources && isScheduledRun && activeEntries.isEmpty) {
-      const noDueMsg =
-          'ℹ️ No upload sources are due for this scheduled pass.';
+      const noDueMsg = 'ℹ️ No upload sources are due for this scheduled pass.';
       _addLog(noDueMsg);
       await _fileLogger.info('FTP', noDueMsg);
     }
@@ -4460,96 +4568,96 @@ class FtpFilesProvider with ChangeNotifier {
           _addLog(
             '⛔ Run stopped. Uploaded: ${_numFmt.format(filesUploaded)}, Skipped: ${_numFmt.format(filesSkipped)}, Errors: ${_numFmt.format(errors)}.',
           );
-        //         } else if (stoppedByWindow) {
-        //           final endLabel = _formatTime24(runEndTime);
-        //           if (isScheduledRun &&
-        //               onCompletionAction == 'repeat' &&
-        //               enableSchedule &&
-        //               hasCheckedScheduleDays) {
-        //             final next = computeNextScheduledRun(
-        //               now: _nowProvider(),
-        //               runTime: runTime,
-        //               runDays: runDays,
-        //             );
-        //             nextScheduledRun = next;
-        //             if (next != null) {
-        //               final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-        //               currentStatus =
-        //                   '⏸ Window ended ($endLabel). Next run at $formatted';
-        //               _addLog(
-        //                 '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
-        //               );
-        //               _ensureScheduleTimerRunning();
-        //             } else {
-        //               isScheduleArmed = false;
-        //               _scheduleTimer?.cancel();
-        //               _scheduleTimer = null;
-        //               currentStatus = '⏰ Window ended ($endLabel)';
-        //               _addLog(
-        //                 '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
-        //               );
-        //             }
-        //           } else {
-        //             isScheduleArmed = false;
-        //             nextScheduledRun = null;
-        //             _scheduleTimer?.cancel();
-        //             _scheduleTimer = null;
-        //             currentStatus = '⏰ Window ended ($endLabel)';
-        //             _addLog(
-        //               '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
-        //             );
-        //           }
-        //         } else if (isScheduledRun) {
-        //           if (onCompletionAction == 'repeat' &&
-        //               enableSchedule &&
-        //               hasCheckedScheduleDays) {
-        //             final next = computeNextScheduledRun(
-        //               now: _nowProvider(),
-        //               runTime: runTime,
-        //               runDays: runDays,
-        //             );
-        //             nextScheduledRun = next;
-        //             if (next != null) {
-        //               final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-        //               currentStatus = hasErrors
-        //                   ? '⚠️ Completed with $errors error(s). Next run at $formatted'
-        //                   : '🏁 Completed. Next run at $formatted';
-        //               _addLog(
-        //                 '🏁 ${dryRun ? "Dry run" : "Upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
-        //               );
-        //               _ensureScheduleTimerRunning();
-        //             } else {
-        //               isScheduleArmed = false;
-        //               _scheduleTimer?.cancel();
-        //               _scheduleTimer = null;
-        //               currentStatus = hadFatalError
-        //                   ? '❌ Error'
-        //                   : (errors > 0
-        //                         ? '⚠️ Completed with $errors error(s)'
-        //                         : '✅ Completed');
-        //             }
-        //           } else {
-        //             isScheduleArmed = false;
-        //             nextScheduledRun = null;
-        //             _scheduleTimer?.cancel();
-        //             _scheduleTimer = null;
-        //             currentStatus = hadFatalError
-        //                 ? '❌ Error'
-        //                 : (errors > 0
-        //                       ? '⚠️ Completed with $errors error(s)'
-        //                       : '✅ Completed');
-        //             _addLog(
-        //               '✅ Scheduled ${dryRun ? "dry run" : "upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
-        //             );
-        //           }
-        //         } else {
-        //           if (isScheduleArmed) {
-        //             final next = computeNextScheduledRun(
-        //               now: _nowProvider(),
-        //               runTime: runTime,
-        //               runDays: runDays,
-        //             );
-        // Gene - Nov, 24, 2026: Re-arm repeat runs using hasValidScheduleTarget and global frequency/monthlyDay.
+          //         } else if (stoppedByWindow) {
+          //           final endLabel = _formatTime24(runEndTime);
+          //           if (isScheduledRun &&
+          //               onCompletionAction == 'repeat' &&
+          //               enableSchedule &&
+          //               hasCheckedScheduleDays) {
+          //             final next = computeNextScheduledRun(
+          //               now: _nowProvider(),
+          //               runTime: runTime,
+          //               runDays: runDays,
+          //             );
+          //             nextScheduledRun = next;
+          //             if (next != null) {
+          //               final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+          //               currentStatus =
+          //                   '⏸ Window ended ($endLabel). Next run at $formatted';
+          //               _addLog(
+          //                 '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
+          //               );
+          //               _ensureScheduleTimerRunning();
+          //             } else {
+          //               isScheduleArmed = false;
+          //               _scheduleTimer?.cancel();
+          //               _scheduleTimer = null;
+          //               currentStatus = '⏰ Window ended ($endLabel)';
+          //               _addLog(
+          //                 '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+          //               );
+          //             }
+          //           } else {
+          //             isScheduleArmed = false;
+          //             nextScheduledRun = null;
+          //             _scheduleTimer?.cancel();
+          //             _scheduleTimer = null;
+          //             currentStatus = '⏰ Window ended ($endLabel)';
+          //             _addLog(
+          //               '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+          //             );
+          //           }
+          //         } else if (isScheduledRun) {
+          //           if (onCompletionAction == 'repeat' &&
+          //               enableSchedule &&
+          //               hasCheckedScheduleDays) {
+          //             final next = computeNextScheduledRun(
+          //               now: _nowProvider(),
+          //               runTime: runTime,
+          //               runDays: runDays,
+          //             );
+          //             nextScheduledRun = next;
+          //             if (next != null) {
+          //               final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+          //               currentStatus = hasErrors
+          //                   ? '⚠️ Completed with $errors error(s). Next run at $formatted'
+          //                   : '🏁 Completed. Next run at $formatted';
+          //               _addLog(
+          //                 '🏁 ${dryRun ? "Dry run" : "Upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
+          //               );
+          //               _ensureScheduleTimerRunning();
+          //             } else {
+          //               isScheduleArmed = false;
+          //               _scheduleTimer?.cancel();
+          //               _scheduleTimer = null;
+          //               currentStatus = hadFatalError
+          //                   ? '❌ Error'
+          //                   : (errors > 0
+          //                         ? '⚠️ Completed with $errors error(s)'
+          //                         : '✅ Completed');
+          //             }
+          //           } else {
+          //             isScheduleArmed = false;
+          //             nextScheduledRun = null;
+          //             _scheduleTimer?.cancel();
+          //             _scheduleTimer = null;
+          //             currentStatus = hadFatalError
+          //                 ? '❌ Error'
+          //                 : (errors > 0
+          //                       ? '⚠️ Completed with $errors error(s)'
+          //                       : '✅ Completed');
+          //             _addLog(
+          //               '✅ Scheduled ${dryRun ? "dry run" : "upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+          //             );
+          //           }
+          //         } else {
+          //           if (isScheduleArmed) {
+          //             final next = computeNextScheduledRun(
+          //               now: _nowProvider(),
+          //               runTime: runTime,
+          //               runDays: runDays,
+          //             );
+          // Gene - Nov, 24, 2026: Re-arm repeat runs using hasValidScheduleTarget and global frequency/monthlyDay.
         } else if (stoppedByWindow) {
           final endLabel = _formatTime24(runEndTime);
           if (isScheduledRun &&

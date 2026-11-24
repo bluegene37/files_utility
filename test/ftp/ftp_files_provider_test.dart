@@ -790,16 +790,28 @@ void main() {
         expect(records.first.status, 'Error');
         expect(records.first.errors, 1);
 
-        final logFiles =
-            Directory(FileLogger().logDirectoryPath)
-                .listSync()
-                .whereType<File>()
-                .where((f) => p.basename(f.path).startsWith('FTP_'))
-                .toList()
-              ..sort(
-                (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
-              );
-        expect(logFiles, isNotEmpty);
+        // Gene - Nov, 24, 2026: Match FTP run log file deterministically by runId rather than filesystem mtime.
+        // final logFiles =
+        //     Directory(FileLogger().logDirectoryPath)
+        //         .listSync()
+        //         .whereType<File>()
+        //         .where((f) => p.basename(f.path).startsWith('FTP_'))
+        //         .toList()
+        //       ..sort(
+        //         (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
+        //       );
+        // expect(logFiles, isNotEmpty);
+        final expectedRunId = records.first.id;
+        final logFiles = Directory(FileLogger().logDirectoryPath)
+            .listSync()
+            .whereType<File>()
+            .where(
+              (f) =>
+                  p.basename(f.path).startsWith('FTP_') &&
+                  p.basename(f.path).contains(expectedRunId),
+            )
+            .toList();
+        expect(logFiles, hasLength(1));
         final latestLogContent = logFiles.first.readAsStringSync();
         expect(latestLogContent, contains('COMPLETED WITH ERRORS (1)'));
       },
@@ -984,6 +996,9 @@ void main() {
         expect(p1.isScheduleArmed, isFalse);
 
         // Case 2: Overnight window (Tuesday 02:00 inside Mon 22:00 - Tue 06:00, only Mon checked).
+        // Gene - Nov, 24, 2026: Isolate overnight window test profile on slower Windows runners.
+        await LocalDbService().init('ftp_test_active_win_overnight');
+        HistoryService().init('ftp_test_active_win_overnight');
         final server2 = FakeRemoteServerState();
         final p2 = buildProvider(
           server: server2,
@@ -1296,9 +1311,7 @@ void main() {
         await provider.triggerScheduleTickForTest();
         expect(server.uploadCalls, ['Daily/daily_nov2.log']);
         expect(
-          provider.logs.any(
-            (l) => l.contains('already completed for 2026-11'),
-          ),
+          provider.logs.any((l) => l.contains('already completed for 2026-11')),
           isTrue,
         );
 
@@ -1365,10 +1378,7 @@ void main() {
         clock = DateTime(2026, 11, 5, 1, 0);
         await provider.triggerScheduleTickForTest();
         expect(provider.uploadSources[0].lastCompletedMonth, isNull);
-        expect(
-          provider.logs.any((l) => l.contains('matched 0 files')),
-          isTrue,
-        );
+        expect(provider.logs.any((l) => l.contains('matched 0 files')), isTrue);
 
         // Add two backup files now.
         File(p.join(dbDir.path, 'a_done.bak')).writeAsBytesSync([1, 2, 3]);
@@ -1614,5 +1624,32 @@ void main() {
         expect(provider.nextScheduledRun, DateTime(2026, 12, 31, 2, 0));
       },
     );
+
+    // Gene - Nov, 24, 2026: Verify scanned files upload in deterministic alphabetical order regardless of creation order.
+    test('uploads scanned files in deterministic alphabetical order', () async {
+      await LocalDbService().init('ftp_test_sorted_order');
+      HistoryService().init('ftp_test_sorted_order');
+
+      final src = Directory(p.join(tempSourcesDir.path, 'sorted_order_case'))
+        ..createSync(recursive: true);
+      File(p.join(src.path, 'z_second.txt')).writeAsBytesSync([3, 4]);
+      File(p.join(src.path, 'a_first.txt')).writeAsBytesSync([1, 2]);
+
+      final server = FakeRemoteServerState();
+      final provider = buildProvider(server: server);
+      addTearDown(provider.dispose);
+
+      provider
+        ..setHost('ftp.example.com')
+        ..setSourcePath(src.path)
+        ..setDateMode(FtpDateMode.allFiles)
+        ..setSkipIfExists(false);
+
+      await provider.runNow();
+
+      expect(provider.errors, 0);
+      expect(provider.filesUploaded, 2);
+      expect(server.uploadCalls, ['a_first.txt', 'z_second.txt']);
+    });
   });
 }

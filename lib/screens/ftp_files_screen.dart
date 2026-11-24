@@ -2235,9 +2235,7 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                             SizedBox(
                               width: 110,
                               child: StyledTimePicker(
-                                key: const Key(
-                                  'ftp_schedule_end_time_picker',
-                                ),
+                                key: const Key('ftp_schedule_end_time_picker'),
                                 label: 'End',
                                 time: provider.runEndTime,
                                 enabled:
@@ -2250,46 +2248,49 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                               width: 205,
                               child:
                                   DropdownButtonFormField<FtpScheduleFrequency>(
-                                key: const Key(
-                                  'ftp_schedule_frequency_dropdown',
-                                ),
-                                isExpanded: true,
-                                initialValue: provider.scheduleFrequency,
-                                decoration: const InputDecoration(
-                                  labelText: 'Frequency',
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 8,
-                                  ),
-                                ),
-                                dropdownColor: context.cardBg,
-                                items: FtpScheduleFrequency.values
-                                    .map(
-                                      (freq) =>
-                                          DropdownMenuItem<
-                                              FtpScheduleFrequency>(
-                                        value: freq,
-                                        child: Text(
-                                          freq.label,
-                                          style: TextStyle(
-                                            color: context.textPrimary,
-                                            fontSize: 12,
-                                          ),
-                                        ),
+                                    key: const Key(
+                                      'ftp_schedule_frequency_dropdown',
+                                    ),
+                                    isExpanded: true,
+                                    initialValue: provider.scheduleFrequency,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Frequency',
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
                                       ),
-                                    )
-                                    .toList(),
-                                onChanged:
-                                    (!provider.isProcessing &&
-                                        provider.enableSchedule)
-                                    ? (val) {
-                                        if (val != null) {
-                                          provider.setScheduleFrequency(val);
-                                        }
-                                      }
-                                    : null,
-                              ),
+                                    ),
+                                    dropdownColor: context.cardBg,
+                                    items: FtpScheduleFrequency.values
+                                        .map(
+                                          (freq) =>
+                                              DropdownMenuItem<
+                                                FtpScheduleFrequency
+                                              >(
+                                                value: freq,
+                                                child: Text(
+                                                  freq.label,
+                                                  style: TextStyle(
+                                                    color: context.textPrimary,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ),
+                                        )
+                                        .toList(),
+                                    onChanged:
+                                        (!provider.isProcessing &&
+                                            provider.enableSchedule)
+                                        ? (val) {
+                                            if (val != null) {
+                                              provider.setScheduleFrequency(
+                                                val,
+                                              );
+                                            }
+                                          }
+                                        : null,
+                                  ),
                             ),
                           ],
                         ),
@@ -2417,9 +2418,10 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                                                 preset.days,
                                               ),
                                           onSelected: controlsEnabled
-                                              ? (_) => provider.setRunDaysPreset(
-                                                  preset.days,
-                                                )
+                                              ? (_) =>
+                                                    provider.setRunDaysPreset(
+                                                      preset.days,
+                                                    )
                                               : null,
                                           visualDensity: VisualDensity.compact,
                                           materialTapTargetSize:
@@ -2548,8 +2550,7 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                               final String helperText;
                               if (provider.scheduleFrequency ==
                                   FtpScheduleFrequency.monthly) {
-                                final dayDesc =
-                                    provider.scheduleMonthlyDay <= 0
+                                final dayDesc = provider.scheduleMonthlyDay <= 0
                                     ? 'the last day of each month'
                                     : 'Day ${provider.scheduleMonthlyDay} of each month';
                                 if (!provider.hasEndTimeLimit) {
@@ -2915,19 +2916,19 @@ class _FtpUploadSourcesDialog extends StatefulWidget {
 //   final List<TextEditingController> _nameControllers = [];
 //   final List<TextEditingController> _subfoldersControllers = [];
 //   final List<TextEditingController> _destControllers = [];
-// 
+//
 //   @override
 //   void initState() {
 //     super.initState();
 //     _rebuildControllers();
 //   }
-// 
+//
 //   @override
 //   void dispose() {
 //     _disposeControllers();
 //     super.dispose();
 //   }
-// 
+//
 //   void _disposeControllers() {
 //     for (final c in _nameControllers) {
 //       c.dispose();
@@ -2942,7 +2943,7 @@ class _FtpUploadSourcesDialog extends StatefulWidget {
 //     _subfoldersControllers.clear();
 //     _destControllers.clear();
 //   }
-// 
+//
 //   void _rebuildControllers() {
 //     _disposeControllers();
 //     for (final source in widget.provider.uploadSources) {
@@ -2953,12 +2954,12 @@ class _FtpUploadSourcesDialog extends StatefulWidget {
 //       _destControllers.add(TextEditingController(text: source.ftpDest));
 //     }
 //   }
-// 
+//
 //   @override
 //   Widget build(BuildContext context) {
 //     final sources = widget.provider.uploadSources;
 //     final accentColor = context.ftpAccent;
-// 
+//
 //     return AlertDialog(
 //       // Gene - Nov, 23, 2026: Add Import and Export Upload Sources actions to Upload Sources dialog title bar.
 //       title: Row(
@@ -3534,43 +3535,45 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
                             width: 138,
                             child:
                                 DropdownButtonFormField<FtpSourceScheduleMode>(
-                              key: Key('ftp_source_schedule_$i'),
-                              isExpanded: true,
-                              initialValue: src.scheduleMode,
-                              decoration: const InputDecoration(
-                                labelText: 'Schedule',
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
-                                ),
-                              ),
-                              dropdownColor: context.cardBg,
-                              items: FtpSourceScheduleMode.values
-                                  .map(
-                                    (mode) =>
-                                        DropdownMenuItem<FtpSourceScheduleMode>(
-                                      value: mode,
-                                      child: Text(
-                                        mode.label,
-                                        style: TextStyle(
-                                          color: context.textPrimary,
-                                          fontSize: 12,
-                                        ),
-                                      ),
+                                  key: Key('ftp_source_schedule_$i'),
+                                  isExpanded: true,
+                                  initialValue: src.scheduleMode,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Schedule',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
                                     ),
-                                  )
-                                  .toList(),
-                              onChanged: (val) {
-                                if (val != null) {
-                                  widget.provider.setSourceScheduleModeAt(
-                                    i,
-                                    val,
-                                  );
-                                  setState(() {});
-                                }
-                              },
-                            ),
+                                  ),
+                                  dropdownColor: context.cardBg,
+                                  items: FtpSourceScheduleMode.values
+                                      .map(
+                                        (mode) =>
+                                            DropdownMenuItem<
+                                              FtpSourceScheduleMode
+                                            >(
+                                              value: mode,
+                                              child: Text(
+                                                mode.label,
+                                                style: TextStyle(
+                                                  color: context.textPrimary,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                      )
+                                      .toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      widget.provider.setSourceScheduleModeAt(
+                                        i,
+                                        val,
+                                      );
+                                      setState(() {});
+                                    }
+                                  },
+                                ),
                           ),
                           if (src.scheduleMode ==
                               FtpSourceScheduleMode.weekly) ...[
@@ -3734,50 +3737,54 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
                           ],
                           SizedBox(
                             width: 138,
-                            child: DropdownButtonFormField<
-                                FtpSourceDateFilterMode>(
-                              key: Key('ftp_source_date_filter_$i'),
-                              isExpanded: true,
-                              initialValue: src.dateFilterMode,
-                              decoration: const InputDecoration(
-                                labelText: 'Date Filter',
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
-                                ),
-                              ),
-                              dropdownColor: context.cardBg,
-                              items: FtpSourceDateFilterMode.values
-                                  .map(
-                                    (mode) => DropdownMenuItem<
-                                        FtpSourceDateFilterMode>(
-                                      value: mode,
-                                      child: Text(
-                                        mode.label,
-                                        style: TextStyle(
-                                          color: context.textPrimary,
-                                          fontSize: 12,
-                                        ),
-                                      ),
+                            child:
+                                DropdownButtonFormField<
+                                  FtpSourceDateFilterMode
+                                >(
+                                  key: Key('ftp_source_date_filter_$i'),
+                                  isExpanded: true,
+                                  initialValue: src.dateFilterMode,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Date Filter',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
                                     ),
-                                  )
-                                  .toList(),
-                              onChanged: (val) {
-                                if (val != null) {
-                                  widget.provider.setSourceDateFilterModeAt(
-                                    i,
-                                    val,
-                                  );
-                                  _dateDaysControllers[i].text = widget
-                                      .provider
-                                      .uploadSources[i]
-                                      .dateFilterDays
-                                      .toString();
-                                  setState(() {});
-                                }
-                              },
-                            ),
+                                  ),
+                                  dropdownColor: context.cardBg,
+                                  items: FtpSourceDateFilterMode.values
+                                      .map(
+                                        (mode) =>
+                                            DropdownMenuItem<
+                                              FtpSourceDateFilterMode
+                                            >(
+                                              value: mode,
+                                              child: Text(
+                                                mode.label,
+                                                style: TextStyle(
+                                                  color: context.textPrimary,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                      )
+                                      .toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      widget.provider.setSourceDateFilterModeAt(
+                                        i,
+                                        val,
+                                      );
+                                      _dateDaysControllers[i].text = widget
+                                          .provider
+                                          .uploadSources[i]
+                                          .dateFilterDays
+                                          .toString();
+                                      setState(() {});
+                                    }
+                                  },
+                                ),
                           ),
                           if (src.dateFilterMode ==
                                   FtpSourceDateFilterMode.daysAgo ||
@@ -3936,7 +3943,10 @@ class _RunSelectedSourcesDialogState extends State<_RunSelectedSourcesDialog> {
                         ..addAll(_orderedValidSources.map((e) => e.index));
                     });
                   },
-                  child: const Text('Select All', style: TextStyle(fontSize: 12)),
+                  child: const Text(
+                    'Select All',
+                    style: TextStyle(fontSize: 12),
+                  ),
                 ),
                 TextButton(
                   onPressed: () {
@@ -4129,8 +4139,7 @@ class _RunSelectedSourcesDialogState extends State<_RunSelectedSourcesDialog> {
               ? null
               : () {
                   final picked = Set<int>.from(_selected);
-                  final mark =
-                      !widget.provider.dryRun && _markMonthlyCompleted;
+                  final mark = !widget.provider.dryRun && _markMonthlyCompleted;
                   Navigator.of(context).pop();
                   unawaited(
                     widget.provider.runSelectedSources(

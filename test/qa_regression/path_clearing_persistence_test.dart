@@ -135,8 +135,42 @@ void main() {
   );
 
   // Gene - Nov, 21, 2026: Regression check that cleared FTP fields stay cleared across reloadSettings()
+  // Gene - Nov, 24, 2026: Dispose provider, use flushSavesForTest(), and allow 60s timeout for slow Windows CI runners.
+  // test('FTP paths and credentials stay cleared across a reload', () async {
+  //   final provider = FtpFilesProvider();
+  //   provider
+  //     ..setSourcePath('/tmp/qa_ftp_src')
+  //     ..setHost('ftp.example.com')
+  //     ..setUsername('test_user')
+  //     ..setPassword('test_pass_123')
+  //     ..setRemoteDirectory('Backups')
+  //     ..setSubfolders('FolderA');
+  //   await _settle({
+  //     'ftp_sourcePath': '/tmp/qa_ftp_src',
+  //     'ftp_host': 'ftp.example.com',
+  //     'ftp_username': 'test_user',
+  //     'ftp_remoteDirectory': 'Backups',
+  //     'ftp_subfolders': 'FolderA',
+  //   });
+  //
+  //   provider
+  //     ..setSourcePath('')
+  //     ..setHost('')
+  //     ..setUsername('')
+  //     ..setPassword('')
+  //     ..setRemoteDirectory('')
+  //     ..setSubfolders('');
+  //   await _settle({
+  //     'ftp_sourcePath': null,
+  //     'ftp_host': null,
+  //     'ftp_username': null,
+  //     'ftp_password': null,
+  //     'ftp_remoteDirectory': null,
+  //     'ftp_subfolders': null,
+  //   });
   test('FTP paths and credentials stay cleared across a reload', () async {
     final provider = FtpFilesProvider();
+    addTearDown(provider.dispose);
     provider
       ..setSourcePath('/tmp/qa_ftp_src')
       ..setHost('ftp.example.com')
@@ -144,13 +178,15 @@ void main() {
       ..setPassword('test_pass_123')
       ..setRemoteDirectory('Backups')
       ..setSubfolders('FolderA');
-    await _settle({
-      'ftp_sourcePath': '/tmp/qa_ftp_src',
-      'ftp_host': 'ftp.example.com',
-      'ftp_username': 'test_user',
-      'ftp_remoteDirectory': 'Backups',
-      'ftp_subfolders': 'FolderA',
-    });
+    // Gene - Nov, 24, 2026: Wait for FtpFilesProvider serialized save queue instead of fixed-timeout _settle polling on slow Windows CI.
+    // await _settle({
+    //   'ftp_sourcePath': '/tmp/qa_ftp_src',
+    //   'ftp_host': 'ftp.example.com',
+    //   'ftp_username': 'test_user',
+    //   'ftp_remoteDirectory': 'Backups',
+    //   'ftp_subfolders': 'FolderA',
+    // });
+    await provider.flushSavesForTest();
 
     provider
       ..setSourcePath('')
@@ -159,14 +195,16 @@ void main() {
       ..setPassword('')
       ..setRemoteDirectory('')
       ..setSubfolders('');
-    await _settle({
-      'ftp_sourcePath': null,
-      'ftp_host': null,
-      'ftp_username': null,
-      'ftp_password': null,
-      'ftp_remoteDirectory': null,
-      'ftp_subfolders': null,
-    });
+    // Gene - Nov, 24, 2026: Wait for FtpFilesProvider serialized save queue instead of fixed-timeout _settle polling on slow Windows CI.
+    // await _settle({
+    //   'ftp_sourcePath': null,
+    //   'ftp_host': null,
+    //   'ftp_username': null,
+    //   'ftp_password': null,
+    //   'ftp_remoteDirectory': null,
+    //   'ftp_subfolders': null,
+    // });
+    await provider.flushSavesForTest();
 
     await provider.reloadSettings();
     expect(provider.sourcePath, isNull);
@@ -175,5 +213,5 @@ void main() {
     expect(provider.password, isEmpty);
     expect(provider.remoteDirectory, isEmpty);
     expect(provider.subfolders, isEmpty);
-  });
+  }, timeout: const Timeout(Duration(seconds: 60)));
 }

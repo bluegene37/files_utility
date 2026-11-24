@@ -192,119 +192,126 @@ void main() {
 
   // Gene - Nov, 24, 2026: Unit tests for global Monthly schedule calculation, month-end clamping, leap year, and overnight crossover.
   group('FtpFilesProvider monthly schedule helpers', () {
-    test('computeNextScheduledRun handles monthly dates, clamping, leap years, and year rollover', () {
-      // Same month ahead (Nov 10 -> Nov 15).
-      expect(
-        FtpFilesProvider.computeNextScheduledRun(
-          now: DateTime(2026, 11, 10, 8, 0),
-          runTime: const TimeOfDay(hour: 22, minute: 30),
-          runDays: _days(), // Weekly runDays unchecked must not block monthly.
-          frequency: FtpScheduleFrequency.monthly,
-          monthlyDay: 15,
-        ),
-        DateTime(2026, 11, 15, 22, 30),
-      );
+    test(
+      'computeNextScheduledRun handles monthly dates, clamping, leap years, and year rollover',
+      () {
+        // Same month ahead (Nov 10 -> Nov 15).
+        expect(
+          FtpFilesProvider.computeNextScheduledRun(
+            now: DateTime(2026, 11, 10, 8, 0),
+            runTime: const TimeOfDay(hour: 22, minute: 30),
+            runDays:
+                _days(), // Weekly runDays unchecked must not block monthly.
+            frequency: FtpScheduleFrequency.monthly,
+            monthlyDay: 15,
+          ),
+          DateTime(2026, 11, 15, 22, 30),
+        );
 
-      // Same month passed (Nov 15 22:30 -> Dec 15 22:30).
-      expect(
-        FtpFilesProvider.computeNextScheduledRun(
-          now: DateTime(2026, 11, 15, 22, 30),
-          runTime: const TimeOfDay(hour: 22, minute: 30),
-          runDays: _days(),
-          frequency: FtpScheduleFrequency.monthly,
-          monthlyDay: 15,
-        ),
-        DateTime(2026, 12, 15, 22, 30),
-      );
+        // Same month passed (Nov 15 22:30 -> Dec 15 22:30).
+        expect(
+          FtpFilesProvider.computeNextScheduledRun(
+            now: DateTime(2026, 11, 15, 22, 30),
+            runTime: const TimeOfDay(hour: 22, minute: 30),
+            runDays: _days(),
+            frequency: FtpScheduleFrequency.monthly,
+            monthlyDay: 15,
+          ),
+          DateTime(2026, 12, 15, 22, 30),
+        );
 
-      // Dec -> Jan year rollover.
-      expect(
-        FtpFilesProvider.computeNextScheduledRun(
-          now: DateTime(2026, 12, 20, 9, 0),
-          runTime: const TimeOfDay(hour: 1, minute: 0),
-          runDays: _days(),
-          frequency: FtpScheduleFrequency.monthly,
-          monthlyDay: 1,
-        ),
-        DateTime(2027, 1, 1, 1, 0),
-      );
+        // Dec -> Jan year rollover.
+        expect(
+          FtpFilesProvider.computeNextScheduledRun(
+            now: DateTime(2026, 12, 20, 9, 0),
+            runTime: const TimeOfDay(hour: 1, minute: 0),
+            runDays: _days(),
+            frequency: FtpScheduleFrequency.monthly,
+            monthlyDay: 1,
+          ),
+          DateTime(2027, 1, 1, 1, 0),
+        );
 
-      // Day 31 clamps to Feb 28 in non-leap year 2026 and Feb 29 in leap year 2028.
-      expect(
-        FtpFilesProvider.computeNextScheduledRun(
-          now: DateTime(2026, 2, 10, 8, 0),
-          runTime: const TimeOfDay(hour: 3, minute: 0),
-          runDays: _days(),
-          frequency: FtpScheduleFrequency.monthly,
-          monthlyDay: 31,
-        ),
-        DateTime(2026, 2, 28, 3, 0),
-      );
-      expect(
-        FtpFilesProvider.computeNextScheduledRun(
-          now: DateTime(2028, 2, 10, 8, 0),
-          runTime: const TimeOfDay(hour: 3, minute: 0),
-          runDays: _days(),
-          frequency: FtpScheduleFrequency.monthly,
-          monthlyDay: 31,
-        ),
-        DateTime(2028, 2, 29, 3, 0),
-      );
+        // Day 31 clamps to Feb 28 in non-leap year 2026 and Feb 29 in leap year 2028.
+        expect(
+          FtpFilesProvider.computeNextScheduledRun(
+            now: DateTime(2026, 2, 10, 8, 0),
+            runTime: const TimeOfDay(hour: 3, minute: 0),
+            runDays: _days(),
+            frequency: FtpScheduleFrequency.monthly,
+            monthlyDay: 31,
+          ),
+          DateTime(2026, 2, 28, 3, 0),
+        );
+        expect(
+          FtpFilesProvider.computeNextScheduledRun(
+            now: DateTime(2028, 2, 10, 8, 0),
+            runTime: const TimeOfDay(hour: 3, minute: 0),
+            runDays: _days(),
+            frequency: FtpScheduleFrequency.monthly,
+            monthlyDay: 31,
+          ),
+          DateTime(2028, 2, 29, 3, 0),
+        );
 
-      // Last day (0) picks Nov 30.
-      expect(
-        FtpFilesProvider.computeNextScheduledRun(
-          now: DateTime(2026, 11, 24, 12, 0),
-          runTime: const TimeOfDay(hour: 23, minute: 0),
-          runDays: _days(),
-          frequency: FtpScheduleFrequency.monthly,
-          monthlyDay: 0,
-        ),
-        DateTime(2026, 11, 30, 23, 0),
-      );
-    });
+        // Last day (0) picks Nov 30.
+        expect(
+          FtpFilesProvider.computeNextScheduledRun(
+            now: DateTime(2026, 11, 24, 12, 0),
+            runTime: const TimeOfDay(hour: 23, minute: 0),
+            runDays: _days(),
+            frequency: FtpScheduleFrequency.monthly,
+            monthlyDay: 0,
+          ),
+          DateTime(2026, 11, 30, 23, 0),
+        );
+      },
+    );
 
-    test('computeActiveWindow handles monthly same-day and month-end overnight crossover', () {
-      const start = TimeOfDay(hour: 22, minute: 0);
-      const end = TimeOfDay(hour: 6, minute: 0);
+    test(
+      'computeActiveWindow handles monthly same-day and month-end overnight crossover',
+      () {
+        const start = TimeOfDay(hour: 22, minute: 0);
+        const end = TimeOfDay(hour: 6, minute: 0);
 
-      // Non-target day returns null.
-      expect(
-        FtpFilesProvider.computeActiveWindow(
-          now: DateTime(2026, 2, 27, 23, 0),
+        // Non-target day returns null.
+        expect(
+          FtpFilesProvider.computeActiveWindow(
+            now: DateTime(2026, 2, 27, 23, 0),
+            runTime: start,
+            runEndTime: end,
+            runDays: _days(),
+            frequency: FtpScheduleFrequency.monthly,
+            monthlyDay: 0,
+          ),
+          isNull,
+        );
+
+        // Target day Feb 28 23:00 -> active [Feb 28 22:00, Mar 1 06:00).
+        final febNight = FtpFilesProvider.computeActiveWindow(
+          now: DateTime(2026, 2, 28, 23, 0),
           runTime: start,
           runEndTime: end,
           runDays: _days(),
           frequency: FtpScheduleFrequency.monthly,
           monthlyDay: 0,
-        ),
-        isNull,
-      );
+        );
+        expect(febNight?.start, DateTime(2026, 2, 28, 22, 0));
+        expect(febNight?.end, DateTime(2026, 3, 1, 6, 0));
 
-      // Target day Feb 28 23:00 -> active [Feb 28 22:00, Mar 1 06:00).
-      final febNight = FtpFilesProvider.computeActiveWindow(
-        now: DateTime(2026, 2, 28, 23, 0),
-        runTime: start,
-        runEndTime: end,
-        runDays: _days(),
-        frequency: FtpScheduleFrequency.monthly,
-        monthlyDay: 0,
-      );
-      expect(febNight?.start, DateTime(2026, 2, 28, 22, 0));
-      expect(febNight?.end, DateTime(2026, 3, 1, 6, 0));
-
-      // Overnight continuation on Mar 1 02:00 matches Feb 28 window.
-      final marEarly = FtpFilesProvider.computeActiveWindow(
-        now: DateTime(2026, 3, 1, 2, 0),
-        runTime: start,
-        runEndTime: end,
-        runDays: _days(),
-        frequency: FtpScheduleFrequency.monthly,
-        monthlyDay: 0,
-      );
-      expect(marEarly?.start, DateTime(2026, 2, 28, 22, 0));
-      expect(marEarly?.end, DateTime(2026, 3, 1, 6, 0));
-    });
+        // Overnight continuation on Mar 1 02:00 matches Feb 28 window.
+        final marEarly = FtpFilesProvider.computeActiveWindow(
+          now: DateTime(2026, 3, 1, 2, 0),
+          runTime: start,
+          runEndTime: end,
+          runDays: _days(),
+          frequency: FtpScheduleFrequency.monthly,
+          monthlyDay: 0,
+        );
+        expect(marEarly?.start, DateTime(2026, 2, 28, 22, 0));
+        expect(marEarly?.end, DateTime(2026, 3, 1, 6, 0));
+      },
+    );
   });
 
   group('FtpFilesProvider.matchesDateFilter', () {
@@ -417,7 +424,11 @@ void main() {
   group('FtpFilesProvider.matchesSourceDateFilter', () {
     final refNow = DateTime(2026, 11, 24, 9, 30);
 
-    bool eval(FtpUploadSource source, DateTime fileDate, {FtpDateMode globalMode = FtpDateMode.yesterday}) {
+    bool eval(
+      FtpUploadSource source,
+      DateTime fileDate, {
+      FtpDateMode globalMode = FtpDateMode.yesterday,
+    }) {
       return FtpFilesProvider.matchesSourceDateFilter(
         fileDate: fileDate,
         source: source,
@@ -430,39 +441,42 @@ void main() {
       );
     }
 
-    test('delegates to global filter when useGlobal and supports allFiles/today/yesterday/daysAgo', () {
-      const globalSrc = FtpUploadSource(localPath: '/tmp/global');
-      expect(eval(globalSrc, DateTime(2026, 11, 23, 18, 0)), isTrue);
-      expect(eval(globalSrc, DateTime(2026, 11, 24, 8, 0)), isFalse);
+    test(
+      'delegates to global filter when useGlobal and supports allFiles/today/yesterday/daysAgo',
+      () {
+        const globalSrc = FtpUploadSource(localPath: '/tmp/global');
+        expect(eval(globalSrc, DateTime(2026, 11, 23, 18, 0)), isTrue);
+        expect(eval(globalSrc, DateTime(2026, 11, 24, 8, 0)), isFalse);
 
-      const allSrc = FtpUploadSource(
-        localPath: '/tmp/all',
-        dateFilterMode: FtpSourceDateFilterMode.allFiles,
-      );
-      expect(eval(allSrc, DateTime(2020, 1, 1)), isTrue);
+        const allSrc = FtpUploadSource(
+          localPath: '/tmp/all',
+          dateFilterMode: FtpSourceDateFilterMode.allFiles,
+        );
+        expect(eval(allSrc, DateTime(2020, 1, 1)), isTrue);
 
-      const todaySrc = FtpUploadSource(
-        localPath: '/tmp/today',
-        dateFilterMode: FtpSourceDateFilterMode.today,
-      );
-      expect(eval(todaySrc, DateTime(2026, 11, 24, 23, 59)), isTrue);
-      expect(eval(todaySrc, DateTime(2026, 11, 23, 23, 59)), isFalse);
+        const todaySrc = FtpUploadSource(
+          localPath: '/tmp/today',
+          dateFilterMode: FtpSourceDateFilterMode.today,
+        );
+        expect(eval(todaySrc, DateTime(2026, 11, 24, 23, 59)), isTrue);
+        expect(eval(todaySrc, DateTime(2026, 11, 23, 23, 59)), isFalse);
 
-      const yesterdaySrc = FtpUploadSource(
-        localPath: '/tmp/yest',
-        dateFilterMode: FtpSourceDateFilterMode.yesterday,
-      );
-      expect(eval(yesterdaySrc, DateTime(2026, 11, 23, 12, 0)), isTrue);
-      expect(eval(yesterdaySrc, DateTime(2026, 11, 24, 12, 0)), isFalse);
+        const yesterdaySrc = FtpUploadSource(
+          localPath: '/tmp/yest',
+          dateFilterMode: FtpSourceDateFilterMode.yesterday,
+        );
+        expect(eval(yesterdaySrc, DateTime(2026, 11, 23, 12, 0)), isTrue);
+        expect(eval(yesterdaySrc, DateTime(2026, 11, 24, 12, 0)), isFalse);
 
-      const daysAgoSrc = FtpUploadSource(
-        localPath: '/tmp/ago',
-        dateFilterMode: FtpSourceDateFilterMode.daysAgo,
-        dateFilterDays: 3,
-      );
-      expect(eval(daysAgoSrc, DateTime(2026, 11, 21, 10, 0)), isTrue);
-      expect(eval(daysAgoSrc, DateTime(2026, 11, 22, 10, 0)), isFalse);
-    });
+        const daysAgoSrc = FtpUploadSource(
+          localPath: '/tmp/ago',
+          dateFilterMode: FtpSourceDateFilterMode.daysAgo,
+          dateFilterDays: 3,
+        );
+        expect(eval(daysAgoSrc, DateTime(2026, 11, 21, 10, 0)), isTrue);
+        expect(eval(daysAgoSrc, DateTime(2026, 11, 22, 10, 0)), isFalse);
+      },
+    );
 
     test('evaluates lastNDays inclusively for N=1 and N=7 boundaries', () {
       const oneDaySrc = FtpUploadSource(

@@ -10,9 +10,11 @@ publish_to: "none"
 # Gene - Nov, 22, 2026: Bump version to 1.2.0+4 for FTP Upload, transfer filter presets, Neumorphism UI, and opaque macOS title bar fix
 # Gene - Nov, 23, 2026: Bump version to 1.2.1+5 for Microsoft Store MSIX release
 # Gene - Nov, 24, 2026: Bump version to 1.2.2+6 for FTP Start/End run-time window and Microsoft Store MSIX release
+# Gene - Nov, 24, 2026: Bump version to 1.2.4+8 for FTP scheduling enhancements, CI/test stability fixes, and automated Microsoft Store publishing
+# version: "1.2.2+6"
 # version: "1.2.1+5"
 # version: "1.2.0+4"
-version: "1.2.2+6"
+version: "1.2.4+8"
 # version: "1.1.2+3"
 environment:
   sdk: "^3.10.8"
@@ -69,9 +71,11 @@ msix_config:
   # Gene - Nov, 22, 2026: Sync msix_version with 1.2.0 release
   # Gene - Nov, 23, 2026: Sync msix_version with 1.2.1 release and switch logo_path to 1024x1024 PNG for Store tile scaling
   # Gene - Nov, 24, 2026: Sync msix_version with 1.2.2 release
+  # Gene - Nov, 24, 2026: Sync msix_version with 1.2.4 release
+  # msix_version: "1.2.2.0"
   # msix_version: "1.2.1.0"
   # msix_version: "1.2.0.0"
-  msix_version: "1.2.2.0"
+  msix_version: "1.2.4.0"
   # msix_version: "1.1.2.0"
   # logo_path: "windows/runner/resources/app_icon.ico"
   logo_path: "assets/icon/app_icon.png"
