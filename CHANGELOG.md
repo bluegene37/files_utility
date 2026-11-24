@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-24
+
+### Fixed
+- **FTP Settings Cross-Profile Save Guard**: Prevented in-flight `FtpFilesProvider._writeSettings()` writes from leaking settings across profiles or after provider disposal.
+- **Windows Installer Version Parsing & Test Stability**: Anchored the `pubspec.yaml` version regex in `scripts/build_windows_installer.ps1` to ignore commented lines, and updated FTP provider tests to match run logs by `runId` and isolate overnight schedule test profiles on Windows.
+
 <!-- Gene - Nov, 24, 2026: Added v1.2.2 changelog entry for FTP start/end run-time window and Microsoft Store release pipeline polish -->
 ## [1.2.2] - 2026-11-24
 

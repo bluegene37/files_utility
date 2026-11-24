@@ -55,7 +55,7 @@ Set-Location $RootDir
 
 # Extract version and name from pubspec.yaml
 $pubspecContent = Get-Content "pubspec.yaml" -Raw
-$versionMatch = [regex]::Match($pubspecContent, 'version:\s*"?(?<ver>[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+)?)')
+$versionMatch = [regex]::Match($pubspecContent, '(?m)^version:\s*"?(?<ver>[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+)?)')
 if (-not $versionMatch.Success) {
     throw "Could not determine version from pubspec.yaml"
 }

@@ -178,6 +178,7 @@ class FtpFilesProvider with ChangeNotifier {
   bool _saveInFlight = false;
   bool _savePending = false;
   Completer<void>? _saveIdleCompleter;
+  String? _loadedProfileId;
 
   FtpFilesProvider({
     FtpClientAdapter Function(FtpConnectionConfig config)? clientFactory,
@@ -197,6 +198,7 @@ class FtpFilesProvider with ChangeNotifier {
   }
 
   void _onProfileChanged() {
+    _savePending = false;
     reloadSettings();
   }
 
@@ -210,6 +212,7 @@ class FtpFilesProvider with ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _savePending = false;
     LocalDbService().removeListener(_onProfileChanged);
     _scheduleTimer?.cancel();
     _scheduleTimer = null;
@@ -512,6 +515,7 @@ class FtpFilesProvider with ChangeNotifier {
   Future<void> _loadSettings() async {
     final db = LocalDbService();
     final profileId = db.currentProfileId;
+    _loadedProfileId = profileId;
 
     host = db.getString('ftp_host') ?? '';
     protocol = FtpProtocol.fromStorage(db.getString('ftp_protocol'));
@@ -621,7 +625,7 @@ class FtpFilesProvider with ChangeNotifier {
   }
 
   Future<void> _saveSettings() {
-    if (!_persistSettings) return Future.value();
+    if (!_persistSettings || _disposed) return Future.value();
     _savePending = true;
     _saveIdleCompleter ??= Completer<void>();
     if (!_saveInFlight) {
@@ -677,74 +681,73 @@ class FtpFilesProvider with ChangeNotifier {
 
   Future<void> _writeSettings() async {
     final db = LocalDbService();
-    final profileId = db.currentProfileId;
-    if (db.currentProfileId != profileId) return;
+    final expectedProfileId = _loadedProfileId ?? db.currentProfileId;
+    bool isAborted() => _disposed || db.currentProfileId != expectedProfileId;
+    if (isAborted()) return;
 
-    await db.setOrRemoveString('ftp_host', _nullIfEmpty(host));
-    await db.setString('ftp_protocol', protocol.storageKey);
-    await db.setInt('ftp_port', port);
-    await db.setOrRemoveString('ftp_username', _nullIfEmpty(username));
+    final writes = <Future<void> Function()>[
+      () => db.setOrRemoveString('ftp_host', _nullIfEmpty(host)),
+      () => db.setString('ftp_protocol', protocol.storageKey),
+      () => db.setInt('ftp_port', port),
+      () => db.setOrRemoveString('ftp_username', _nullIfEmpty(username)),
+      () => password.isEmpty
+          ? db.setOrRemoveString('ftp_password', null)
+          : db.setString(
+              'ftp_password',
+              CredentialObfuscator.encode(
+                password,
+                profileId: expectedProfileId,
+              ),
+            ),
+      () => db.setString('ftp_transferMode', transferMode.storageKey),
+      () => db.setInt('ftp_timeoutSeconds', timeoutSeconds),
+      () => db.setBool('ftp_useMultipleSources', useMultipleSources),
+      () => db.setOrRemoveString('ftp_sourcePath', sourcePath),
+      () => db.setOrRemoveString('ftp_subfolders', _nullIfEmpty(subfolders)),
+      () => db.setOrRemoveString(
+        'ftp_remoteDirectory',
+        _nullIfEmpty(remoteDirectory),
+      ),
+      () => db.setString(
+        'ftp_uploadSources',
+        jsonEncode(uploadSources.map((s) => s.toJson()).toList()),
+      ),
+      () => db.setString('ftp_dateMode', dateMode.name),
+      () => db.setInt('ftp_daysAgo', daysAgo),
+      () => db.setString('ftp_dateType', dateType.name),
+      () => db.setInt('ftp_specificDate_year', specificDate.year),
+      () => db.setInt('ftp_specificDate_month', specificDate.month),
+      () => db.setInt('ftp_specificDate_day', specificDate.day),
+      () => db.setInt('ftp_fromDate_year', fromDate.year),
+      () => db.setInt('ftp_fromDate_month', fromDate.month),
+      () => db.setInt('ftp_fromDate_day', fromDate.day),
+      () => db.setInt('ftp_toDate_year', toDate.year),
+      () => db.setInt('ftp_toDate_month', toDate.month),
+      () => db.setInt('ftp_toDate_day', toDate.day),
+      () => db.setBool('ftp_includeSubfolders', includeSubfolders),
+      () => db.setBool('ftp_skipIfExists', skipIfExists),
+      () => db.setBool('ftp_verifySizeAfterUpload', verifySizeAfterUpload),
+      () => db.setBool('ftp_dryRun', dryRun),
+      () => db.setInt('ftp_retryCount', retryCount),
+      () => db.setInt('ftp_retryDelaySeconds', retryDelaySeconds),
+      () => db.setInt('ftp_logInterval', logInterval),
+      // Gene - Nov, 23, 2026: Persist FTP log retention days.
+      () => db.setInt('ftp_logKeepDays', logKeepDays),
+      () => db.setBool('ftp_enableSchedule', enableSchedule),
+      () => db.setInt('ftp_runHour', runTime.hour),
+      () => db.setInt('ftp_runMinute', runTime.minute),
+      // Gene - Nov, 24, 2026: Persist schedule window end time.
+      () => db.setInt('ftp_runEndHour', runEndTime.hour),
+      () => db.setInt('ftp_runEndMinute', runEndTime.minute),
+      for (int day = 1; day <= 7; day++)
+        () => db.setBool('ftp_runDay_$day', runDays[day] ?? true),
+      () => db.setString('ftp_onCompletionAction', onCompletionAction),
+    ];
 
-    if (password.isEmpty) {
-      await db.setOrRemoveString('ftp_password', null);
-    } else {
-      await db.setString(
-        'ftp_password',
-        CredentialObfuscator.encode(password, profileId: profileId),
-      );
+    for (final write in writes) {
+      if (isAborted()) return;
+      await write();
     }
-
-    await db.setString('ftp_transferMode', transferMode.storageKey);
-    await db.setInt('ftp_timeoutSeconds', timeoutSeconds);
-
-    await db.setBool('ftp_useMultipleSources', useMultipleSources);
-    await db.setOrRemoveString('ftp_sourcePath', sourcePath);
-    await db.setOrRemoveString('ftp_subfolders', _nullIfEmpty(subfolders));
-    await db.setOrRemoveString(
-      'ftp_remoteDirectory',
-      _nullIfEmpty(remoteDirectory),
-    );
-    await db.setString(
-      'ftp_uploadSources',
-      jsonEncode(uploadSources.map((s) => s.toJson()).toList()),
-    );
-
-    await db.setString('ftp_dateMode', dateMode.name);
-    await db.setInt('ftp_daysAgo', daysAgo);
-    await db.setString('ftp_dateType', dateType.name);
-
-    await db.setInt('ftp_specificDate_year', specificDate.year);
-    await db.setInt('ftp_specificDate_month', specificDate.month);
-    await db.setInt('ftp_specificDate_day', specificDate.day);
-
-    await db.setInt('ftp_fromDate_year', fromDate.year);
-    await db.setInt('ftp_fromDate_month', fromDate.month);
-    await db.setInt('ftp_fromDate_day', fromDate.day);
-
-    await db.setInt('ftp_toDate_year', toDate.year);
-    await db.setInt('ftp_toDate_month', toDate.month);
-    await db.setInt('ftp_toDate_day', toDate.day);
-
-    await db.setBool('ftp_includeSubfolders', includeSubfolders);
-    await db.setBool('ftp_skipIfExists', skipIfExists);
-    await db.setBool('ftp_verifySizeAfterUpload', verifySizeAfterUpload);
-    await db.setBool('ftp_dryRun', dryRun);
-    await db.setInt('ftp_retryCount', retryCount);
-    await db.setInt('ftp_retryDelaySeconds', retryDelaySeconds);
-    await db.setInt('ftp_logInterval', logInterval);
-    // Gene - Nov, 23, 2026: Persist FTP log retention days.
-    await db.setInt('ftp_logKeepDays', logKeepDays);
-
-    await db.setBool('ftp_enableSchedule', enableSchedule);
-    await db.setInt('ftp_runHour', runTime.hour);
-    await db.setInt('ftp_runMinute', runTime.minute);
-    // Gene - Nov, 24, 2026: Persist schedule window end time.
-    await db.setInt('ftp_runEndHour', runEndTime.hour);
-    await db.setInt('ftp_runEndMinute', runEndTime.minute);
-    for (int day = 1; day <= 7; day++) {
-      await db.setBool('ftp_runDay_$day', runDays[day] ?? true);
-    }
-    await db.setString('ftp_onCompletionAction', onCompletionAction);
   }
 
   String? _nullIfEmpty(String value) {

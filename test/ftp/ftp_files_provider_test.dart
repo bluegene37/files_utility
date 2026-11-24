@@ -788,16 +788,17 @@ void main() {
         expect(records.first.status, 'Error');
         expect(records.first.errors, 1);
 
-        final logFiles =
-            Directory(FileLogger().logDirectoryPath)
-                .listSync()
-                .whereType<File>()
-                .where((f) => p.basename(f.path).startsWith('FTP_'))
-                .toList()
-              ..sort(
-                (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
-              );
-        expect(logFiles, isNotEmpty);
+        final expectedRunId = records.first.id;
+        final logFiles = Directory(FileLogger().logDirectoryPath)
+            .listSync()
+            .whereType<File>()
+            .where(
+              (f) =>
+                  p.basename(f.path).startsWith('FTP_') &&
+                  p.basename(f.path).contains(expectedRunId),
+            )
+            .toList();
+        expect(logFiles, hasLength(1));
         final latestLogContent = logFiles.first.readAsStringSync();
         expect(latestLogContent, contains('COMPLETED WITH ERRORS (1)'));
       },
@@ -982,6 +983,8 @@ void main() {
         expect(p1.isScheduleArmed, isFalse);
 
         // Case 2: Overnight window (Tuesday 02:00 inside Mon 22:00 - Tue 06:00, only Mon checked).
+        await LocalDbService().init('ftp_test_active_win_overnight');
+        HistoryService().init('ftp_test_active_win_overnight');
         final server2 = FakeRemoteServerState();
         final p2 = buildProvider(
           server: server2,
