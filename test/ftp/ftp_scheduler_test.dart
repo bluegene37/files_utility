@@ -190,6 +190,123 @@ void main() {
     });
   });
 
+  // Gene - Nov, 24, 2026: Unit tests for global Monthly schedule calculation, month-end clamping, leap year, and overnight crossover.
+  group('FtpFilesProvider monthly schedule helpers', () {
+    test('computeNextScheduledRun handles monthly dates, clamping, leap years, and year rollover', () {
+      // Same month ahead (Nov 10 -> Nov 15).
+      expect(
+        FtpFilesProvider.computeNextScheduledRun(
+          now: DateTime(2026, 11, 10, 8, 0),
+          runTime: const TimeOfDay(hour: 22, minute: 30),
+          runDays: _days(), // Weekly runDays unchecked must not block monthly.
+          frequency: FtpScheduleFrequency.monthly,
+          monthlyDay: 15,
+        ),
+        DateTime(2026, 11, 15, 22, 30),
+      );
+
+      // Same month passed (Nov 15 22:30 -> Dec 15 22:30).
+      expect(
+        FtpFilesProvider.computeNextScheduledRun(
+          now: DateTime(2026, 11, 15, 22, 30),
+          runTime: const TimeOfDay(hour: 22, minute: 30),
+          runDays: _days(),
+          frequency: FtpScheduleFrequency.monthly,
+          monthlyDay: 15,
+        ),
+        DateTime(2026, 12, 15, 22, 30),
+      );
+
+      // Dec -> Jan year rollover.
+      expect(
+        FtpFilesProvider.computeNextScheduledRun(
+          now: DateTime(2026, 12, 20, 9, 0),
+          runTime: const TimeOfDay(hour: 1, minute: 0),
+          runDays: _days(),
+          frequency: FtpScheduleFrequency.monthly,
+          monthlyDay: 1,
+        ),
+        DateTime(2027, 1, 1, 1, 0),
+      );
+
+      // Day 31 clamps to Feb 28 in non-leap year 2026 and Feb 29 in leap year 2028.
+      expect(
+        FtpFilesProvider.computeNextScheduledRun(
+          now: DateTime(2026, 2, 10, 8, 0),
+          runTime: const TimeOfDay(hour: 3, minute: 0),
+          runDays: _days(),
+          frequency: FtpScheduleFrequency.monthly,
+          monthlyDay: 31,
+        ),
+        DateTime(2026, 2, 28, 3, 0),
+      );
+      expect(
+        FtpFilesProvider.computeNextScheduledRun(
+          now: DateTime(2028, 2, 10, 8, 0),
+          runTime: const TimeOfDay(hour: 3, minute: 0),
+          runDays: _days(),
+          frequency: FtpScheduleFrequency.monthly,
+          monthlyDay: 31,
+        ),
+        DateTime(2028, 2, 29, 3, 0),
+      );
+
+      // Last day (0) picks Nov 30.
+      expect(
+        FtpFilesProvider.computeNextScheduledRun(
+          now: DateTime(2026, 11, 24, 12, 0),
+          runTime: const TimeOfDay(hour: 23, minute: 0),
+          runDays: _days(),
+          frequency: FtpScheduleFrequency.monthly,
+          monthlyDay: 0,
+        ),
+        DateTime(2026, 11, 30, 23, 0),
+      );
+    });
+
+    test('computeActiveWindow handles monthly same-day and month-end overnight crossover', () {
+      const start = TimeOfDay(hour: 22, minute: 0);
+      const end = TimeOfDay(hour: 6, minute: 0);
+
+      // Non-target day returns null.
+      expect(
+        FtpFilesProvider.computeActiveWindow(
+          now: DateTime(2026, 2, 27, 23, 0),
+          runTime: start,
+          runEndTime: end,
+          runDays: _days(),
+          frequency: FtpScheduleFrequency.monthly,
+          monthlyDay: 0,
+        ),
+        isNull,
+      );
+
+      // Target day Feb 28 23:00 -> active [Feb 28 22:00, Mar 1 06:00).
+      final febNight = FtpFilesProvider.computeActiveWindow(
+        now: DateTime(2026, 2, 28, 23, 0),
+        runTime: start,
+        runEndTime: end,
+        runDays: _days(),
+        frequency: FtpScheduleFrequency.monthly,
+        monthlyDay: 0,
+      );
+      expect(febNight?.start, DateTime(2026, 2, 28, 22, 0));
+      expect(febNight?.end, DateTime(2026, 3, 1, 6, 0));
+
+      // Overnight continuation on Mar 1 02:00 matches Feb 28 window.
+      final marEarly = FtpFilesProvider.computeActiveWindow(
+        now: DateTime(2026, 3, 1, 2, 0),
+        runTime: start,
+        runEndTime: end,
+        runDays: _days(),
+        frequency: FtpScheduleFrequency.monthly,
+        monthlyDay: 0,
+      );
+      expect(marEarly?.start, DateTime(2026, 2, 28, 22, 0));
+      expect(marEarly?.end, DateTime(2026, 3, 1, 6, 0));
+    });
+  });
+
   group('FtpFilesProvider.matchesDateFilter', () {
     final refNow = DateTime(2026, 11, 21, 9, 30);
 

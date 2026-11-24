@@ -374,6 +374,41 @@ void main() {
         expect(recipientB.uploadSources[0].lastCompletedAt, isNull);
       },
     );
+
+    // Gene - Nov, 24, 2026: Verify global schedule frequency & monthlyDay round-trip and legacy weekly fallback in FTP settings JSON.
+    test(
+      'round-trips global schedule frequency and monthlyDay in settings JSON and resets legacy imports to weekly',
+      () {
+        final donor = FtpFilesProvider(persistSettings: false)
+          ..setEnableSchedule(true)
+          ..setScheduleFrequency(FtpScheduleFrequency.monthly)
+          ..setScheduleMonthlyDay(0);
+        addTearDown(donor.dispose);
+
+        final exported = donor.exportSettingsJsonString(
+          now: DateTime(2026, 11, 24, 10, 0),
+        );
+
+        final recipient = FtpFilesProvider(persistSettings: false);
+        addTearDown(recipient.dispose);
+        recipient.importFromJsonString(exported);
+        expect(recipient.scheduleFrequency, FtpScheduleFrequency.monthly);
+        expect(recipient.scheduleMonthlyDay, 0);
+
+        // Legacy JSON missing 'frequency' resets recipient back to weekly instead of leaking prior monthly state.
+        final legacyWeeklyJson = jsonEncode({
+          'type': 'ftp_settings',
+          'schedule': {
+            'enableSchedule': true,
+            'runHour': 4,
+            'runMinute': 0,
+            'runDays': {'6': true, '7': true},
+          },
+        });
+        recipient.importFromJsonString(legacyWeeklyJson);
+        expect(recipient.scheduleFrequency, FtpScheduleFrequency.weekly);
+      },
+    );
   });
 
   group('Copy Settings & Directory Pairs JSON Export/Import', () {

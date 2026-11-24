@@ -1000,6 +1000,12 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
     final dateChipText = provider.dateMode == FtpDateMode.daysAgo
         ? '${provider.daysAgo}d ago ($dateTypeShort)'
         : '${provider.dateMode.label} ($dateTypeShort)';
+    // Gene - Nov, 24, 2026: Format main-screen schedule pill with cadence summary (Weekly days/presets or Monthly day).
+    final scheduleTimeText = provider.hasEndTimeLimit
+        ? '${provider.runTime.format(context)} – ${provider.runEndTime.format(context)}'
+        : provider.runTime.format(context);
+    final scheduleChipText =
+        '$scheduleTimeText • ${provider.scheduleCadenceSummary} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})';
 
     return Row(
       children: [
@@ -1073,14 +1079,22 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
               //                       '${provider.runTime.format(context)} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})',
               //                   color: accentColor,
               //                 ),
-              // Gene - Nov, 24, 2026: Display schedule start and end window in main screen pill when an end time is set.
+              //               // Gene - Nov, 24, 2026: Display schedule start and end window in main screen pill when an end time is set.
+              //               if (provider.enableSchedule)
+              //                 _infoPill(
+              //                   context,
+              //                   icon: Icons.schedule,
+              //                   label: provider.hasEndTimeLimit
+              //                       ? '${provider.runTime.format(context)} – ${provider.runEndTime.format(context)} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})'
+              //                       : '${provider.runTime.format(context)} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})',
+              //                   color: accentColor,
+              //                 ),
+              // Gene - Nov, 24, 2026: Show global schedule cadence summary alongside start/end window on main screen pill.
               if (provider.enableSchedule)
                 _infoPill(
                   context,
                   icon: Icons.schedule,
-                  label: provider.hasEndTimeLimit
-                      ? '${provider.runTime.format(context)} – ${provider.runEndTime.format(context)} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})'
-                      : '${provider.runTime.format(context)} (${provider.onCompletionAction == 'repeat' ? 'Repeat' : 'Once'})',
+                  label: scheduleChipText,
                   color: accentColor,
                 ),
               if (provider.dryRun)
@@ -1187,17 +1201,37 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
           blur: 3.0,
         ),
       ),
+      //       child: Row(
+      //         mainAxisSize: MainAxisSize.min,
+      //         children: [
+      //           Icon(icon, size: 13, color: color),
+      //           const SizedBox(width: 5),
+      //           Text(
+      //             label,
+      //             style: TextStyle(
+      //               fontSize: 12,
+      //               fontWeight: emphasized ? FontWeight.bold : FontWeight.w500,
+      //               color: color,
+      //             ),
+      //           ),
+      //         ],
+      //       ),
+      // Gene - Nov, 24, 2026: Wrap _infoPill label in Flexible with ellipsis so long schedule cadence labels never overflow narrow viewports.
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 13, color: color),
           const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: emphasized ? FontWeight.bold : FontWeight.w500,
-              color: color,
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: emphasized ? FontWeight.bold : FontWeight.w500,
+                color: color,
+              ),
             ),
           ),
         ],
@@ -1976,139 +2010,505 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                         // ── Schedule ──
                         _sectionLabel(context, '⏰ Schedule'),
                         const SizedBox(height: 8),
-                        IntrinsicHeight(
-                          child: Row(
+                        //                         IntrinsicHeight(
+                        //                           child: Row(
+                        //                             children: [
+                        //                               SizedBox(
+                        //                                 width: 24,
+                        //                                 height: 24,
+                        //                                 child: Checkbox(
+                        //                                   key: const Key(
+                        //                                     'ftp_enable_schedule_checkbox',
+                        //                                   ),
+                        //                                   value: provider.enableSchedule,
+                        //                                   onChanged: provider.isProcessing
+                        //                                       ? null
+                        //                                       : (val) => provider.setEnableSchedule(
+                        //                                           val ?? false,
+                        //                                         ),
+                        //                                   visualDensity: VisualDensity.compact,
+                        //                                   materialTapTargetSize:
+                        //                                       MaterialTapTargetSize.shrinkWrap,
+                        //                                 ),
+                        //                               ),
+                        //                               const SizedBox(width: 6),
+                        //                               Text(
+                        //                                 'Enable Schedule',
+                        //                                 style: TextStyle(
+                        //                                   fontWeight: FontWeight.w600,
+                        //                                   fontSize: 13,
+                        //                                   color: context.textSecondary,
+                        //                                 ),
+                        //                               ),
+                        //                               // Gene - Nov, 24, 2026: Replace single Run At picker with Start and End time window pickers.
+                        //                               const SizedBox(width: 12),
+                        //                               SizedBox(
+                        //                                 width: 110,
+                        //                                 child: StyledTimePicker(
+                        //                                   key: const Key(
+                        //                                     'ftp_schedule_start_time_picker',
+                        //                                   ),
+                        //                                   label: 'Start',
+                        //                                   time: provider.runTime,
+                        //                                   enabled:
+                        //                                       !provider.isProcessing &&
+                        //                                       provider.enableSchedule,
+                        //                                   onPicked: provider.setRunTime,
+                        //                                 ),
+                        //                               ),
+                        //                               const SizedBox(width: 8),
+                        //                               SizedBox(
+                        //                                 width: 110,
+                        //                                 child: StyledTimePicker(
+                        //                                   key: const Key(
+                        //                                     'ftp_schedule_end_time_picker',
+                        //                                   ),
+                        //                                   label: 'End',
+                        //                                   time: provider.runEndTime,
+                        //                                   enabled:
+                        //                                       !provider.isProcessing &&
+                        //                                       provider.enableSchedule,
+                        //                                   onPicked: provider.setRunEndTime,
+                        //                                 ),
+                        //                               ),
+                        //                               const SizedBox(width: 12),
+                        //                               const VerticalDivider(width: 1, thickness: 1),
+                        //                               const SizedBox(width: 8),
+                        //                               Expanded(
+                        //                                 child: Wrap(
+                        //                                   spacing: 4,
+                        //                                   runSpacing: 2,
+                        //                                   children: [
+                        //                                     for (final entry in {
+                        //                                       1: 'Mon',
+                        //                                       2: 'Tue',
+                        //                                       3: 'Wed',
+                        //                                       4: 'Thu',
+                        //                                       5: 'Fri',
+                        //                                       6: 'Sat',
+                        //                                       7: 'Sun',
+                        //                                     }.entries)
+                        //                                       FilterChip(
+                        //                                         label: Text(
+                        //                                           entry.value,
+                        //                                           style: const TextStyle(fontSize: 11),
+                        //                                         ),
+                        //                                         selected:
+                        //                                             provider.runDays[entry.key] ?? true,
+                        //                                         onSelected:
+                        //                                             (!provider.isProcessing &&
+                        //                                                 provider.enableSchedule)
+                        //                                             ? (val) => provider.setRunDay(
+                        //                                                 entry.key,
+                        //                                                 val,
+                        //                                               )
+                        //                                             : null,
+                        //                                         visualDensity: VisualDensity.compact,
+                        //                                         materialTapTargetSize:
+                        //                                             MaterialTapTargetSize.shrinkWrap,
+                        //                                         padding: const EdgeInsets.symmetric(
+                        //                                           horizontal: 4,
+                        //                                         ),
+                        //                                       ),
+                        //                                   ],
+                        //                                 ),
+                        //                               ),
+                        //                             ],
+                        //                           ),
+                        //                         ),
+                        //                         if (provider.enableSchedule &&
+                        //                             !provider.hasCheckedScheduleDays) ...[
+                        //                           const SizedBox(height: 6),
+                        //                           // Gene - Nov, 22, 2026: Use theme-aware errorColor on schedule validation message.
+                        //                           Text(
+                        //                             'Select at least one day to arm the schedule.',
+                        //                             style: TextStyle(
+                        //                               fontSize: 12,
+                        //                               color: context.errorColor,
+                        //                               fontWeight: FontWeight.w500,
+                        //                             ),
+                        //                           ),
+                        //                         ] else if (provider.enableSchedule &&
+                        //                             provider.hasCheckedScheduleDays &&
+                        //                             provider.useMultipleSources &&
+                        //                             !provider.hasSchedulableSources) ...[
+                        //                           // Gene - Nov, 24, 2026: Warn user when all active sources are Manual Only and cannot arm schedule.
+                        //                           const SizedBox(height: 6),
+                        //                           Text(
+                        //                             'All active upload sources are set to Manual Only. Change at least one source schedule to arm.',
+                        //                             style: TextStyle(
+                        //                               fontSize: 12,
+                        //                               color: context.errorColor,
+                        //                               fontWeight: FontWeight.w500,
+                        //                             ),
+                        //                           ),
+                        //                         ] else if (provider.enableSchedule &&
+                        //                             provider.hasCheckedScheduleDays) ...[
+                        //                           // Gene - Nov, 24, 2026: Explain active Start/End runtime window behavior (same-day, overnight, or no end cutoff).
+                        //                           const SizedBox(height: 6),
+                        //                           Builder(
+                        //                             builder: (context) {
+                        //                               final startMin =
+                        //                                   provider.runTime.hour * 60 +
+                        //                                   provider.runTime.minute;
+                        //                               final endMin =
+                        //                                   provider.runEndTime.hour * 60 +
+                        //                                   provider.runEndTime.minute;
+                        //                               final startStr = provider.runTime.format(context);
+                        //                               final endStr = provider.runEndTime.format(
+                        //                                 context,
+                        //                               );
+                        //                               final String helperText;
+                        //                               if (!provider.hasEndTimeLimit) {
+                        //                                 helperText =
+                        //                                     'Start and End match — scheduled runs will run until completion (no end cutoff).';
+                        //                               } else if (endMin < startMin) {
+                        //                                 helperText =
+                        //                                     'Overnight window — runs from $startStr until $endStr the next day.';
+                        //                               } else {
+                        //                                 helperText =
+                        //                                     'Runs from $startStr until $endStr on selected days; stops cleanly at End time.';
+                        //                               }
+                        //                               return Text(
+                        //                                 helperText,
+                        //                                 style: TextStyle(
+                        //                                   fontSize: 11.5,
+                        //                                   color: context.textMuted,
+                        //                                   fontStyle: FontStyle.italic,
+                        //                                 ),
+                        //                               );
+                        //                             },
+                        //                           ),
+                        //                         ],
+                        // Gene - Nov, 24, 2026: Add global schedule frequency (Weekly vs Monthly), weekday quick-presets, monthly day picker, and explicit unchecked-day helper copy.
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: Checkbox(
+                                    key: const Key(
+                                      'ftp_enable_schedule_checkbox',
+                                    ),
+                                    value: provider.enableSchedule,
+                                    onChanged: provider.isProcessing
+                                        ? null
+                                        : (val) => provider.setEnableSchedule(
+                                            val ?? false,
+                                          ),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Enable Schedule',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    color: context.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(
+                              width: 110,
+                              child: StyledTimePicker(
+                                key: const Key(
+                                  'ftp_schedule_start_time_picker',
+                                ),
+                                label: 'Start',
+                                time: provider.runTime,
+                                enabled:
+                                    !provider.isProcessing &&
+                                    provider.enableSchedule,
+                                onPicked: provider.setRunTime,
+                              ),
+                            ),
+                            SizedBox(
+                              width: 110,
+                              child: StyledTimePicker(
+                                key: const Key(
+                                  'ftp_schedule_end_time_picker',
+                                ),
+                                label: 'End',
+                                time: provider.runEndTime,
+                                enabled:
+                                    !provider.isProcessing &&
+                                    provider.enableSchedule,
+                                onPicked: provider.setRunEndTime,
+                              ),
+                            ),
+                            SizedBox(
+                              width: 205,
+                              child:
+                                  DropdownButtonFormField<FtpScheduleFrequency>(
+                                key: const Key(
+                                  'ftp_schedule_frequency_dropdown',
+                                ),
+                                isExpanded: true,
+                                initialValue: provider.scheduleFrequency,
+                                decoration: const InputDecoration(
+                                  labelText: 'Frequency',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                ),
+                                dropdownColor: context.cardBg,
+                                items: FtpScheduleFrequency.values
+                                    .map(
+                                      (freq) =>
+                                          DropdownMenuItem<
+                                              FtpScheduleFrequency>(
+                                        value: freq,
+                                        child: Text(
+                                          freq.label,
+                                          style: TextStyle(
+                                            color: context.textPrimary,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged:
+                                    (!provider.isProcessing &&
+                                        provider.enableSchedule)
+                                    ? (val) {
+                                        if (val != null) {
+                                          provider.setScheduleFrequency(val);
+                                        }
+                                      }
+                                    : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        if (provider.scheduleFrequency ==
+                            FtpScheduleFrequency.weekly) ...[
+                          Builder(
+                            builder: (context) {
+                              final selectedDays = {
+                                for (int d = 1; d <= 7; d++)
+                                  if (provider.runDays[d] ?? true) d,
+                              };
+                              final controlsEnabled =
+                                  !provider.isProcessing &&
+                                  provider.enableSchedule;
+                              const presets = [
+                                (
+                                  key: 'ftp_schedule_preset_everyday',
+                                  label: 'Every Day',
+                                  days: {1, 2, 3, 4, 5, 6, 7},
+                                ),
+                                (
+                                  key: 'ftp_schedule_preset_weekdays',
+                                  label: 'Weekdays',
+                                  days: {1, 2, 3, 4, 5},
+                                ),
+                                (
+                                  key: 'ftp_schedule_preset_weekends',
+                                  label: 'Weekends',
+                                  days: {6, 7},
+                                ),
+                                (
+                                  key: 'ftp_schedule_preset_sat',
+                                  label: 'Sat Only',
+                                  days: {6},
+                                ),
+                                (
+                                  key: 'ftp_schedule_preset_sun',
+                                  label: 'Sun Only',
+                                  days: {7},
+                                ),
+                              ];
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Wrap(
+                                    spacing: 4,
+                                    runSpacing: 4,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        'Run Days:',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: context.textSecondary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      for (final entry in {
+                                        1: 'Mon',
+                                        2: 'Tue',
+                                        3: 'Wed',
+                                        4: 'Thu',
+                                        5: 'Fri',
+                                        6: 'Sat',
+                                        7: 'Sun',
+                                      }.entries)
+                                        FilterChip(
+                                          key: Key(
+                                            'ftp_schedule_day_${entry.key}',
+                                          ),
+                                          label: Text(
+                                            entry.value,
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                          selected:
+                                              provider.runDays[entry.key] ??
+                                              true,
+                                          onSelected: controlsEnabled
+                                              ? (val) => provider.setRunDay(
+                                                  entry.key,
+                                                  val,
+                                                )
+                                              : null,
+                                          visualDensity: VisualDensity.compact,
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 4,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        'Quick select:',
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: context.textMuted,
+                                        ),
+                                      ),
+                                      for (final preset in presets)
+                                        ChoiceChip(
+                                          key: Key(preset.key),
+                                          label: Text(
+                                            preset.label,
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                          selected:
+                                              selectedDays.length ==
+                                                  preset.days.length &&
+                                              selectedDays.containsAll(
+                                                preset.days,
+                                              ),
+                                          onSelected: controlsEnabled
+                                              ? (_) => provider.setRunDaysPreset(
+                                                  preset.days,
+                                                )
+                                              : null,
+                                          visualDensity: VisualDensity.compact,
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ] else ...[
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: Checkbox(
+                                width: 175,
+                                child: DropdownButtonFormField<int>(
                                   key: const Key(
-                                    'ftp_enable_schedule_checkbox',
+                                    'ftp_schedule_monthly_day_dropdown',
                                   ),
-                                  value: provider.enableSchedule,
-                                  onChanged: provider.isProcessing
-                                      ? null
-                                      : (val) => provider.setEnableSchedule(
-                                          val ?? false,
+                                  isExpanded: true,
+                                  initialValue: provider.scheduleMonthlyDay
+                                      .clamp(0, 31),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Run On Day',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                  ),
+                                  dropdownColor: context.cardBg,
+                                  items: [
+                                    DropdownMenuItem<int>(
+                                      value: 0,
+                                      child: Text(
+                                        'Last day of month',
+                                        style: TextStyle(
+                                          color: context.textPrimary,
+                                          fontSize: 12,
                                         ),
-                                  visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Enable Schedule',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                  color: context.textSecondary,
-                                ),
-                              ),
-                              //                               const SizedBox(width: 12),
-                              //                               SizedBox(
-                              //                                 width: 115,
-                              //                                 child: StyledTimePicker(
-                              //                                   label: 'Run At',
-                              //                                   time: provider.runTime,
-                              //                                   enabled:
-                              //                                       !provider.isProcessing &&
-                              //                                       provider.enableSchedule,
-                              //                                   onPicked: provider.setRunTime,
-                              //                                 ),
-                              //                               ),
-                              //                               const SizedBox(width: 14),
-                              //                               const VerticalDivider(width: 1, thickness: 1),
-                              //                               const SizedBox(width: 10),
-                              // Gene - Nov, 24, 2026: Replace single Run At picker with Start and End time window pickers.
-                              const SizedBox(width: 12),
-                              SizedBox(
-                                width: 110,
-                                child: StyledTimePicker(
-                                  key: const Key(
-                                    'ftp_schedule_start_time_picker',
-                                  ),
-                                  label: 'Start',
-                                  time: provider.runTime,
-                                  enabled:
-                                      !provider.isProcessing &&
-                                      provider.enableSchedule,
-                                  onPicked: provider.setRunTime,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 110,
-                                child: StyledTimePicker(
-                                  key: const Key(
-                                    'ftp_schedule_end_time_picker',
-                                  ),
-                                  label: 'End',
-                                  time: provider.runEndTime,
-                                  enabled:
-                                      !provider.isProcessing &&
-                                      provider.enableSchedule,
-                                  onPicked: provider.setRunEndTime,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              const VerticalDivider(width: 1, thickness: 1),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Wrap(
-                                  spacing: 4,
-                                  runSpacing: 2,
-                                  children: [
-                                    for (final entry in {
-                                      1: 'Mon',
-                                      2: 'Tue',
-                                      3: 'Wed',
-                                      4: 'Thu',
-                                      5: 'Fri',
-                                      6: 'Sat',
-                                      7: 'Sun',
-                                    }.entries)
-                                      FilterChip(
-                                        label: Text(
-                                          entry.value,
-                                          style: const TextStyle(fontSize: 11),
-                                        ),
-                                        selected:
-                                            provider.runDays[entry.key] ?? true,
-                                        onSelected:
-                                            (!provider.isProcessing &&
-                                                provider.enableSchedule)
-                                            ? (val) => provider.setRunDay(
-                                                entry.key,
-                                                val,
-                                              )
-                                            : null,
-                                        visualDensity: VisualDensity.compact,
-                                        materialTapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 4,
+                                      ),
+                                    ),
+                                    for (int d = 1; d <= 31; d++)
+                                      DropdownMenuItem<int>(
+                                        value: d,
+                                        child: Text(
+                                          'Day $d',
+                                          style: TextStyle(
+                                            color: context.textPrimary,
+                                            fontSize: 12,
+                                          ),
                                         ),
                                       ),
                                   ],
+                                  onChanged:
+                                      (!provider.isProcessing &&
+                                          provider.enableSchedule)
+                                      ? (val) {
+                                          if (val != null) {
+                                            provider.setScheduleMonthlyDay(val);
+                                          }
+                                        }
+                                      : null,
+                                ),
+                              ),
+                              Text(
+                                (provider.scheduleMonthlyDay <= 0 ||
+                                        provider.scheduleMonthlyDay >= 29)
+                                    ? 'Uses last day in shorter months (Feb 28/29, 30-day months).'
+                                    : 'Runs once each calendar month.',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: context.textMuted,
+                                  fontStyle: FontStyle.italic,
                                 ),
                               ),
                             ],
                           ),
-                        ),
+                        ],
                         if (provider.enableSchedule &&
-                            !provider.hasCheckedScheduleDays) ...[
+                            !provider.hasValidScheduleTarget) ...[
                           const SizedBox(height: 6),
-                          //                           const Text(
-                          //                             'Select at least one day to arm the schedule.',
-                          //                             style: TextStyle(
-                          //                               fontSize: 12,
-                          //                               color: AppColors.error,
-                          //                               fontWeight: FontWeight.w500,
-                          //                             ),
-                          //                           ),
-                          // Gene - Nov, 22, 2026: Use theme-aware errorColor on schedule validation message.
                           Text(
                             'Select at least one day to arm the schedule.',
                             style: TextStyle(
@@ -2118,10 +2518,9 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                             ),
                           ),
                         ] else if (provider.enableSchedule &&
-                            provider.hasCheckedScheduleDays &&
+                            provider.hasValidScheduleTarget &&
                             provider.useMultipleSources &&
                             !provider.hasSchedulableSources) ...[
-                          // Gene - Nov, 24, 2026: Warn user when all active sources are Manual Only and cannot arm schedule.
                           const SizedBox(height: 6),
                           Text(
                             'All active upload sources are set to Manual Only. Change at least one source schedule to arm.',
@@ -2132,8 +2531,7 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                             ),
                           ),
                         ] else if (provider.enableSchedule &&
-                            provider.hasCheckedScheduleDays) ...[
-                          // Gene - Nov, 24, 2026: Explain active Start/End runtime window behavior (same-day, overnight, or no end cutoff).
+                            provider.hasValidScheduleTarget) ...[
                           const SizedBox(height: 6),
                           Builder(
                             builder: (context) {
@@ -2148,15 +2546,35 @@ class _FtpFilesScreenState extends State<FtpFilesScreen> {
                                 context,
                               );
                               final String helperText;
-                              if (!provider.hasEndTimeLimit) {
-                                helperText =
-                                    'Start and End match — scheduled runs will run until completion (no end cutoff).';
-                              } else if (endMin < startMin) {
-                                helperText =
-                                    'Overnight window — runs from $startStr until $endStr the next day.';
+                              if (provider.scheduleFrequency ==
+                                  FtpScheduleFrequency.monthly) {
+                                final dayDesc =
+                                    provider.scheduleMonthlyDay <= 0
+                                    ? 'the last day of each month'
+                                    : 'Day ${provider.scheduleMonthlyDay} of each month';
+                                if (!provider.hasEndTimeLimit) {
+                                  helperText =
+                                      'Start and End match — runs once a month on $dayDesc until completion (no end cutoff).';
+                                } else if (endMin < startMin) {
+                                  helperText =
+                                      'Overnight window — runs once a month on $dayDesc from $startStr until $endStr the next day.';
+                                } else {
+                                  helperText =
+                                      'Runs once a month on $dayDesc from $startStr until $endStr; stops cleanly at End time.';
+                                }
                               } else {
-                                helperText =
-                                    'Runs from $startStr until $endStr on selected days; stops cleanly at End time.';
+                                const cadence =
+                                    'only on checked days (unchecked days will not run)';
+                                if (!provider.hasEndTimeLimit) {
+                                  helperText =
+                                      'Start and End match — scheduled runs will run until completion (no end cutoff), $cadence.';
+                                } else if (endMin < startMin) {
+                                  helperText =
+                                      'Overnight window — starts $startStr $cadence and stops cleanly at $endStr the next day.';
+                                } else {
+                                  helperText =
+                                      'Runs from $startStr until $endStr $cadence; stops cleanly at End time.';
+                                }
                               }
                               return Text(
                                 helperText,
@@ -3189,10 +3607,34 @@ class _FtpUploadSourcesDialogState extends State<_FtpUploadSourcesDialog> {
                                   horizontal: 4,
                                 ),
                               ),
+                            //                             if (widget.provider.enableSchedule &&
+                            //                                 !hasWeeklyOverlap)
+                            //                               Text(
+                            //                                 'No overlap with global schedule days',
+                            //                                 style: TextStyle(
+                            //                                   fontSize: 11,
+                            //                                   color: context.warningColor,
+                            //                                   fontStyle: FontStyle.italic,
+                            //                                 ),
+                            //                               ),
+                            // Gene - Nov, 24, 2026: Tailor source weekly overlap hint when global schedule is Monthly vs Weekly.
                             if (widget.provider.enableSchedule &&
+                                widget.provider.scheduleFrequency ==
+                                    FtpScheduleFrequency.weekly &&
                                 !hasWeeklyOverlap)
                               Text(
                                 'No overlap with global schedule days',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: context.warningColor,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              )
+                            else if (widget.provider.enableSchedule &&
+                                widget.provider.scheduleFrequency ==
+                                    FtpScheduleFrequency.monthly)
+                              Text(
+                                'Global schedule is Monthly — runs only if that date matches selected day(s)',
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: context.warningColor,

@@ -1527,5 +1527,92 @@ void main() {
         expect(provider.nextScheduledRun, DateTime(2026, 11, 25, 2, 0));
       },
     );
+
+    // Gene - Nov, 24, 2026: Verify setRunDaysPreset, scheduleCadenceSummary, and global Monthly schedule persistence, arming, execution, and next-month repeat.
+    test(
+      'supports weekly presets (Weekends, Sat Only, Sun Only) and global Monthly schedule persistence & repeat',
+      () async {
+        await LocalDbService().init('ftp_test_global_monthly');
+        HistoryService().init('ftp_test_global_monthly');
+        await HistoryService().clearHistory(allProfiles: false);
+
+        final srcDir = Directory(p.join(tempSourcesDir.path, 'global_monthly'))
+          ..createSync(recursive: true);
+        final file = File(p.join(srcDir.path, 'monthly_report.csv'))
+          ..writeAsBytesSync([1, 2, 3]);
+        file.setLastModifiedSync(DateTime(2026, 11, 28, 10, 0));
+
+        DateTime clock = DateTime(2026, 11, 10, 8, 0);
+        final server = FakeRemoteServerState();
+        final provider = buildProvider(
+          server: server,
+          nowProvider: () => clock,
+        );
+        addTearDown(provider.dispose);
+
+        provider
+          ..setHost('ftp.example.com')
+          ..setSourcePath(srcDir.path)
+          ..setDateType(FtpDateType.modified)
+          ..setDateMode(FtpDateMode.allFiles)
+          ..setSkipIfExists(false)
+          ..setEnableSchedule(true)
+          ..setRunTime(const TimeOfDay(hour: 2, minute: 0))
+          ..setRunEndTime(const TimeOfDay(hour: 2, minute: 0))
+          ..setOnCompletionAction('repeat');
+
+        // Weekly quick presets & cadence summary (never contains en-dash '–').
+        expect(provider.scheduleCadenceSummary, 'Daily');
+        provider.setRunDaysPreset({1, 2, 3, 4, 5});
+        expect(provider.scheduleCadenceSummary, 'Weekdays');
+        expect(provider.scheduleCadenceSummary, isNot(contains('–')));
+        provider.setRunDaysPreset({6, 7});
+        expect(provider.scheduleCadenceSummary, 'Weekends');
+        expect(provider.runDays[1], isFalse);
+        expect(provider.runDays[6], isTrue);
+        expect(provider.runDays[7], isTrue);
+        provider.setRunDaysPreset({6});
+        expect(provider.scheduleCadenceSummary, 'Sat');
+        provider.setRunDaysPreset({7});
+        expect(provider.scheduleCadenceSummary, 'Sun');
+
+        // Unchecking all days prevents arming in Weekly mode, but Monthly mode can arm without runDays.
+        provider.setRunDaysPreset(<int>{});
+        expect(provider.hasCheckedScheduleDays, isFalse);
+        expect(provider.canArmSchedule, isFalse);
+
+        provider
+          ..setScheduleFrequency(FtpScheduleFrequency.monthly)
+          ..setScheduleMonthlyDay(0); // Last day of month
+        expect(provider.scheduleCadenceSummary, 'Monthly (Last day)');
+        expect(provider.scheduleCadenceSummary, isNot(contains('–')));
+        expect(provider.canArmSchedule, isTrue);
+
+        await provider.flushSavesForTest();
+        expect(LocalDbService().getString('ftp_scheduleFrequency'), 'monthly');
+        expect(LocalDbService().getInt('ftp_scheduleMonthlyDay'), 0);
+
+        await provider.reloadSettings();
+        expect(provider.scheduleFrequency, FtpScheduleFrequency.monthly);
+        expect(provider.scheduleMonthlyDay, 0);
+
+        // Arm on Nov 10 -> next run is Nov 30 at 02:00.
+        provider.startSchedule();
+        expect(provider.isScheduleArmed, isTrue);
+        expect(provider.nextScheduledRun, DateTime(2026, 11, 30, 2, 0));
+
+        // Non-target day Nov 29 does nothing.
+        clock = DateTime(2026, 11, 29, 2, 0);
+        await provider.triggerScheduleTickForTest();
+        expect(server.uploadCalls, isEmpty);
+
+        // Target day Nov 30 02:00 runs upload and re-arms for Dec 31 02:00.
+        clock = DateTime(2026, 11, 30, 2, 0);
+        await provider.triggerScheduleTickForTest();
+        expect(server.uploadCalls, ['monthly_report.csv']);
+        expect(provider.isScheduleArmed, isTrue);
+        expect(provider.nextScheduledRun, DateTime(2026, 12, 31, 2, 0));
+      },
+    );
   });
 }

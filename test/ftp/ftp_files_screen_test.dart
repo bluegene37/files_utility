@@ -628,6 +628,112 @@ void main() {
       expect(provider.uploadSources[1].lastCompletedMonth, isNull);
     },
   );
+
+  // Gene - Nov, 24, 2026: Verify Weekly presets (Weekends, Sat Only, Sun Only), unchecked-day copy, Monthly frequency controls, and main screen pill at 980x680 without overflow.
+  testWidgets(
+    'FtpFilesScreen supports weekly presets and global Monthly schedule without 980x680 overflow',
+    (tester) async {
+      tester.view.physicalSize = const Size(980, 680);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final provider = FtpFilesProvider(
+        clientFactory: (_) => _NoopFtpClient(),
+        persistSettings: false,
+      )
+        ..setEnableSchedule(true)
+        ..setRunTime(const TimeOfDay(hour: 2, minute: 0))
+        ..setRunEndTime(const TimeOfDay(hour: 2, minute: 0));
+      addTearDown(provider.dispose);
+
+      await tester.pumpWidget(buildFtpTestApp(provider));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Daily (Repeat)'), findsOneWidget);
+      expect(find.textContaining('–'), findsNothing);
+
+      final advBtn = find.byKey(const Key('ftp_advanced_settings_btn'));
+      await tester.ensureVisible(advBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(advBtn);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('ftp_schedule_frequency_dropdown')),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('unchecked days will not run'),
+        findsOneWidget,
+      );
+
+      // Tap Weekends, Sat Only, Sun Only presets.
+      final weekendsChip = find.byKey(
+        const Key('ftp_schedule_preset_weekends'),
+      );
+      await tester.ensureVisible(weekendsChip);
+      await tester.pumpAndSettle();
+      await tester.tap(weekendsChip);
+      await tester.pump();
+      expect(provider.runDays[6], isTrue);
+      expect(provider.runDays[7], isTrue);
+      expect(provider.runDays[1], isFalse);
+
+      await tester.tap(find.byKey(const Key('ftp_schedule_preset_sat')));
+      await tester.pump();
+      expect(provider.runDays[6], isTrue);
+      expect(provider.runDays[7], isFalse);
+
+      await tester.tap(find.byKey(const Key('ftp_schedule_preset_sun')));
+      await tester.pump();
+      expect(provider.runDays[6], isFalse);
+      expect(provider.runDays[7], isTrue);
+
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Sun (Repeat)'), findsOneWidget);
+
+      // Switch Frequency to Monthly (Once a Month) and pick Last day of month.
+      await tester.ensureVisible(advBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(advBtn);
+      await tester.pumpAndSettle();
+
+      final freqDropdown = find.byKey(
+        const Key('ftp_schedule_frequency_dropdown'),
+      );
+      await tester.ensureVisible(freqDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(freqDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Monthly (Once a Month)').last);
+      await tester.pumpAndSettle();
+
+      expect(
+        provider.scheduleFrequency,
+        FtpScheduleFrequency.monthly,
+      );
+      expect(find.byKey(const Key('ftp_schedule_day_1')), findsNothing);
+
+      final monthlyDropdown = find.byKey(
+        const Key('ftp_schedule_monthly_day_dropdown'),
+      );
+      expect(monthlyDropdown, findsOneWidget);
+      await tester.ensureVisible(monthlyDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(monthlyDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Last day of month').last);
+      await tester.pumpAndSettle();
+      expect(provider.scheduleMonthlyDay, 0);
+
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Monthly (Last day) (Repeat)'), findsOneWidget);
+      expect(find.textContaining('–'), findsNothing);
+    },
+  );
 }
 
 class _RecordingNoopFtpClient extends _NoopFtpClient {
