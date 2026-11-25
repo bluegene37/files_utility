@@ -1,0 +1,15 @@
+# Gene - Nov, 25, 2026: Native Rust file transfer engine crate (pure std, zero external crates).
+[package]
+name = "transfer_engine"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "transfer_engine"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = "symbols"

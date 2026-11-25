@@ -36,6 +36,10 @@ jobs:
           channel: stable
           cache: true
 
+      # Gene - Nov, 25, 2026: Setup Rust toolchain for Windows release build.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install Dependencies
         run: flutter pub get
 
@@ -78,6 +82,10 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      # Gene - Nov, 25, 2026: Setup Rust toolchain for Microsoft Store MSIX build.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install Dependencies
         run: flutter pub get
@@ -134,7 +142,9 @@ jobs:
           $zip = [System.IO.Compression.ZipFile]::OpenRead($msix.FullName)
           try {
             $entries = $zip.Entries | ForEach-Object { $_.FullName.ToLowerInvariant() }
-            foreach ($req in @("files_utility.exe", "flutter_windows.dll", "appxmanifest.xml")) {
+            # Gene - Nov, 25, 2026: Also verify bundled native Rust transfer_engine.dll inside the Store MSIX.
+            # foreach ($req in @("files_utility.exe", "flutter_windows.dll", "appxmanifest.xml")) {
+            foreach ($req in @("files_utility.exe", "flutter_windows.dll", "transfer_engine.dll", "appxmanifest.xml")) {
               if (-not ($entries -contains $req)) {
                 throw "Store MSIX $($msix.Name) is missing required entry: $req"
               }
@@ -165,6 +175,12 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      # Gene - Nov, 25, 2026: Setup Rust toolchain with arm64 + x64 macOS targets for universal DMG build.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Install Dependencies
         run: flutter pub get
@@ -251,6 +267,10 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      # Gene - Nov, 25, 2026: Setup Rust toolchain for Linux release packaging.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
       # The Ubuntu runner ships no GTK development headers, unlike the Windows
       # and macOS images which come with their native toolchains preinstalled.

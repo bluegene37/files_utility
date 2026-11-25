@@ -106,3 +106,6 @@ web/
 
 # Project docs that ship with the repo (re-included over ~/.gitignore_global)
 !RELEASING.md
+
+# Gene - Nov, 25, 2026: Rust native engine build artifacts
+native/transfer_engine/target/

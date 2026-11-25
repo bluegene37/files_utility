@@ -35,6 +35,10 @@ dependencies:
   sqflite_common_ffi: ^2.4.2
   # Gene - Nov, 21, 2026: Add ftpconnect for native FTP/FTPS/FTPES/SFTP uploads
   ftpconnect: ^3.0.0
+  # Gene - Nov, 25, 2026: Add Dart build hooks, code_assets, and ffi for the native Rust transfer engine.
+  hooks: ^2.2.0
+  code_assets: ^2.2.0
+  ffi: ^2.2.0
 
 dev_dependencies:
   flutter_test:

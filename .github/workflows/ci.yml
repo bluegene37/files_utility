@@ -24,11 +24,21 @@ jobs:
           channel: stable
           cache: true
 
+      # Gene - Nov, 25, 2026: Setup Rust toolchain and test native transfer_engine crate.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Rust Unit Tests
+        run: cargo test --manifest-path native/transfer_engine/Cargo.toml
+
       - name: Install Dependencies
         run: flutter pub get
 
+      # Gene - Nov, 25, 2026: Include hook/ directory in Dart formatting check.
+      # - name: Check Formatting
+      #   run: dart format --output=none --set-exit-if-changed lib test
       - name: Check Formatting
-        run: dart format --output=none --set-exit-if-changed lib test
+        run: dart format --output=none --set-exit-if-changed lib test hook
 
       - name: Run Static Analysis
         run: flutter analyze --fatal-infos
@@ -49,6 +59,10 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      # Gene - Nov, 25, 2026: Setup Rust toolchain for Windows native transfer_engine build.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install Dependencies
         run: flutter pub get
@@ -77,6 +91,12 @@ jobs:
           channel: stable
           cache: true
 
+      # Gene - Nov, 25, 2026: Setup Rust toolchain with arm64 + x64 macOS targets for universal build.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
       - name: Install Dependencies
         run: flutter pub get
 
@@ -103,6 +123,10 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      # Gene - Nov, 25, 2026: Setup Rust toolchain for Linux native transfer_engine build.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
       # The Ubuntu runner ships no GTK development headers, unlike the Windows
       # and macOS images which come with their native toolchains preinstalled.

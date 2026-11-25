@@ -618,16 +618,32 @@ class TransferFilesScreen extends StatelessWidget {
                                 ),
                               ),
                             ),
+                          // Gene - Nov, 25, 2026: Wrap transfer status text in Tooltip so live scanning counter and folder name remain readable on hover.
+                          // Expanded(
+                          //   child: Text(
+                          //     provider.currentStatus,
+                          //     style: TextStyle(
+                          //       fontWeight: FontWeight.w600,
+                          //       color: context.textPrimary,
+                          //       fontSize: 13,
+                          //     ),
+                          //     maxLines: 1,
+                          //     overflow: TextOverflow.ellipsis,
+                          //   ),
+                          // ),
                           Expanded(
-                            child: Text(
-                              provider.currentStatus,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: context.textPrimary,
-                                fontSize: 13,
+                            child: Tooltip(
+                              message: provider.currentStatus,
+                              child: Text(
+                                provider.currentStatus,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: context.textPrimary,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 8),

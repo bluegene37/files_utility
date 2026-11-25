@@ -23,6 +23,8 @@ class _IsolateProgress {
   final int filesSkipped;
   final int filesAlreadyExist;
   final int errors;
+  // Gene - Nov, 25, 2026: Report live scanned/inspected file count to the UI top bar.
+  final int filesInspected;
   final bool done;
   final String? criticalError;
 
@@ -34,6 +36,7 @@ class _IsolateProgress {
     this.filesSkipped = 0,
     this.filesAlreadyExist = 0,
     this.errors = 0,
+    this.filesInspected = 0,
     this.done = false,
     this.criticalError,
   });
@@ -91,6 +94,8 @@ class _CountState {
   int directoriesScanned = 0;
   int filesInspected = 0;
   int dirsSkipped = 0;
+  // Gene - Nov, 25, 2026: Throttle timestamp (ms) for live scanning counter updates.
+  int lastStatusEmitMs = 0;
 }
 
 class _CopyTask {
@@ -303,6 +308,8 @@ class CopyFilesProvider with ChangeNotifier {
   int filesSkipped = 0;
   int filesAlreadyExist = 0;
   int errors = 0;
+  // Gene - Nov, 25, 2026: Track live scanned file count across active Copy workers.
+  int filesScanned = 0;
 
   // Active worker isolates
   final List<_ActiveWorker> _activeWorkers = [];
@@ -1284,6 +1291,10 @@ class CopyFilesProvider with ChangeNotifier {
     });
   }
 
+  // Gene - Nov, 25, 2026: Format scanned file counts cleanly inside worker isolates.
+  static final NumberFormat _isolateNumFmt = NumberFormat('#,##0');
+  static String _formatCount(int n) => _isolateNumFmt.format(n);
+
   /// Process a batch of copy tasks with controlled concurrency (max 6 parallel).
   static Future<void> _processBatch(
     List<_CopyTask> batch,
@@ -1317,16 +1328,30 @@ class CopyFilesProvider with ChangeNotifier {
         counts.filesCopied++;
 
         if (counts.filesCopied % params.logInterval == 0) {
+          // Gene - Nov, 25, 2026: Include filesInspected in progress updates.
+          // params.sendPort.send(
+          //   _IsolateProgress(
+          //     logMessage:
+          //         '✓ Copied ${params.logInterval} files (total: ${counts.filesCopied}) – latest: ${p.basename(task.source.path)}',
+          //     status:
+          //         'Copying: ${p.basename(task.source.path)} (${counts.filesCopied} copied)',
+          //     filesCopied: counts.filesCopied,
+          //     filesSkipped: counts.filesSkipped,
+          //     filesAlreadyExist: counts.filesAlreadyExist,
+          //     errors: counts.errors,
+          //   ),
+          // );
           params.sendPort.send(
             _IsolateProgress(
               logMessage:
                   '✓ Copied ${params.logInterval} files (total: ${counts.filesCopied}) – latest: ${p.basename(task.source.path)}',
               status:
-                  'Copying: ${p.basename(task.source.path)} (${counts.filesCopied} copied)',
+                  'Copying: ${p.basename(task.source.path)} (${_formatCount(counts.filesCopied)} copied, ${_formatCount(counts.filesInspected)} scanned)',
               filesCopied: counts.filesCopied,
               filesSkipped: counts.filesSkipped,
               filesAlreadyExist: counts.filesAlreadyExist,
               errors: counts.errors,
+              filesInspected: counts.filesInspected,
             ),
           );
         }
@@ -1340,6 +1365,7 @@ class CopyFilesProvider with ChangeNotifier {
             filesCopied: counts.filesCopied,
             filesSkipped: counts.filesSkipped,
             filesAlreadyExist: counts.filesAlreadyExist,
+            filesInspected: counts.filesInspected,
           ),
         );
       } finally {
@@ -1400,6 +1426,7 @@ class CopyFilesProvider with ChangeNotifier {
           filesCopied: counts.filesCopied,
           filesSkipped: counts.filesSkipped,
           filesAlreadyExist: counts.filesAlreadyExist,
+          filesInspected: counts.filesInspected,
         ),
       );
       return;
@@ -1407,18 +1434,35 @@ class CopyFilesProvider with ChangeNotifier {
 
     counts.directoriesScanned++;
 
-    // Report scanning progress based on logInterval
-    // For interval 1-10, report every directory; for larger intervals, every 5 dirs
-    final dirReportInterval = params.logInterval <= 10 ? 1 : 5;
-    if (counts.directoriesScanned % dirReportInterval == 0) {
+    // Gene - Nov, 25, 2026: Emit live scanning file counter on first directory and every >=150ms.
+    // // Report scanning progress based on logInterval
+    // // For interval 1-10, report every directory; for larger intervals, every 5 dirs
+    // final dirReportInterval = params.logInterval <= 10 ? 1 : 5;
+    // if (counts.directoriesScanned % dirReportInterval == 0) {
+    //   params.sendPort.send(
+    //     _IsolateProgress(
+    //       status:
+    //           '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked, ${counts.filesAlreadyExist} already exist)',
+    //       filesCopied: counts.filesCopied,
+    //       filesSkipped: counts.filesSkipped,
+    //       filesAlreadyExist: counts.filesAlreadyExist,
+    //       errors: counts.errors,
+    //     ),
+    //   );
+    // }
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (counts.directoriesScanned == 1 ||
+        nowMs - counts.lastStatusEmitMs >= 150) {
+      counts.lastStatusEmitMs = nowMs;
       params.sendPort.send(
         _IsolateProgress(
           status:
-              '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked, ${counts.filesAlreadyExist} already exist)',
+              '⏳ Scanning (${_formatCount(counts.filesInspected)} files): ${p.basename(dir.path)}',
           filesCopied: counts.filesCopied,
           filesSkipped: counts.filesSkipped,
           filesAlreadyExist: counts.filesAlreadyExist,
           errors: counts.errors,
+          filesInspected: counts.filesInspected,
         ),
       );
     }
@@ -1560,6 +1604,7 @@ class CopyFilesProvider with ChangeNotifier {
                     filesSkipped: counts.filesSkipped,
                     filesAlreadyExist: counts.filesAlreadyExist,
                     errors: counts.errors,
+                    filesInspected: counts.filesInspected,
                   ),
                 );
               }
@@ -1585,6 +1630,7 @@ class CopyFilesProvider with ChangeNotifier {
               filesCopied: counts.filesCopied,
               filesSkipped: counts.filesSkipped,
               filesAlreadyExist: counts.filesAlreadyExist,
+              filesInspected: counts.filesInspected,
             ),
           );
         }
@@ -1592,16 +1638,32 @@ class CopyFilesProvider with ChangeNotifier {
 
       await Future.wait(futures);
 
-      // Extra progress pulse for large directories, throttled to every 1000 files to not overwhelm UI
-      if (i > 0 && i % 1000 == 0) {
+      // Gene - Nov, 25, 2026: Throttle scanning counter updates by wall-clock time (150ms) so live file count updates smoothly inside large directories.
+      // // Extra progress pulse for large directories, throttled to every 1000 files to not overwhelm UI
+      // if (i > 0 && i % 1000 == 0) {
+      //   params.sendPort.send(
+      //     _IsolateProgress(
+      //       status:
+      //           '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked, ${counts.filesAlreadyExist} already exist)',
+      //       filesCopied: counts.filesCopied,
+      //       filesSkipped: counts.filesSkipped,
+      //       filesAlreadyExist: counts.filesAlreadyExist,
+      //       errors: counts.errors,
+      //     ),
+      //   );
+      // }
+      final chunkNowMs = DateTime.now().millisecondsSinceEpoch;
+      if (chunkNowMs - counts.lastStatusEmitMs >= 150) {
+        counts.lastStatusEmitMs = chunkNowMs;
         params.sendPort.send(
           _IsolateProgress(
             status:
-                '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked, ${counts.filesAlreadyExist} already exist)',
+                '⏳ Scanning (${_formatCount(counts.filesInspected)} files): ${p.basename(dir.path)}',
             filesCopied: counts.filesCopied,
             filesSkipped: counts.filesSkipped,
             filesAlreadyExist: counts.filesAlreadyExist,
             errors: counts.errors,
+            filesInspected: counts.filesInspected,
           ),
         );
       }
@@ -1717,6 +1779,7 @@ class CopyFilesProvider with ChangeNotifier {
             filesSkipped: counts.filesSkipped,
             filesAlreadyExist: counts.filesAlreadyExist,
             errors: counts.errors,
+            filesInspected: counts.filesInspected,
           ),
         );
       }
@@ -1762,6 +1825,7 @@ class CopyFilesProvider with ChangeNotifier {
           filesSkipped: counts.filesSkipped,
           filesAlreadyExist: counts.filesAlreadyExist,
           errors: counts.errors,
+          filesInspected: counts.filesInspected,
         ),
       );
 
@@ -1790,6 +1854,7 @@ class CopyFilesProvider with ChangeNotifier {
           filesSkipped: counts.filesSkipped,
           filesAlreadyExist: counts.filesAlreadyExist,
           errors: counts.errors,
+          filesInspected: counts.filesInspected,
         ),
       );
     } finally {
@@ -1848,11 +1913,14 @@ class CopyFilesProvider with ChangeNotifier {
     _pairStats.clear();
 
     isProcessing = true;
-    currentStatus = '⏳ Scanning...';
+    // Gene - Nov, 25, 2026: Initialize Copy status with live scanning file counter.
+    // currentStatus = '⏳ Scanning...';
+    currentStatus = '⏳ Scanning (0 files)...';
     filesCopied = 0;
     filesSkipped = 0;
     filesAlreadyExist = 0;
     errors = 0;
+    filesScanned = 0;
     isPaused = false;
     notifyListeners();
 
@@ -1905,17 +1973,21 @@ class CopyFilesProvider with ChangeNotifier {
     int totalCopied = 0,
         totalSkipped = 0,
         totalAlreadyExist = 0,
-        totalErrors = 0;
+        totalErrors = 0,
+        totalScanned = 0;
     for (final stats in _pairStats.values) {
       totalCopied += stats[0];
       totalSkipped += stats[1];
       totalErrors += stats[2];
       totalAlreadyExist += stats.length > 3 ? stats[3] : 0;
+      // Gene - Nov, 25, 2026: Aggregate scanned/inspected file count across active pairs.
+      totalScanned += stats.length > 4 ? stats[4] : 0;
     }
     filesCopied = totalCopied;
     filesSkipped = totalSkipped;
     filesAlreadyExist = totalAlreadyExist;
     errors = totalErrors;
+    filesScanned = totalScanned;
   }
 
   /// Starts all pairs belonging to the current run order group simultaneously.
@@ -1949,8 +2021,17 @@ class CopyFilesProvider with ChangeNotifier {
     final origIdx = pairData['origIndex'] as int;
     final runOrder = pairData['runOrder'] as int;
     _addLog('── Pair ${origIdx + 1} (Order $runOrder): $source → $dest');
+    // Gene - Nov, 25, 2026: Show live file counter in initial worker status.
+    // if (_activeWorkers.isEmpty) {
+    //   currentStatus = '⏳ Pair ${origIdx + 1}: Scanning...';
+    // } else {
+    //   currentStatus =
+    //       '⏳ Running ${_activeWorkers.length + 1} pair(s) (Order $runOrder)...';
+    // }
     if (_activeWorkers.isEmpty) {
-      currentStatus = '⏳ Pair ${origIdx + 1}: Scanning...';
+      currentStatus = useMultipleDirectories
+          ? '⏳ Pair ${origIdx + 1}: Scanning (0 files)...'
+          : '⏳ Scanning (0 files)...';
     } else {
       currentStatus =
           '⏳ Running ${_activeWorkers.length + 1} pair(s) (Order $runOrder)...';
@@ -1995,6 +2076,8 @@ class CopyFilesProvider with ChangeNotifier {
       initialSkipped,
       initialErrors,
       initialAlreadyExist,
+      // Gene - Nov, 25, 2026: Track initial inspected file count per pair.
+      initialInspected,
     ];
     _recalcStats();
     notifyListeners();
@@ -2031,11 +2114,22 @@ class CopyFilesProvider with ChangeNotifier {
           message.filesSkipped,
           message.errors,
           message.filesAlreadyExist,
+          // Gene - Nov, 25, 2026: Track live inspected file count per pair.
+          message.filesInspected,
         ];
         _recalcStats();
 
         if (message.status != null && !isPaused) {
-          if (_activeWorkers.length == 1) {
+          // Gene - Nov, 25, 2026: Keep single-pair status concise so the live scanning counter and folder name have full width.
+          // if (_activeWorkers.length == 1) {
+          //   currentStatus = 'P${origIdx + 1}: ${message.status!}';
+          // } else {
+          //   currentStatus =
+          //       '${_activeWorkers.length} pairs (Order $runOrder) – P${origIdx + 1}: ${message.status!}';
+          // }
+          if (!useMultipleDirectories) {
+            currentStatus = message.status!;
+          } else if (_activeWorkers.length == 1) {
             currentStatus = 'P${origIdx + 1}: ${message.status!}';
           } else {
             currentStatus =
