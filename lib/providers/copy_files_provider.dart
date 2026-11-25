@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
+// Gene - Nov, 25, 2026: Replaced Dart isolate copy worker with native Rust copy_engine.
+// import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:intl/intl.dart';
@@ -10,101 +11,98 @@ import 'package:path/path.dart' as p;
 import '../services/file_logger.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
-import '../services/path_safety.dart';
+// import '../services/path_safety.dart';
+import '../services/rust_file_engines.dart';
 import '../models/run_record.dart';
 import '../services/global_db_service.dart';
 
-/// Message sent FROM the background isolate TO the main isolate.
-class _IsolateProgress {
-  final String? logMessage;
-  final String? errorMessage;
-  final String? status;
-  final int filesCopied;
-  final int filesSkipped;
-  final int filesAlreadyExist;
-  final int errors;
-  // Gene - Nov, 25, 2026: Report live scanned/inspected file count to the UI top bar.
-  final int filesInspected;
-  final bool done;
-  final String? criticalError;
-
-  _IsolateProgress({
-    this.logMessage,
-    this.errorMessage,
-    this.status,
-    this.filesCopied = 0,
-    this.filesSkipped = 0,
-    this.filesAlreadyExist = 0,
-    this.errors = 0,
-    this.filesInspected = 0,
-    this.done = false,
-    this.criticalError,
-  });
-}
-
-/// Parameters sent TO the background isolate.
-class _IsolateParams {
-  final String sourcePath;
-  final String destPath;
-  final bool enableDateRange;
-  final int fromEpochMs;
-  final int toEpochMs;
-  final bool enableAgeFilter;
-  final String ageFilterUnit;
-  final int ageFilterValue;
-  final SendPort sendPort;
-  final String? progressFilePath;
-  final Set<String> completedDirs;
-  final Map<String, String> lastProcessedFiles;
-  final int logInterval;
-  final int initialCopied;
-  final int initialSkipped;
-  final int initialAlreadyExist;
-  final int initialErrors;
-  final int initialInspected;
-
-  _IsolateParams({
-    required this.sourcePath,
-    required this.destPath,
-    required this.enableDateRange,
-    required this.fromEpochMs,
-    required this.toEpochMs,
-    required this.enableAgeFilter,
-    required this.ageFilterUnit,
-    required this.ageFilterValue,
-    required this.sendPort,
-    this.progressFilePath,
-    this.completedDirs = const {},
-    this.lastProcessedFiles = const {},
-    this.logInterval = 100,
-    this.initialCopied = 0,
-    this.initialSkipped = 0,
-    this.initialAlreadyExist = 0,
-    this.initialErrors = 0,
-    this.initialInspected = 0,
-  });
-}
-
-/// Mutable counters passed through the recursive walk inside the isolate.
-class _CountState {
-  int filesCopied = 0;
-  int filesSkipped = 0;
-  int filesAlreadyExist = 0;
-  int errors = 0;
-  int directoriesScanned = 0;
-  int filesInspected = 0;
-  int dirsSkipped = 0;
-  // Gene - Nov, 25, 2026: Throttle timestamp (ms) for live scanning counter updates.
-  int lastStatusEmitMs = 0;
-}
-
-class _CopyTask {
-  final File source;
-  final String destFilePath;
-  final DateTime modified;
-
-  _CopyTask(this.source, this.destFilePath, this.modified);
-}
+// Gene - Nov, 25, 2026: Commented out Dart isolate DTOs after migrating Copy to Rust copy_engine.
+// class _IsolateProgress {
+//   final String? logMessage;
+//   final String? errorMessage;
+//   final String? status;
+//   final int filesCopied;
+//   final int filesSkipped;
+//   final int filesAlreadyExist;
+//   final int errors;
+//   final int filesInspected;
+//   final bool done;
+//   final String? criticalError;
+//
+//   _IsolateProgress({
+//     this.logMessage,
+//     this.errorMessage,
+//     this.status,
+//     this.filesCopied = 0,
+//     this.filesSkipped = 0,
+//     this.filesAlreadyExist = 0,
+//     this.errors = 0,
+//     this.filesInspected = 0,
+//     this.done = false,
+//     this.criticalError,
+//   });
+// }
+//
+// class _IsolateParams {
+//   final String sourcePath;
+//   final String destPath;
+//   final bool enableDateRange;
+//   final int fromEpochMs;
+//   final int toEpochMs;
+//   final bool enableAgeFilter;
+//   final String ageFilterUnit;
+//   final int ageFilterValue;
+//   final SendPort sendPort;
+//   final String? progressFilePath;
+//   final Set<String> completedDirs;
+//   final Map<String, String> lastProcessedFiles;
+//   final int logInterval;
+//   final int initialCopied;
+//   final int initialSkipped;
+//   final int initialAlreadyExist;
+//   final int initialErrors;
+//   final int initialInspected;
+//
+//   _IsolateParams({
+//     required this.sourcePath,
+//     required this.destPath,
+//     required this.enableDateRange,
+//     required this.fromEpochMs,
+//     required this.toEpochMs,
+//     required this.enableAgeFilter,
+//     required this.ageFilterUnit,
+//     required this.ageFilterValue,
+//     required this.sendPort,
+//     this.progressFilePath,
+//     this.completedDirs = const {},
+//     this.lastProcessedFiles = const {},
+//     this.logInterval = 100,
+//     this.initialCopied = 0,
+//     this.initialSkipped = 0,
+//     this.initialAlreadyExist = 0,
+//     this.initialErrors = 0,
+//     this.initialInspected = 0,
+//   });
+// }
+//
+// class _CountState {
+//   int filesCopied = 0;
+//   int filesSkipped = 0;
+//   int filesAlreadyExist = 0;
+//   int errors = 0;
+//   int directoriesScanned = 0;
+//   int filesInspected = 0;
+//   int dirsSkipped = 0;
+//   int lastStatusEmitMs = 0;
+// }
+//
+// class _CopyTask {
+//   final File source;
+//   final String destFilePath;
+//   final DateTime modified;
+//
+//   _CopyTask(this.source, this.destFilePath, this.modified);
+// }
 
 /// A source→destination directory pair for multi-directory mode.
 class DirectoryPair {
@@ -127,48 +125,57 @@ class DirectoryPair {
   );
 }
 
-/// Tracks an active worker isolate processing one directory pair.
+/// Tracks an active Rust worker processing one directory pair.
+// Gene - Nov, 25, 2026: Replaced Dart Isolate/ReceivePort fields in _ActiveWorker with RustCopyJob and Timer.
+// class _ActiveWorker {
+//   final int pairIndex;
+//   final Isolate isolate;
+//   final ReceivePort receivePort;
+//   final StreamSubscription subscription;
+//   Capability? pauseCapability;
+//   bool isPaused = false;
+//
+//   _ActiveWorker({
+//     required this.pairIndex,
+//     required this.isolate,
+//     required this.receivePort,
+//     required this.subscription,
+//   });
+// }
+//
+// class _Semaphore {
+//   final int maxConcurrent;
+//   int _current = 0;
+//   final List<Completer<void>> _waiters = [];
+//
+//   _Semaphore(this.maxConcurrent);
+//
+//   Future<void> acquire() async {
+//     if (_current < maxConcurrent) {
+//       _current++;
+//       return;
+//     }
+//     final completer = Completer<void>();
+//     _waiters.add(completer);
+//     await completer.future;
+//     _current++;
+//   }
+//
+//   void release() {
+//     _current--;
+//     if (_waiters.isNotEmpty) {
+//       _waiters.removeAt(0).complete();
+//     }
+//   }
+// }
 class _ActiveWorker {
   final int pairIndex;
-  final Isolate isolate;
-  final ReceivePort receivePort;
-  final StreamSubscription subscription;
-  Capability? pauseCapability;
+  final RustCopyJob job;
+  Timer? pollTimer;
   bool isPaused = false;
+  bool isPolling = false;
 
-  _ActiveWorker({
-    required this.pairIndex,
-    required this.isolate,
-    required this.receivePort,
-    required this.subscription,
-  });
-}
-
-/// Semaphore for controlling concurrent copy operations.
-class _Semaphore {
-  final int maxConcurrent;
-  int _current = 0;
-  final List<Completer<void>> _waiters = [];
-
-  _Semaphore(this.maxConcurrent);
-
-  Future<void> acquire() async {
-    if (_current < maxConcurrent) {
-      _current++;
-      return;
-    }
-    final completer = Completer<void>();
-    _waiters.add(completer);
-    await completer.future;
-    _current++;
-  }
-
-  void release() {
-    _current--;
-    if (_waiters.isNotEmpty) {
-      _waiters.removeAt(0).complete();
-    }
-  }
+  _ActiveWorker({required this.pairIndex, required this.job});
 }
 
 class CopyFilesProvider with ChangeNotifier {
@@ -214,34 +221,32 @@ class CopyFilesProvider with ChangeNotifier {
     }
   }
 
-  /// Saves completed directory paths to a progress file (called inside isolate).
-  static void _saveProgressFile(
-    String filePath,
-    String sourcePath,
-    String destPath,
-    Set<String> completedDirs,
-    Map<String, String> lastProcessedFiles,
-    _CountState counts,
-  ) {
-    try {
-      final dir = Directory(_progressDir);
-      if (!dir.existsSync()) dir.createSync(recursive: true);
-      final data = {
-        'sourcePath': sourcePath,
-        'destPath': destPath,
-        'completedDirs': completedDirs.toList(),
-        'lastProcessedFiles': lastProcessedFiles,
-        'filesCopied': counts.filesCopied,
-        'filesSkipped': counts.filesSkipped,
-        'filesAlreadyExist': counts.filesAlreadyExist,
-        'errors': counts.errors,
-        'filesInspected': counts.filesInspected,
-      };
-      File(filePath).writeAsStringSync(jsonEncode(data));
-    } catch (_) {
-      // Silently fail — don't crash if progress save fails
-    }
-  }
+  // Gene - Nov, 25, 2026: Progress saving is now handled directly inside the native Rust copy_engine.
+  // static void _saveProgressFile(
+  //   String filePath,
+  //   String sourcePath,
+  //   String destPath,
+  //   Set<String> completedDirs,
+  //   Map<String, String> lastProcessedFiles,
+  //   _CountState counts,
+  // ) {
+  //   try {
+  //     final dir = Directory(_progressDir);
+  //     if (!dir.existsSync()) dir.createSync(recursive: true);
+  //     final data = {
+  //       'sourcePath': sourcePath,
+  //       'destPath': destPath,
+  //       'completedDirs': completedDirs.toList(),
+  //       'lastProcessedFiles': lastProcessedFiles,
+  //       'filesCopied': counts.filesCopied,
+  //       'filesSkipped': counts.filesSkipped,
+  //       'filesAlreadyExist': counts.filesAlreadyExist,
+  //       'errors': counts.errors,
+  //       'filesInspected': counts.filesInspected,
+  //     };
+  //     File(filePath).writeAsStringSync(jsonEncode(data));
+  //   } catch (_) {}
+  // }
 
   /// Deletes the progress file (called when pair completes).
   static void _deleteProgressFile(String filePath) {
@@ -366,9 +371,14 @@ class CopyFilesProvider with ChangeNotifier {
     _scheduleTimer?.cancel();
     _completionRescheduleTimer?.cancel();
     for (final worker in _activeWorkers) {
-      worker.isolate.kill(priority: Isolate.immediate);
-      worker.subscription.cancel();
-      worker.receivePort.close();
+      // Gene - Nov, 25, 2026: Dispose native RustCopyJob and pollTimer instead of Dart isolate.
+      // worker.isolate.kill(priority: Isolate.immediate);
+      // worker.subscription.cancel();
+      // worker.receivePort.close();
+      worker.pollTimer?.cancel();
+      worker.pollTimer = null;
+      worker.job.stop();
+      worker.job.dispose();
     }
     _activeWorkers.clear();
     super.dispose();
@@ -1217,8 +1227,13 @@ class CopyFilesProvider with ChangeNotifier {
 
       // Resume all paused workers
       for (final w in _activeWorkers) {
-        if (w.isPaused && w.pauseCapability != null) {
-          w.isolate.resume(w.pauseCapability!);
+        // Gene - Nov, 25, 2026: Resume native RustCopyJob.
+        // if (w.isPaused && w.pauseCapability != null) {
+        //   w.isolate.resume(w.pauseCapability!);
+        //   w.isPaused = false;
+        // }
+        if (w.isPaused) {
+          w.job.resume();
           w.isPaused = false;
         }
       }
@@ -1230,8 +1245,13 @@ class CopyFilesProvider with ChangeNotifier {
       if (_activeWorkers.isEmpty) return; // Nothing to pause yet
       // Pause all active workers
       for (final w in _activeWorkers) {
+        // Gene - Nov, 25, 2026: Pause native RustCopyJob.
+        // if (!w.isPaused) {
+        //   w.pauseCapability = w.isolate.pause();
+        //   w.isPaused = true;
+        // }
         if (!w.isPaused) {
-          w.pauseCapability = w.isolate.pause();
+          w.job.pause();
           w.isPaused = true;
         }
       }
@@ -1242,13 +1262,18 @@ class CopyFilesProvider with ChangeNotifier {
     }
   }
 
-  /// Kills all active worker isolates and cleans up their resources without
+  /// Stops and disposes all active Rust workers without
   /// touching the outer processing state (isProcessing, scheduleTimer, etc.).
   void _killAllWorkers() {
     for (final w in _activeWorkers) {
-      w.isolate.kill(priority: Isolate.immediate);
-      w.subscription.cancel();
-      w.receivePort.close();
+      // Gene - Nov, 25, 2026: Stop and dispose native RustCopyJob cleanly.
+      // w.isolate.kill(priority: Isolate.immediate);
+      // w.subscription.cancel();
+      // w.receivePort.close();
+      w.pollTimer?.cancel();
+      w.pollTimer = null;
+      w.job.stop();
+      w.job.dispose();
     }
     _activeWorkers.clear();
   }
@@ -1291,576 +1316,494 @@ class CopyFilesProvider with ChangeNotifier {
     });
   }
 
-  // Gene - Nov, 25, 2026: Format scanned file counts cleanly inside worker isolates.
-  static final NumberFormat _isolateNumFmt = NumberFormat('#,##0');
-  static String _formatCount(int n) => _isolateNumFmt.format(n);
-
-  /// Process a batch of copy tasks with controlled concurrency (max 6 parallel).
-  static Future<void> _processBatch(
-    List<_CopyTask> batch,
-    _IsolateParams params,
-    _CountState counts,
-  ) async {
-    final semaphore = _Semaphore(6); // Max 6 concurrent network copies
-
-    final futures = batch.map((task) async {
-      await semaphore.acquire();
-      try {
-        // Copy to a temporary name first, then swap into place — an
-        // interrupted network copy must never leave a partial file with
-        // the final name (the size-based "already exists" check would
-        // otherwise treat it as needing no re-copy once sizes match).
-        final tempPath = '${task.destFilePath}.part';
-        try {
-          await task.source.copy(tempPath);
-          // Keep the original modified date so age/date filters and
-          // resume checks see the right timestamps at the destination.
-          try {
-            await File(tempPath).setLastModified(task.modified);
-          } catch (_) {}
-          await File(tempPath).rename(task.destFilePath);
-        } catch (copyErr) {
-          try {
-            await File(tempPath).delete();
-          } catch (_) {}
-          rethrow;
-        }
-        counts.filesCopied++;
-
-        if (counts.filesCopied % params.logInterval == 0) {
-          // Gene - Nov, 25, 2026: Include filesInspected in progress updates.
-          // params.sendPort.send(
-          //   _IsolateProgress(
-          //     logMessage:
-          //         '✓ Copied ${params.logInterval} files (total: ${counts.filesCopied}) – latest: ${p.basename(task.source.path)}',
-          //     status:
-          //         'Copying: ${p.basename(task.source.path)} (${counts.filesCopied} copied)',
-          //     filesCopied: counts.filesCopied,
-          //     filesSkipped: counts.filesSkipped,
-          //     filesAlreadyExist: counts.filesAlreadyExist,
-          //     errors: counts.errors,
-          //   ),
-          // );
-          params.sendPort.send(
-            _IsolateProgress(
-              logMessage:
-                  '✓ Copied ${params.logInterval} files (total: ${counts.filesCopied}) – latest: ${p.basename(task.source.path)}',
-              status:
-                  'Copying: ${p.basename(task.source.path)} (${_formatCount(counts.filesCopied)} copied, ${_formatCount(counts.filesInspected)} scanned)',
-              filesCopied: counts.filesCopied,
-              filesSkipped: counts.filesSkipped,
-              filesAlreadyExist: counts.filesAlreadyExist,
-              errors: counts.errors,
-              filesInspected: counts.filesInspected,
-            ),
-          );
-        }
-      } catch (e) {
-        counts.errors++;
-        params.sendPort.send(
-          _IsolateProgress(
-            errorMessage:
-                '✗ Failed to copy ${p.basename(task.source.path)}: $e',
-            errors: counts.errors,
-            filesCopied: counts.filesCopied,
-            filesSkipped: counts.filesSkipped,
-            filesAlreadyExist: counts.filesAlreadyExist,
-            filesInspected: counts.filesInspected,
-          ),
-        );
-      } finally {
-        semaphore.release();
-      }
-    });
-
-    await Future.wait(futures);
-  }
-
-  /// Manual recursive walk optimised for network shares.
-  ///
-  /// Key optimisations vs the previous version:
-  /// 1. Single stat() per source file (gets both size & modified date).
-  /// 2. Pre-lists the destination directory once to build a name→size map,
-  ///    replacing N individual stat() calls with 1 directory listing.
-  /// 3. Reduced concurrent file inspection from 50 to 8 to avoid
-  ///    overwhelming SMB connections.
-  /// 4. Progress reported every 5 directories (was 20) with a running
-  ///    file count so the UI never looks frozen.
-  static Future<void> _walkAndCopy(
-    Directory dir,
-    _IsolateParams params,
-    _CountState counts,
-    Set<String> createdDirs,
-    List<_CopyTask> batch,
-    Set<String> completedDirs,
-    Map<String, String> lastProcessedFiles, [
-    Set<String>? visitedCanonicalPaths,
-  ]) async {
-    final visited = visitedCanonicalPaths ?? <String>{};
-    String canonicalPath;
-    try {
-      canonicalPath = await dir.resolveSymbolicLinks();
-    } catch (_) {
-      canonicalPath = p.canonicalize(dir.path);
-    }
-    if (visited.contains(canonicalPath)) {
-      return; // Symlink loop protection
-    }
-    visited.add(canonicalPath);
-
-    // ── Resume: skip directories that were fully processed in a prior run ──
-    final String relPath = p.relative(dir.path, from: params.sourcePath);
-    if (completedDirs.contains(relPath)) {
-      counts.dirsSkipped++;
-      return;
-    }
-    List<FileSystemEntity> entities;
-    try {
-      entities = await dir.list(followLinks: false).toList();
-    } catch (e) {
-      counts.errors++;
-      params.sendPort.send(
-        _IsolateProgress(
-          errorMessage: '✗ Cannot access: ${dir.path} ($e)',
-          errors: counts.errors,
-          filesCopied: counts.filesCopied,
-          filesSkipped: counts.filesSkipped,
-          filesAlreadyExist: counts.filesAlreadyExist,
-          filesInspected: counts.filesInspected,
-        ),
-      );
-      return;
-    }
-
-    counts.directoriesScanned++;
-
-    // Gene - Nov, 25, 2026: Emit live scanning file counter on first directory and every >=150ms.
-    // // Report scanning progress based on logInterval
-    // // For interval 1-10, report every directory; for larger intervals, every 5 dirs
-    // final dirReportInterval = params.logInterval <= 10 ? 1 : 5;
-    // if (counts.directoriesScanned % dirReportInterval == 0) {
-    //   params.sendPort.send(
-    //     _IsolateProgress(
-    //       status:
-    //           '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked, ${counts.filesAlreadyExist} already exist)',
-    //       filesCopied: counts.filesCopied,
-    //       filesSkipped: counts.filesSkipped,
-    //       filesAlreadyExist: counts.filesAlreadyExist,
-    //       errors: counts.errors,
-    //     ),
-    //   );
-    // }
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    if (counts.directoriesScanned == 1 ||
-        nowMs - counts.lastStatusEmitMs >= 150) {
-      counts.lastStatusEmitMs = nowMs;
-      params.sendPort.send(
-        _IsolateProgress(
-          status:
-              '⏳ Scanning (${_formatCount(counts.filesInspected)} files): ${p.basename(dir.path)}',
-          filesCopied: counts.filesCopied,
-          filesSkipped: counts.filesSkipped,
-          filesAlreadyExist: counts.filesAlreadyExist,
-          errors: counts.errors,
-          filesInspected: counts.filesInspected,
-        ),
-      );
-    }
-
-    final files = entities.whereType<File>().toList();
-    files.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
-
-    int startIndex = 0;
-    if (lastProcessedFiles.containsKey(relPath)) {
-      final lastName = lastProcessedFiles[relPath]!;
-      int idx = files.indexWhere((f) => p.basename(f.path) == lastName);
-      if (idx != -1) {
-        startIndex = idx + 1;
-      }
-    }
-
-    // If no files in this directory, skip straight to subdirectories
-    if (files.isEmpty || startIndex >= files.length) {
-      for (final entity in entities) {
-        if (entity is Directory) {
-          await _walkAndCopy(
-            entity,
-            params,
-            counts,
-            createdDirs,
-            batch,
-            completedDirs,
-            lastProcessedFiles,
-            visited,
-          );
-        } else if (entity is Link) {
-          try {
-            if (!await resolvesWithinRoot(params.sourcePath, entity.path)) {
-              continue;
-            }
-            final targetType = await FileSystemEntity.type(entity.path);
-            if (targetType == FileSystemEntityType.directory) {
-              await _walkAndCopy(
-                Directory(entity.path),
-                params,
-                counts,
-                createdDirs,
-                batch,
-                completedDirs,
-                lastProcessedFiles,
-                visited,
-              );
-            }
-          } catch (_) {}
-        }
-      }
-      return;
-    }
-
-    // ── Pre-compute date boundaries once per directory ──────────────
-    late final DateTime from;
-    late final DateTime to;
-    if (params.enableDateRange) {
-      final fd = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
-      final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
-      from = DateTime(fd.year, fd.month, fd.day);
-      to = DateTime(td.year, td.month, td.day);
-    }
-
-    late final DateTime ageThreshold;
-    if (params.enableAgeFilter) {
-      final now = DateTime.now();
-      if (params.ageFilterUnit == 'Days') {
-        ageThreshold = now.subtract(Duration(days: params.ageFilterValue));
-      } else if (params.ageFilterUnit == 'Months') {
-        ageThreshold = DateTime(
-          now.year,
-          now.month - params.ageFilterValue,
-          now.day,
-        );
-      } else {
-        ageThreshold = DateTime(
-          now.year - params.ageFilterValue,
-          now.month,
-          now.day,
-        );
-      }
-    }
-
-    final String destDirPath = p.join(params.destPath, relPath);
-
-    // ── Process source files in small batches of 8 ─────────────────
-    // Was 50, which created I/O storms on network shares.
-    for (var i = startIndex; i < files.length; i += 8) {
-      final chunk = files.skip(i).take(8);
-
-      final futures = chunk.map((fsEntity) async {
-        final entity = File(fsEntity.path);
-        try {
-          counts.filesInspected++;
-
-          // Single stat() gets both size and modified date — avoids the
-          // old pattern of conditional stat() + separate length() call.
-          final FileStat stats = await entity.stat();
-          final int sourceSize = stats.size;
-
-          // Age filter
-          if (params.enableAgeFilter) {
-            if (stats.modified.isAfter(ageThreshold)) {
-              counts.filesSkipped++;
-              return;
-            }
-          }
-
-          // Date-range filter
-          if (params.enableDateRange) {
-            final m = stats.modified;
-            final fileDate = DateTime(m.year, m.month, m.day);
-            if (fileDate.isBefore(from) || fileDate.isAfter(to)) {
-              counts.filesSkipped++;
-              return;
-            }
-          }
-
-          final String fileName = p.basename(entity.path);
-
-          // Check destination file stats directly (done concurrently in batches of 8)
-          final destFile = File(p.join(destDirPath, fileName));
-          try {
-            final destStats = await destFile.stat();
-            if (destStats.type == FileSystemEntityType.file &&
-                destStats.size == sourceSize) {
-              counts.filesAlreadyExist++;
-
-              // Log "already exist" progress at the configured interval
-              if (counts.filesAlreadyExist % params.logInterval == 0) {
-                params.sendPort.send(
-                  _IsolateProgress(
-                    logMessage:
-                        '⏭ ${counts.filesAlreadyExist} files already exist at destination (skipping)',
-                    status:
-                        '⏭ Checking: ${p.basename(dir.path)} – ${counts.filesAlreadyExist} already exist, ${counts.filesCopied} copied',
-                    filesCopied: counts.filesCopied,
-                    filesSkipped: counts.filesSkipped,
-                    filesAlreadyExist: counts.filesAlreadyExist,
-                    errors: counts.errors,
-                    filesInspected: counts.filesInspected,
-                  ),
-                );
-              }
-              return;
-            }
-          } catch (_) {}
-
-          // File needs copying — ensure destination directory exists
-          if (!createdDirs.contains(destDirPath)) {
-            createdDirs.add(destDirPath);
-            await Directory(destDirPath).create(recursive: true);
-          }
-          batch.add(
-            _CopyTask(entity, p.join(destDirPath, fileName), stats.modified),
-          );
-        } catch (e) {
-          counts.errors++;
-          params.sendPort.send(
-            _IsolateProgress(
-              errorMessage:
-                  '✗ Failed to inspect ${p.basename(entity.path)}: $e',
-              errors: counts.errors,
-              filesCopied: counts.filesCopied,
-              filesSkipped: counts.filesSkipped,
-              filesAlreadyExist: counts.filesAlreadyExist,
-              filesInspected: counts.filesInspected,
-            ),
-          );
-        }
-      });
-
-      await Future.wait(futures);
-
-      // Gene - Nov, 25, 2026: Throttle scanning counter updates by wall-clock time (150ms) so live file count updates smoothly inside large directories.
-      // // Extra progress pulse for large directories, throttled to every 1000 files to not overwhelm UI
-      // if (i > 0 && i % 1000 == 0) {
-      //   params.sendPort.send(
-      //     _IsolateProgress(
-      //       status:
-      //           '⏳ Scanning: ${p.basename(dir.path)} (${counts.filesInspected} files checked, ${counts.filesAlreadyExist} already exist)',
-      //       filesCopied: counts.filesCopied,
-      //       filesSkipped: counts.filesSkipped,
-      //       filesAlreadyExist: counts.filesAlreadyExist,
-      //       errors: counts.errors,
-      //     ),
-      //   );
-      // }
-      final chunkNowMs = DateTime.now().millisecondsSinceEpoch;
-      if (chunkNowMs - counts.lastStatusEmitMs >= 150) {
-        counts.lastStatusEmitMs = chunkNowMs;
-        params.sendPort.send(
-          _IsolateProgress(
-            status:
-                '⏳ Scanning (${_formatCount(counts.filesInspected)} files): ${p.basename(dir.path)}',
-            filesCopied: counts.filesCopied,
-            filesSkipped: counts.filesSkipped,
-            filesAlreadyExist: counts.filesAlreadyExist,
-            errors: counts.errors,
-            filesInspected: counts.filesInspected,
-          ),
-        );
-      }
-
-      // Flush the batch when it reaches 50 tasks
-      if (batch.length >= 50) {
-        final tasksToRun = List<_CopyTask>.from(batch);
-        batch.clear();
-        await _processBatch(tasksToRun, params, counts);
-        await Future.delayed(Duration.zero);
-      }
-
-      if (batch.isEmpty) {
-        lastProcessedFiles[relPath] = p.basename(chunk.last.path);
-      }
-    }
-
-    if (batch.isEmpty && files.isNotEmpty) {
-      lastProcessedFiles[relPath] = p.basename(files.last.path);
-    }
-
-    // Then recurse into subdirectories
-    for (final entity in entities) {
-      if (entity is Directory) {
-        await _walkAndCopy(
-          entity,
-          params,
-          counts,
-          createdDirs,
-          batch,
-          completedDirs,
-          lastProcessedFiles,
-          visited,
-        );
-      } else if (entity is Link) {
-        try {
-          if (!await resolvesWithinRoot(params.sourcePath, entity.path)) {
-            continue;
-          }
-          final targetType = await FileSystemEntity.type(entity.path);
-          if (targetType == FileSystemEntityType.directory) {
-            await _walkAndCopy(
-              Directory(entity.path),
-              params,
-              counts,
-              createdDirs,
-              batch,
-              completedDirs,
-              lastProcessedFiles,
-              visited,
-            );
-          }
-        } catch (_) {}
-      }
-    }
-
-    // Mark this directory as fully completed (files + all subdirs done)
-    completedDirs.add(relPath);
-    lastProcessedFiles.remove(relPath);
-
-    // Periodically save progress to disk (every 100 completed directories)
-    if (params.progressFilePath != null && completedDirs.length % 100 == 0) {
-      _saveProgressFile(
-        params.progressFilePath!,
-        params.sourcePath,
-        params.destPath,
-        completedDirs,
-        lastProcessedFiles,
-        counts,
-      );
-    }
-  }
-
-  /// Top-level isolate entry point.
-  static Future<void> _copyWorker(_IsolateParams params) async {
-    final counts = _CountState()
-      ..filesCopied = params.initialCopied
-      ..filesSkipped = params.initialSkipped
-      ..filesAlreadyExist = params.initialAlreadyExist
-      ..errors = params.initialErrors
-      ..filesInspected = params.initialInspected;
-    final createdDirs = <String>{};
-    final batch = <_CopyTask>[];
-    // Mutable copy of completed dirs — will grow as we process
-    final completedDirs = Set<String>.from(params.completedDirs);
-    final lastProcessedFiles = Map<String, String>.from(
-      params.lastProcessedFiles,
-    );
-    final isResuming =
-        completedDirs.isNotEmpty || lastProcessedFiles.isNotEmpty;
-
-    Timer? saveTimer;
-    if (params.progressFilePath != null) {
-      saveTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        _saveProgressFile(
-          params.progressFilePath!,
-          params.sourcePath,
-          params.destPath,
-          completedDirs,
-          lastProcessedFiles,
-          counts,
-        );
-      });
-    }
-
-    try {
-      if (isResuming) {
-        params.sendPort.send(
-          _IsolateProgress(
-            status:
-                '▶ Resuming copy (${completedDirs.length} folders already completed)...',
-            filesCopied: counts.filesCopied,
-            filesSkipped: counts.filesSkipped,
-            filesAlreadyExist: counts.filesAlreadyExist,
-            errors: counts.errors,
-            filesInspected: counts.filesInspected,
-          ),
-        );
-      }
-
-      await _walkAndCopy(
-        Directory(params.sourcePath),
-        params,
-        counts,
-        createdDirs,
-        batch,
-        completedDirs,
-        lastProcessedFiles,
-        {},
-      );
-
-      // Flush any remaining batched files
-      if (batch.isNotEmpty) {
-        await _processBatch(batch, params, counts);
-        batch.clear();
-      }
-
-      // Save final progress before sending done
-      if (params.progressFilePath != null) {
-        _saveProgressFile(
-          params.progressFilePath!,
-          params.sourcePath,
-          params.destPath,
-          completedDirs,
-          lastProcessedFiles,
-          counts,
-        );
-      }
-
-      final resumeNote = isResuming
-          ? ' (${counts.dirsSkipped} dirs skipped via resume)'
-          : '';
-      params.sendPort.send(
-        _IsolateProgress(
-          logMessage: '🏁 Copy completed successfully.$resumeNote',
-          status: 'Done',
-          done: true,
-          filesCopied: counts.filesCopied,
-          filesSkipped: counts.filesSkipped,
-          filesAlreadyExist: counts.filesAlreadyExist,
-          errors: counts.errors,
-          filesInspected: counts.filesInspected,
-        ),
-      );
-
-      // Delete progress file on successful completion
-      if (params.progressFilePath != null) {
-        _deleteProgressFile(params.progressFilePath!);
-      }
-    } catch (e) {
-      // Save progress even on crash so next run can resume
-      if (params.progressFilePath != null) {
-        _saveProgressFile(
-          params.progressFilePath!,
-          params.sourcePath,
-          params.destPath,
-          completedDirs,
-          lastProcessedFiles,
-          counts,
-        );
-      }
-      params.sendPort.send(
-        _IsolateProgress(
-          logMessage: '✗ Critical Error: $e',
-          criticalError: e.toString(),
-          done: true,
-          filesCopied: counts.filesCopied,
-          filesSkipped: counts.filesSkipped,
-          filesAlreadyExist: counts.filesAlreadyExist,
-          errors: counts.errors,
-          filesInspected: counts.filesInspected,
-        ),
-      );
-    } finally {
-      saveTimer?.cancel();
-    }
-  }
+  // Gene - Nov, 25, 2026: Commented out Dart isolate copy worker after migrating to native Rust copy_engine.
+  // static final NumberFormat _isolateNumFmt = NumberFormat('#,##0');
+  // static String _formatCount(int n) => _isolateNumFmt.format(n);
+  //
+  // static Future<void> _processBatch(
+  //   List<_CopyTask> batch,
+  //   _IsolateParams params,
+  //   _CountState counts,
+  // ) async {
+  //   final semaphore = _Semaphore(6);
+  //
+  //   final futures = batch.map((task) async {
+  //     await semaphore.acquire();
+  //     try {
+  //       final tempPath = '${task.destFilePath}.part';
+  //       try {
+  //         await task.source.copy(tempPath);
+  //         try {
+  //           await File(tempPath).setLastModified(task.modified);
+  //         } catch (_) {}
+  //         await File(tempPath).rename(task.destFilePath);
+  //       } catch (copyErr) {
+  //         try {
+  //           await File(tempPath).delete();
+  //         } catch (_) {}
+  //         rethrow;
+  //       }
+  //       counts.filesCopied++;
+  //
+  //       if (counts.filesCopied % params.logInterval == 0) {
+  //         params.sendPort.send(
+  //           _IsolateProgress(
+  //             logMessage:
+  //                 '✓ Copied ${params.logInterval} files (total: ${counts.filesCopied}) – latest: ${p.basename(task.source.path)}',
+  //             status:
+  //                 'Copying: ${p.basename(task.source.path)} (${_formatCount(counts.filesCopied)} copied, ${_formatCount(counts.filesInspected)} scanned)',
+  //             filesCopied: counts.filesCopied,
+  //             filesSkipped: counts.filesSkipped,
+  //             filesAlreadyExist: counts.filesAlreadyExist,
+  //             errors: counts.errors,
+  //             filesInspected: counts.filesInspected,
+  //           ),
+  //         );
+  //       }
+  //     } catch (e) {
+  //       counts.errors++;
+  //       params.sendPort.send(
+  //         _IsolateProgress(
+  //           errorMessage:
+  //               '✗ Failed to copy ${p.basename(task.source.path)}: $e',
+  //           errors: counts.errors,
+  //           filesCopied: counts.filesCopied,
+  //           filesSkipped: counts.filesSkipped,
+  //           filesAlreadyExist: counts.filesAlreadyExist,
+  //           filesInspected: counts.filesInspected,
+  //         ),
+  //       );
+  //     } finally {
+  //       semaphore.release();
+  //     }
+  //   });
+  //
+  //   await Future.wait(futures);
+  // }
+  //
+  // static Future<void> _walkAndCopy(
+  //   Directory dir,
+  //   _IsolateParams params,
+  //   _CountState counts,
+  //   Set<String> createdDirs,
+  //   List<_CopyTask> batch,
+  //   Set<String> completedDirs,
+  //   Map<String, String> lastProcessedFiles, [
+  //   Set<String>? visitedCanonicalPaths,
+  // ]) async {
+  //   final visited = visitedCanonicalPaths ?? <String>{};
+  //   String canonicalPath;
+  //   try {
+  //     canonicalPath = await dir.resolveSymbolicLinks();
+  //   } catch (_) {
+  //     canonicalPath = p.canonicalize(dir.path);
+  //   }
+  //   if (visited.contains(canonicalPath)) {
+  //     return;
+  //   }
+  //   visited.add(canonicalPath);
+  //
+  //   final String relPath = p.relative(dir.path, from: params.sourcePath);
+  //   if (completedDirs.contains(relPath)) {
+  //     counts.dirsSkipped++;
+  //     return;
+  //   }
+  //   List<FileSystemEntity> entities;
+  //   try {
+  //     entities = await dir.list(followLinks: false).toList();
+  //   } catch (e) {
+  //     counts.errors++;
+  //     params.sendPort.send(
+  //       _IsolateProgress(
+  //         errorMessage: '✗ Cannot access: ${dir.path} ($e)',
+  //         errors: counts.errors,
+  //         filesCopied: counts.filesCopied,
+  //         filesSkipped: counts.filesSkipped,
+  //         filesAlreadyExist: counts.filesAlreadyExist,
+  //         filesInspected: counts.filesInspected,
+  //       ),
+  //     );
+  //     return;
+  //   }
+  //
+  //   counts.directoriesScanned++;
+  //
+  //   final nowMs = DateTime.now().millisecondsSinceEpoch;
+  //   if (counts.directoriesScanned == 1 ||
+  //       nowMs - counts.lastStatusEmitMs >= 150) {
+  //     counts.lastStatusEmitMs = nowMs;
+  //     params.sendPort.send(
+  //       _IsolateProgress(
+  //         status:
+  //             '⏳ Scanning (${_formatCount(counts.filesInspected)} files): ${p.basename(dir.path)}',
+  //         filesCopied: counts.filesCopied,
+  //         filesSkipped: counts.filesSkipped,
+  //         filesAlreadyExist: counts.filesAlreadyExist,
+  //         errors: counts.errors,
+  //         filesInspected: counts.filesInspected,
+  //       ),
+  //     );
+  //   }
+  //
+  //   final files = entities.whereType<File>().toList();
+  //   files.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+  //
+  //   int startIndex = 0;
+  //   if (lastProcessedFiles.containsKey(relPath)) {
+  //     final lastName = lastProcessedFiles[relPath]!;
+  //     int idx = files.indexWhere((f) => p.basename(f.path) == lastName);
+  //     if (idx != -1) {
+  //       startIndex = idx + 1;
+  //     }
+  //   }
+  //
+  //   if (files.isEmpty || startIndex >= files.length) {
+  //     for (final entity in entities) {
+  //       if (entity is Directory) {
+  //         await _walkAndCopy(
+  //           entity,
+  //           params,
+  //           counts,
+  //           createdDirs,
+  //           batch,
+  //           completedDirs,
+  //           lastProcessedFiles,
+  //           visited,
+  //         );
+  //       } else if (entity is Link) {
+  //         try {
+  //           if (!await resolvesWithinRoot(params.sourcePath, entity.path)) {
+  //             continue;
+  //           }
+  //           final targetType = await FileSystemEntity.type(entity.path);
+  //           if (targetType == FileSystemEntityType.directory) {
+  //             await _walkAndCopy(
+  //               Directory(entity.path),
+  //               params,
+  //               counts,
+  //               createdDirs,
+  //               batch,
+  //               completedDirs,
+  //               lastProcessedFiles,
+  //               visited,
+  //             );
+  //           }
+  //         } catch (_) {}
+  //       }
+  //     }
+  //     return;
+  //   }
+  //
+  //   late final DateTime from;
+  //   late final DateTime to;
+  //   if (params.enableDateRange) {
+  //     final fd = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
+  //     final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
+  //     from = DateTime(fd.year, fd.month, fd.day);
+  //     to = DateTime(td.year, td.month, td.day);
+  //   }
+  //
+  //   late final DateTime ageThreshold;
+  //   if (params.enableAgeFilter) {
+  //     final now = DateTime.now();
+  //     if (params.ageFilterUnit == 'Days') {
+  //       ageThreshold = now.subtract(Duration(days: params.ageFilterValue));
+  //     } else if (params.ageFilterUnit == 'Months') {
+  //       ageThreshold = DateTime(
+  //         now.year,
+  //         now.month - params.ageFilterValue,
+  //         now.day,
+  //       );
+  //     } else {
+  //       ageThreshold = DateTime(
+  //         now.year - params.ageFilterValue,
+  //         now.month,
+  //         now.day,
+  //       );
+  //     }
+  //   }
+  //
+  //   final String destDirPath = p.join(params.destPath, relPath);
+  //
+  //   for (var i = startIndex; i < files.length; i += 8) {
+  //     final chunk = files.skip(i).take(8);
+  //
+  //     final futures = chunk.map((fsEntity) async {
+  //       final entity = File(fsEntity.path);
+  //       try {
+  //         counts.filesInspected++;
+  //
+  //         final FileStat stats = await entity.stat();
+  //         final int sourceSize = stats.size;
+  //
+  //         if (params.enableAgeFilter) {
+  //           if (stats.modified.isAfter(ageThreshold)) {
+  //             counts.filesSkipped++;
+  //             return;
+  //           }
+  //         }
+  //
+  //         if (params.enableDateRange) {
+  //           final m = stats.modified;
+  //           final fileDate = DateTime(m.year, m.month, m.day);
+  //           if (fileDate.isBefore(from) || fileDate.isAfter(to)) {
+  //             counts.filesSkipped++;
+  //             return;
+  //           }
+  //         }
+  //
+  //         final String fileName = p.basename(entity.path);
+  //
+  //         final destFile = File(p.join(destDirPath, fileName));
+  //         try {
+  //           final destStats = await destFile.stat();
+  //           if (destStats.type == FileSystemEntityType.file &&
+  //               destStats.size == sourceSize) {
+  //             counts.filesAlreadyExist++;
+  //
+  //             if (counts.filesAlreadyExist % params.logInterval == 0) {
+  //               params.sendPort.send(
+  //                 _IsolateProgress(
+  //                   logMessage:
+  //                       '⏭ ${counts.filesAlreadyExist} files already exist at destination (skipping)',
+  //                   status:
+  //                       '⏭ Checking: ${p.basename(dir.path)} – ${counts.filesAlreadyExist} already exist, ${counts.filesCopied} copied',
+  //                   filesCopied: counts.filesCopied,
+  //                   filesSkipped: counts.filesSkipped,
+  //                   filesAlreadyExist: counts.filesAlreadyExist,
+  //                   errors: counts.errors,
+  //                   filesInspected: counts.filesInspected,
+  //                 ),
+  //               );
+  //             }
+  //             return;
+  //           }
+  //         } catch (_) {}
+  //
+  //         if (!createdDirs.contains(destDirPath)) {
+  //           createdDirs.add(destDirPath);
+  //           await Directory(destDirPath).create(recursive: true);
+  //         }
+  //         batch.add(
+  //           _CopyTask(entity, p.join(destDirPath, fileName), stats.modified),
+  //         );
+  //       } catch (e) {
+  //         counts.errors++;
+  //         params.sendPort.send(
+  //           _IsolateProgress(
+  //             errorMessage:
+  //                 '✗ Failed to inspect ${p.basename(entity.path)}: $e',
+  //             errors: counts.errors,
+  //             filesCopied: counts.filesCopied,
+  //             filesSkipped: counts.filesSkipped,
+  //             filesAlreadyExist: counts.filesAlreadyExist,
+  //             filesInspected: counts.filesInspected,
+  //           ),
+  //         );
+  //       }
+  //     });
+  //
+  //     await Future.wait(futures);
+  //
+  //     final chunkNowMs = DateTime.now().millisecondsSinceEpoch;
+  //     if (chunkNowMs - counts.lastStatusEmitMs >= 150) {
+  //       counts.lastStatusEmitMs = chunkNowMs;
+  //       params.sendPort.send(
+  //         _IsolateProgress(
+  //           status:
+  //               '⏳ Scanning (${_formatCount(counts.filesInspected)} files): ${p.basename(dir.path)}',
+  //           filesCopied: counts.filesCopied,
+  //           filesSkipped: counts.filesSkipped,
+  //           filesAlreadyExist: counts.filesAlreadyExist,
+  //           errors: counts.errors,
+  //           filesInspected: counts.filesInspected,
+  //         ),
+  //       );
+  //     }
+  //
+  //     if (batch.length >= 50) {
+  //       final tasksToRun = List<_CopyTask>.from(batch);
+  //       batch.clear();
+  //       await _processBatch(tasksToRun, params, counts);
+  //       await Future.delayed(Duration.zero);
+  //     }
+  //
+  //     if (batch.isEmpty) {
+  //       lastProcessedFiles[relPath] = p.basename(chunk.last.path);
+  //     }
+  //   }
+  //
+  //   if (batch.isEmpty && files.isNotEmpty) {
+  //     lastProcessedFiles[relPath] = p.basename(files.last.path);
+  //   }
+  //
+  //   for (final entity in entities) {
+  //     if (entity is Directory) {
+  //       await _walkAndCopy(
+  //         entity,
+  //         params,
+  //         counts,
+  //         createdDirs,
+  //         batch,
+  //         completedDirs,
+  //         lastProcessedFiles,
+  //         visited,
+  //       );
+  //     } else if (entity is Link) {
+  //       try {
+  //         if (!await resolvesWithinRoot(params.sourcePath, entity.path)) {
+  //           continue;
+  //         }
+  //         final targetType = await FileSystemEntity.type(entity.path);
+  //         if (targetType == FileSystemEntityType.directory) {
+  //           await _walkAndCopy(
+  //             Directory(entity.path),
+  //             params,
+  //             counts,
+  //             createdDirs,
+  //             batch,
+  //             completedDirs,
+  //             lastProcessedFiles,
+  //             visited,
+  //           );
+  //         }
+  //       } catch (_) {}
+  //     }
+  //   }
+  //
+  //   completedDirs.add(relPath);
+  //   lastProcessedFiles.remove(relPath);
+  //
+  //   if (params.progressFilePath != null && completedDirs.length % 100 == 0) {
+  //     _saveProgressFile(
+  //       params.progressFilePath!,
+  //       params.sourcePath,
+  //       params.destPath,
+  //       completedDirs,
+  //       lastProcessedFiles,
+  //       counts,
+  //     );
+  //   }
+  // }
+  //
+  // static Future<void> _copyWorker(_IsolateParams params) async {
+  //   final counts = _CountState()
+  //     ..filesCopied = params.initialCopied
+  //     ..filesSkipped = params.initialSkipped
+  //     ..filesAlreadyExist = params.initialAlreadyExist
+  //     ..errors = params.initialErrors
+  //     ..filesInspected = params.initialInspected;
+  //   final createdDirs = <String>{};
+  //   final batch = <_CopyTask>[];
+  //   final completedDirs = Set<String>.from(params.completedDirs);
+  //   final lastProcessedFiles = Map<String, String>.from(
+  //     params.lastProcessedFiles,
+  //   );
+  //   final isResuming =
+  //       completedDirs.isNotEmpty || lastProcessedFiles.isNotEmpty;
+  //
+  //   Timer? saveTimer;
+  //   if (params.progressFilePath != null) {
+  //     saveTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+  //       _saveProgressFile(
+  //         params.progressFilePath!,
+  //         params.sourcePath,
+  //         params.destPath,
+  //         completedDirs,
+  //         lastProcessedFiles,
+  //         counts,
+  //       );
+  //     });
+  //   }
+  //
+  //   try {
+  //     if (isResuming) {
+  //       params.sendPort.send(
+  //         _IsolateProgress(
+  //           status:
+  //               '▶ Resuming copy (${completedDirs.length} folders already completed)...',
+  //           filesCopied: counts.filesCopied,
+  //           filesSkipped: counts.filesSkipped,
+  //           filesAlreadyExist: counts.filesAlreadyExist,
+  //           errors: counts.errors,
+  //           filesInspected: counts.filesInspected,
+  //         ),
+  //       );
+  //     }
+  //
+  //     await _walkAndCopy(
+  //       Directory(params.sourcePath),
+  //       params,
+  //       counts,
+  //       createdDirs,
+  //       batch,
+  //       completedDirs,
+  //       lastProcessedFiles,
+  //       {},
+  //     );
+  //
+  //     if (batch.isNotEmpty) {
+  //       await _processBatch(batch, params, counts);
+  //       batch.clear();
+  //     }
+  //
+  //     if (params.progressFilePath != null) {
+  //       _saveProgressFile(
+  //         params.progressFilePath!,
+  //         params.sourcePath,
+  //         params.destPath,
+  //         completedDirs,
+  //         lastProcessedFiles,
+  //         counts,
+  //       );
+  //     }
+  //
+  //     final resumeNote = isResuming
+  //         ? ' (${counts.dirsSkipped} dirs skipped via resume)'
+  //         : '';
+  //     params.sendPort.send(
+  //       _IsolateProgress(
+  //         logMessage: '🏁 Copy completed successfully.$resumeNote',
+  //         status: 'Done',
+  //         done: true,
+  //         filesCopied: counts.filesCopied,
+  //         filesSkipped: counts.filesSkipped,
+  //         filesAlreadyExist: counts.filesAlreadyExist,
+  //         errors: counts.errors,
+  //         filesInspected: counts.filesInspected,
+  //       ),
+  //     );
+  //
+  //     if (params.progressFilePath != null) {
+  //       _deleteProgressFile(params.progressFilePath!);
+  //     }
+  //   } catch (e) {
+  //     if (params.progressFilePath != null) {
+  //       _saveProgressFile(
+  //         params.progressFilePath!,
+  //         params.sourcePath,
+  //         params.destPath,
+  //         completedDirs,
+  //         lastProcessedFiles,
+  //         counts,
+  //       );
+  //     }
+  //     params.sendPort.send(
+  //       _IsolateProgress(
+  //         logMessage: '✗ Critical Error: $e',
+  //         criticalError: e.toString(),
+  //         done: true,
+  //         filesCopied: counts.filesCopied,
+  //         filesSkipped: counts.filesSkipped,
+  //         filesAlreadyExist: counts.filesAlreadyExist,
+  //         errors: counts.errors,
+  //         filesInspected: counts.filesInspected,
+  //       ),
+  //     );
+  //   } finally {
+  //     saveTimer?.cancel();
+  //   }
+  // }
 
   Future<void> startProcessing() async {
     // Re-entrancy protection
@@ -2036,7 +1979,8 @@ class CopyFilesProvider with ChangeNotifier {
       currentStatus =
           '⏳ Running ${_activeWorkers.length + 1} pair(s) (Order $runOrder)...';
     }
-    final receivePort = ReceivePort();
+    // Gene - Nov, 25, 2026: Replaced Dart Isolate.spawn with native RustCopyJob and 100ms polling.
+    // final receivePort = ReceivePort();
 
     // Load resume progress for this pair (if any)
     final progressPath = _progressFilePath(origIdx);
@@ -2082,181 +2026,225 @@ class CopyFilesProvider with ChangeNotifier {
     _recalcStats();
     notifyListeners();
 
-    final params = _IsolateParams(
+    // final params = _IsolateParams( ... );
+    // final isolate = await Isolate.spawn(_copyWorker, params);
+    // late final _ActiveWorker worker;
+    // final subscription = receivePort.listen((message) async { ... });
+    // worker = _ActiveWorker(...);
+    final int fromInclusiveEpochMs = DateTime(
+      fromDate.year,
+      fromDate.month,
+      fromDate.day,
+    ).millisecondsSinceEpoch;
+    final int toExclusiveEpochMs = DateTime(
+      toDate.year,
+      toDate.month,
+      toDate.day + 1,
+    ).millisecondsSinceEpoch;
+
+    int ageThresholdEpochMs = 0;
+    if (enableAgeFilter) {
+      final now = DateTime.now();
+      final DateTime ageThreshold;
+      if (ageFilterUnit == 'Days') {
+        ageThreshold = now.subtract(Duration(days: ageFilterValue));
+      } else if (ageFilterUnit == 'Months') {
+        ageThreshold = DateTime(now.year, now.month - ageFilterValue, now.day);
+      } else {
+        ageThreshold = DateTime(now.year - ageFilterValue, now.month, now.day);
+      }
+      ageThresholdEpochMs = ageThreshold.millisecondsSinceEpoch;
+    }
+
+    final job = RustCopyJob.start(
       sourcePath: source,
       destPath: dest,
-      enableDateRange: enableDateRange,
-      fromEpochMs: fromDate.millisecondsSinceEpoch,
-      toEpochMs: toDate.millisecondsSinceEpoch,
-      enableAgeFilter: enableAgeFilter,
-      ageFilterUnit: ageFilterUnit,
-      ageFilterValue: ageFilterValue,
-      sendPort: receivePort.sendPort,
       progressFilePath: progressPath,
       completedDirs: resumeDirs,
       lastProcessedFiles: lastProcessedFiles,
-      logInterval: logInterval,
+      enableAgeFilter: enableAgeFilter,
+      ageThresholdEpochMs: ageThresholdEpochMs,
+      enableDateRange: enableDateRange,
+      fromInclusiveEpochMs: fromInclusiveEpochMs,
+      toExclusiveEpochMs: toExclusiveEpochMs,
       initialCopied: initialCopied,
       initialSkipped: initialSkipped,
       initialAlreadyExist: initialAlreadyExist,
       initialErrors: initialErrors,
       initialInspected: initialInspected,
+      logInterval: logInterval,
     );
 
-    final isolate = await Isolate.spawn(_copyWorker, params);
-
-    late final _ActiveWorker worker;
-    final subscription = receivePort.listen((message) async {
-      if (message is _IsolateProgress) {
-        // Update this pair's running stats
-        _pairStats[pairIndex] = [
-          message.filesCopied,
-          message.filesSkipped,
-          message.errors,
-          message.filesAlreadyExist,
-          // Gene - Nov, 25, 2026: Track live inspected file count per pair.
-          message.filesInspected,
-        ];
-        _recalcStats();
-
-        if (message.status != null && !isPaused) {
-          // Gene - Nov, 25, 2026: Keep single-pair status concise so the live scanning counter and folder name have full width.
-          // if (_activeWorkers.length == 1) {
-          //   currentStatus = 'P${origIdx + 1}: ${message.status!}';
-          // } else {
-          //   currentStatus =
-          //       '${_activeWorkers.length} pairs (Order $runOrder) – P${origIdx + 1}: ${message.status!}';
-          // }
-          if (!useMultipleDirectories) {
-            currentStatus = message.status!;
-          } else if (_activeWorkers.length == 1) {
-            currentStatus = 'P${origIdx + 1}: ${message.status!}';
-          } else {
-            currentStatus =
-                '${_activeWorkers.length} pairs (Order $runOrder) – P${origIdx + 1}: ${message.status!}';
-          }
-        }
-
-        if (message.logMessage != null) {
-          _addLog('[P${origIdx + 1}] ${message.logMessage!}');
-        }
-
-        if (message.errorMessage != null) {
-          _addLog('[P${origIdx + 1}] ${message.errorMessage!}');
-          await _fileLogger.error('Copy', message.errorMessage!);
-        }
-
-        if (message.criticalError != null) {
-          _log.severe(
-            'Isolate critical error (pair ${origIdx + 1}): ${message.criticalError}',
-          );
-          await _fileLogger.error(
-            'Copy',
-            'Critical Error (pair ${origIdx + 1}): ${message.criticalError}',
-          );
-        }
-
-        if (message.done) {
-          _addLog(
-            '[P${origIdx + 1}] 🏁 Done: ${_numFmt.format(message.filesCopied)} copied, ${_numFmt.format(message.filesAlreadyExist)} exist, ${_numFmt.format(message.filesSkipped)} skipped, ${_numFmt.format(message.errors)} errors',
-          );
-
-          // Clean up this worker
-          worker.isolate.kill(priority: Isolate.immediate);
-          worker.subscription.cancel();
-          worker.receivePort.close();
-          _activeWorkers.remove(worker);
-          _totalPairsCompleted++;
-          _pairsCompletedInGroup++;
-
-          _recalcStats();
-
-          // Check if all pairs in the current group are done
-          final currentOrder = _runOrderGroups[_currentGroupIndex];
-          final groupSize = _pairsToProcess
-              .where((p) => p['runOrder'] == currentOrder)
-              .length;
-          if (_pairsCompletedInGroup >= groupSize) {
-            _addLog('═══ Run Order $currentOrder complete ═══');
-            _currentGroupIndex++;
-            if (_currentGroupIndex < _runOrderGroups.length) {
-              // Start next group
-              await _startCurrentGroup();
-            }
-          }
-
-          // Check if ALL pairs are finished
-          if (_totalPairsCompleted >= _pairsToProcess.length) {
-            final elapsed = _getElapsedStr();
-            _addLog(
-              '🏁 All ${_pairsToProcess.length} pair(s) completed. Total: ${_numFmt.format(filesCopied)} copied, ${_numFmt.format(errors)} errors in $elapsed',
-            );
-
-            // Capture before logRunEnd clears them
-            final runId = _fileLogger.getRunId('Copy') ?? 'UNKNOWN';
-            final start = _fileLogger.getStartTime('Copy') ?? DateTime.now();
-
-            await _fileLogger.logRunEnd(
-              operation: 'Copy',
-              filesProcessed: filesCopied,
-              errors: errors,
-              wasStopped: false,
-            );
-
-            try {
-              await HistoryService().saveRecord(
-                RunRecord(
-                  id: runId,
-                  operation: 'Copy',
-                  startTime: start,
-                  endTime: DateTime.now(),
-                  filesProcessed: filesCopied,
-                  errors: errors,
-                  status: errors > 0 && filesCopied == 0
-                      ? 'Error'
-                      : 'Completed',
-                  configSummary:
-                      'Source: ${sourcePath ?? "Multiple"}, Dest: ${destPath ?? "Multiple"} (Pairs: ${_pairsToProcess.length}, Exist: $filesAlreadyExist, Skipped: $filesSkipped)',
-                  sourcePath: sourcePath,
-                  destPath: destPath,
-                ),
-              );
-            } catch (_) {}
-
-            if (onCompletionAction == 'pause') {
-              // Stay in processing state and wait for next run time
-              _scheduleTimer?.cancel();
-              _scheduleTimer = null;
-              _scheduleNextRun();
-            } else {
-              // 'stop' – fully stop
-              isProcessing = false;
-              currentStatus = 'Idle';
-              _scheduleTimer?.cancel();
-              _scheduleTimer = null;
-            }
-          }
-        }
-
-        notifyListeners();
-      }
-    });
-
-    worker = _ActiveWorker(
-      pairIndex: pairIndex,
-      isolate: isolate,
-      receivePort: receivePort,
-      subscription: subscription,
-    );
+    final worker = _ActiveWorker(pairIndex: pairIndex, job: job);
     _activeWorkers.add(worker);
+
+    worker.pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      _pollCopyWorker(worker, pairIndex, origIdx, runOrder);
+    });
 
     // If the provider is already in paused state (e.g., a previous worker in
     // this group triggered the pause), immediately pause this new worker too.
     if (isPaused) {
-      worker.pauseCapability = worker.isolate.pause();
+      worker.job.pause();
       worker.isPaused = true;
     } else {
       _evaluateSchedule();
+    }
+  }
+
+  // Gene - Nov, 25, 2026: Poll native Rust copy_engine for live stats, scanning counter, logs, and completion.
+  Future<void> _pollCopyWorker(
+    _ActiveWorker worker,
+    int pairIndex,
+    int origIdx,
+    int runOrder,
+  ) async {
+    if (worker.isPolling || worker.job.isDisposed) return;
+    worker.isPolling = true;
+    try {
+      final snap = worker.job.poll();
+
+      _pairStats[pairIndex] = [
+        snap.filesCopied,
+        snap.filesSkipped,
+        snap.errors,
+        snap.filesAlreadyExist,
+        snap.filesInspected,
+      ];
+      _recalcStats();
+
+      if (!isPaused) {
+        String rawStatus;
+        if (snap.phase == 2 && snap.latestCopiedName.isNotEmpty) {
+          rawStatus =
+              'Copying: ${snap.latestCopiedName} (${_numFmt.format(snap.filesCopied)} copied, ${_numFmt.format(snap.filesInspected)} scanned)';
+        } else if (snap.phase == 3) {
+          rawStatus =
+              '⏭ Checking: ${snap.currentDirName} – ${_numFmt.format(snap.filesAlreadyExist)} already exist, ${_numFmt.format(snap.filesCopied)} copied';
+        } else {
+          rawStatus = snap.currentDirName.isEmpty
+              ? '⏳ Scanning (${_numFmt.format(snap.filesInspected)} files)...'
+              : '⏳ Scanning (${_numFmt.format(snap.filesInspected)} files): ${snap.currentDirName}';
+        }
+
+        if (!useMultipleDirectories) {
+          currentStatus = rawStatus;
+        } else if (_activeWorkers.length == 1) {
+          currentStatus = 'P${origIdx + 1}: $rawStatus';
+        } else {
+          currentStatus =
+              '${_activeWorkers.length} pairs (Order $runOrder) – P${origIdx + 1}: $rawStatus';
+        }
+      }
+
+      for (final log in snap.logs) {
+        _addLog('[P${origIdx + 1}] $log');
+      }
+
+      for (final err in snap.errorLogs) {
+        _addLog('[P${origIdx + 1}] $err');
+        await _fileLogger.error('Copy', err);
+      }
+
+      if (snap.criticalError != null) {
+        _log.severe(
+          'Rust copy critical error (pair ${origIdx + 1}): ${snap.criticalError}',
+        );
+        await _fileLogger.error(
+          'Copy',
+          'Critical Error (pair ${origIdx + 1}): ${snap.criticalError}',
+        );
+      }
+
+      if (snap.isDone) {
+        _addLog(
+          '[P${origIdx + 1}] 🏁 Done: ${_numFmt.format(snap.filesCopied)} copied, ${_numFmt.format(snap.filesAlreadyExist)} exist, ${_numFmt.format(snap.filesSkipped)} skipped, ${_numFmt.format(snap.errors)} errors',
+        );
+
+        worker.pollTimer?.cancel();
+        worker.pollTimer = null;
+        worker.job.dispose();
+        _activeWorkers.remove(worker);
+        _totalPairsCompleted++;
+        _pairsCompletedInGroup++;
+
+        _recalcStats();
+
+        final currentOrder = _runOrderGroups[_currentGroupIndex];
+        final groupSize = _pairsToProcess
+            .where((p) => p['runOrder'] == currentOrder)
+            .length;
+        if (_pairsCompletedInGroup >= groupSize) {
+          _addLog('═══ Run Order $currentOrder complete ═══');
+          _currentGroupIndex++;
+          if (_currentGroupIndex < _runOrderGroups.length) {
+            await _startCurrentGroup();
+          }
+        }
+
+        if (_totalPairsCompleted >= _pairsToProcess.length) {
+          final elapsed = _getElapsedStr();
+          _addLog(
+            '🏁 All ${_pairsToProcess.length} pair(s) completed. Total: ${_numFmt.format(filesCopied)} copied, ${_numFmt.format(errors)} errors in $elapsed',
+          );
+
+          final runId = _fileLogger.getRunId('Copy') ?? 'UNKNOWN';
+          final start = _fileLogger.getStartTime('Copy') ?? DateTime.now();
+
+          await _fileLogger.logRunEnd(
+            operation: 'Copy',
+            filesProcessed: filesCopied,
+            errors: errors,
+            wasStopped: false,
+          );
+
+          try {
+            await HistoryService().saveRecord(
+              RunRecord(
+                id: runId,
+                operation: 'Copy',
+                startTime: start,
+                endTime: DateTime.now(),
+                filesProcessed: filesCopied,
+                errors: errors,
+                status: errors > 0 && filesCopied == 0 ? 'Error' : 'Completed',
+                configSummary:
+                    'Source: ${sourcePath ?? "Multiple"}, Dest: ${destPath ?? "Multiple"} (Pairs: ${_pairsToProcess.length}, Exist: $filesAlreadyExist, Skipped: $filesSkipped)',
+                sourcePath: sourcePath,
+                destPath: destPath,
+              ),
+            );
+          } catch (_) {}
+
+          if (onCompletionAction == 'pause') {
+            _scheduleTimer?.cancel();
+            _scheduleTimer = null;
+            _scheduleNextRun();
+          } else {
+            isProcessing = false;
+            currentStatus = 'Idle';
+            _scheduleTimer?.cancel();
+            _scheduleTimer = null;
+          }
+        }
+      }
+
+      notifyListeners();
+    } catch (e, stack) {
+      _log.severe(
+        'Error polling Rust copy worker (pair ${origIdx + 1})',
+        e,
+        stack,
+      );
+      worker.pollTimer?.cancel();
+      worker.pollTimer = null;
+      worker.job.dispose();
+      _activeWorkers.remove(worker);
+      isProcessing = false;
+      currentStatus = 'Idle';
+      notifyListeners();
+    } finally {
+      worker.isPolling = false;
     }
   }
 }

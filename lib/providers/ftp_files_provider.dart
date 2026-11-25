@@ -10,7 +10,8 @@ import 'package:path/path.dart' as p;
 import '../models/ftp_upload_source.dart';
 import '../models/run_record.dart';
 import '../services/credential_obfuscator.dart';
-import '../services/file_creation_date.dart';
+// Gene - Nov, 25, 2026: Use native Rust FTP directory scanner (includes birthtime) instead of Dart stat loop.
+// import '../services/file_creation_date.dart';
 import '../services/file_logger.dart';
 // Gene - Nov, 23, 2026: Import config.ini / .env parser for FTP automation configuration imports.
 import '../services/ftp_ini_importer.dart';
@@ -18,6 +19,7 @@ import '../services/ftp_transfer_service.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
 import '../services/path_safety.dart';
+import '../services/rust_file_engines.dart';
 
 enum FtpDateMode {
   yesterday('Yesterday'),
@@ -3154,35 +3156,103 @@ class FtpFilesProvider with ChangeNotifier {
   //     );
   //   }
   // Gene - Nov, 24, 2026: Apply per-source date filter overrides via matchesSourceDateFilter in _scanSubfolderFiles.
+  // Gene - Nov, 25, 2026: Use native Rust RustFtpScanner for fast local directory scanning and creation-date lookup.
+  // Future<_SubfolderScanResult> _scanSubfolderFiles(
+  //   _SubfolderWorkItem item,
+  //   DateTime referenceNow,
+  //   FtpUploadSource source,
+  // ) async {
+  //   final candidateFiles = <File>[];
+  //   final statsByPath = <String, FileStat>{};
+  //
+  //   try {
+  //     await for (final entity in Directory(
+  //       item.localDir,
+  //     ).list(recursive: false, followLinks: false)) {
+  //       if (_shouldAbortPass || _checkWindowExpiration()) break;
+  //       if (entity is File) {
+  //         if (!await resolvesWithinRoot(item.rootPath, entity.path)) {
+  //           continue;
+  //         }
+  //         try {
+  //           final stats = await entity.stat();
+  //           if (stats.type == FileSystemEntityType.file) {
+  //             candidateFiles.add(entity);
+  //             statsByPath[entity.path] = stats;
+  //           }
+  //         } catch (e) {
+  //           errors++;
+  //           _addLog('⚠️ Failed to stat ${entity.path}: $e');
+  //         }
+  //       }
+  //     }
+  //   } catch (e) {
+  //     errors++;
+  //     final safeErr = CredentialObfuscator.redact(e.toString(), password);
+  //     _addLog('⚠️ Failed scanning ${item.localDir}: $safeErr');
+  //     await _fileLogger.error(
+  //       'FTP',
+  //       'Failed scanning ${item.localDir}: $safeErr',
+  //     );
+  //     return const _SubfolderScanResult(checkedCount: 0, matched: []);
+  //   }
+  //
+  //   if (candidateFiles.isEmpty) {
+  //     return const _SubfolderScanResult(checkedCount: 0, matched: []);
+  //   }
+  //
+  //   candidateFiles.sort((a, b) => a.path.compareTo(b.path));
+  //
+  //   Map<String, DateTime> creationDates = const {};
+  //   if (dateType == FtpDateType.creation) {
+  //     creationDates = await getCreationDatesForFiles(
+  //       candidateFiles,
+  //       statsByPath,
+  //     );
+  //   }
+  //
+  //   int checkedInFolder = 0;
+  //   final matched = <_QueuedUploadFile>[];
+  //   for (final file in candidateFiles) {
+  //     if (_shouldAbortPass || _checkWindowExpiration()) break;
+  //     final stats = statsByPath[file.path]!;
+  //     checkedInFolder++;
+  //     filesChecked++;
+  //     final fileDate = dateType == FtpDateType.creation
+  //         ? (creationDates[file.path] ?? stats.changed)
+  //         : stats.modified;
+  //
+  //     if (matchesSourceDateFilter(
+  //       fileDate: fileDate,
+  //       source: source,
+  //       globalDateMode: dateMode,
+  //       referenceNow: referenceNow,
+  //       globalDaysAgo: daysAgo,
+  //       globalSpecificDate: specificDate,
+  //       globalFromDate: fromDate,
+  //       globalToDate: toDate,
+  //     )) {
+  //       matched.add(_QueuedUploadFile(file: file, size: stats.size));
+  //     }
+  //   }
+  //   return _SubfolderScanResult(
+  //     checkedCount: checkedInFolder,
+  //     matched: matched,
+  //   );
+  // }
   Future<_SubfolderScanResult> _scanSubfolderFiles(
     _SubfolderWorkItem item,
     DateTime referenceNow,
     FtpUploadSource source,
   ) async {
-    final candidateFiles = <File>[];
-    final statsByPath = <String, FileStat>{};
-
+    late final RustFtpScanResult scanResult;
     try {
-      await for (final entity in Directory(
-        item.localDir,
-      ).list(recursive: false, followLinks: false)) {
-        if (_shouldAbortPass || _checkWindowExpiration()) break;
-        if (entity is File) {
-          if (!await resolvesWithinRoot(item.rootPath, entity.path)) {
-            continue;
-          }
-          try {
-            final stats = await entity.stat();
-            if (stats.type == FileSystemEntityType.file) {
-              candidateFiles.add(entity);
-              statsByPath[entity.path] = stats;
-            }
-          } catch (e) {
-            errors++;
-            _addLog('⚠️ Failed to stat ${entity.path}: $e');
-          }
-        }
-      }
+      scanResult = await RustFtpScanner.scanDirectoryAsync(
+        dirPath: item.localDir,
+        rootPath: item.rootPath,
+        includeCreationTime: dateType == FtpDateType.creation,
+        isCancelled: () => _shouldAbortPass || _checkWindowExpiration(),
+      );
     } catch (e) {
       errors++;
       final safeErr = CredentialObfuscator.redact(e.toString(), password);
@@ -3194,31 +3264,26 @@ class FtpFilesProvider with ChangeNotifier {
       return const _SubfolderScanResult(checkedCount: 0, matched: []);
     }
 
-    if (candidateFiles.isEmpty) {
-      return const _SubfolderScanResult(checkedCount: 0, matched: []);
+    for (final err in scanResult.errors) {
+      errors++;
+      final safeErr = CredentialObfuscator.redact(err, password);
+      _addLog('⚠️ $safeErr');
+      await _fileLogger.error('FTP', safeErr);
     }
 
-    // Gene - Nov, 24, 2026: Sort scanned files deterministically across Linux/macOS/Windows filesystems.
-    candidateFiles.sort((a, b) => a.path.compareTo(b.path));
-
-    Map<String, DateTime> creationDates = const {};
-    if (dateType == FtpDateType.creation) {
-      creationDates = await getCreationDatesForFiles(
-        candidateFiles,
-        statsByPath,
-      );
+    if (scanResult.files.isEmpty) {
+      return const _SubfolderScanResult(checkedCount: 0, matched: []);
     }
 
     int checkedInFolder = 0;
     final matched = <_QueuedUploadFile>[];
-    for (final file in candidateFiles) {
+    for (final entry in scanResult.files) {
       if (_shouldAbortPass || _checkWindowExpiration()) break;
-      final stats = statsByPath[file.path]!;
       checkedInFolder++;
       filesChecked++;
       final fileDate = dateType == FtpDateType.creation
-          ? (creationDates[file.path] ?? stats.changed)
-          : stats.modified;
+          ? entry.created
+          : entry.modified;
 
       if (matchesSourceDateFilter(
         fileDate: fileDate,
@@ -3230,7 +3295,9 @@ class FtpFilesProvider with ChangeNotifier {
         globalFromDate: fromDate,
         globalToDate: toDate,
       )) {
-        matched.add(_QueuedUploadFile(file: file, size: stats.size));
+        matched.add(
+          _QueuedUploadFile(file: File(entry.path), size: entry.size),
+        );
       }
     }
     return _SubfolderScanResult(

@@ -261,16 +261,32 @@ class CountFilesScreen extends StatelessWidget {
                             ),
 
                           // Status
+                          // Gene - Nov, 25, 2026: Wrap Count status text in Tooltip to show full live scanning counter and folder name.
+                          // Expanded(
+                          //   child: Text(
+                          //     provider.currentStatus,
+                          //     style: TextStyle(
+                          //       fontWeight: FontWeight.w600,
+                          //       color: context.textPrimary,
+                          //       fontSize: 13,
+                          //     ),
+                          //     maxLines: 1,
+                          //     overflow: TextOverflow.ellipsis,
+                          //   ),
+                          // ),
                           Expanded(
-                            child: Text(
-                              provider.currentStatus,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: context.textPrimary,
-                                fontSize: 13,
+                            child: Tooltip(
+                              message: provider.currentStatus,
+                              child: Text(
+                                provider.currentStatus,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: context.textPrimary,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 8),

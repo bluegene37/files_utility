@@ -222,9 +222,7 @@ external Pointer<Utf8> deleteEnginePoll(Pointer<Void> job);
 )
 external void deleteEngineDestroy(Pointer<Void> job);
 
-@Native<
-  Pointer<Void> Function(Pointer<Utf8>, Pointer<Utf8>, Uint8)
->(
+@Native<Pointer<Void> Function(Pointer<Utf8>, Pointer<Utf8>, Uint8)>(
   symbol: 'ftp_scan_start',
   assetId: 'package:files_utility/services/rust_transfer_bindings.dart',
 )
