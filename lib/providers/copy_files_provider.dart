@@ -2078,7 +2078,9 @@ class CopyFilesProvider with ChangeNotifier {
     final worker = _ActiveWorker(pairIndex: pairIndex, job: job);
     _activeWorkers.add(worker);
 
-    worker.pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+    // Gene - Nov, 25, 2026: Poll every 150ms to minimize UI churn while keeping the scanning counter responsive.
+    // worker.pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+    worker.pollTimer = Timer.periodic(const Duration(milliseconds: 150), (_) {
       _pollCopyWorker(worker, pairIndex, origIdx, runOrder);
     });
 

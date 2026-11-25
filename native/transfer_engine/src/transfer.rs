@@ -1,21 +1,23 @@
-// Gene - Nov, 25, 2026: Native Rust file transfer engine module (using shared common helpers).
+// Gene - Nov, 25, 2026: Parallel 8-worker Rust file transfer engine using OS-native
+// MoveFileExW/CopyFileExW (Windows) & rename/fs::copy (Unix), destination pre-listing,
+// and symlink-only canonicalization.
 
 use std::collections::{HashSet, VecDeque};
-use std::ffi::CString;
+use std::ffi::{CString, OsString};
 use std::fmt::Write as _;
-use std::fs;
+use std::fs::{self, Metadata};
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
 
 use crate::common::{
-    c_str_to_string, normalize_lexical, path_basename, paths_equal_or_within, push_json_escaped,
-    resolve_within_root, streaming_copy_to_part_and_swap, system_time_to_epoch_ms,
-    COPY_BUFFER_BYTES, MAX_QUEUED_LOGS,
+    c_str_to_string, fast_move_no_overwrite, lexical_equal_or_within, normalize_lexical,
+    path_basename, push_json_escaped, resolve_within_root, system_time_to_epoch_ms, MoveOutcome,
+    DEFAULT_IO_WORKERS, MAX_QUEUED_LOGS, MAX_QUEUE_CAPACITY,
 };
 
 const SAVE_PROGRESS_INTERVAL_DIRS: u64 = 20;
@@ -57,6 +59,88 @@ struct TransferConfig {
     log_interval: u64,
 }
 
+struct TransferTask {
+    src_file: PathBuf,
+    dest_file: PathBuf,
+    dir_name: String,
+    file_name: String,
+    modified: Option<SystemTime>,
+    modified_ms: i64,
+}
+
+struct QueueInner {
+    tasks: VecDeque<TransferTask>,
+    closed: bool,
+}
+
+struct TransferQueue {
+    inner: Mutex<QueueInner>,
+    not_empty: Condvar,
+    not_full: Condvar,
+}
+
+impl TransferQueue {
+    fn new() -> Self {
+        Self {
+            inner: Mutex::new(QueueInner {
+                tasks: VecDeque::with_capacity(MAX_QUEUE_CAPACITY),
+                closed: false,
+            }),
+            not_empty: Condvar::new(),
+            not_full: Condvar::new(),
+        }
+    }
+
+    fn push(&self, task: TransferTask, state: &SharedState) -> bool {
+        let mut guard = match self.inner.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        while guard.tasks.len() >= MAX_QUEUE_CAPACITY && !guard.closed && !state.is_stopped() {
+            guard = match self.not_full.wait(guard) {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+        }
+        if guard.closed || state.is_stopped() {
+            return false;
+        }
+        guard.tasks.push_back(task);
+        self.not_empty.notify_one();
+        true
+    }
+
+    fn pop(&self, state: &SharedState) -> Option<TransferTask> {
+        let mut guard = match self.inner.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        while guard.tasks.is_empty() && !guard.closed && !state.is_stopped() {
+            guard = match self.not_empty.wait(guard) {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+        }
+        if state.is_stopped() || (guard.closed && guard.tasks.is_empty()) {
+            return None;
+        }
+        let item = guard.tasks.pop_front();
+        self.not_full.notify_one();
+        item
+    }
+
+    fn close(&self, clear_pending: bool) {
+        if let Ok(mut guard) = self.inner.lock() {
+            if clear_pending {
+                guard.tasks.clear();
+            }
+            guard.closed = true;
+            self.not_empty.notify_all();
+            self.not_full.notify_all();
+        }
+    }
+}
+
 struct UiState {
     current_dir_name: String,
     phase: u8,
@@ -71,6 +155,7 @@ struct SharedState {
     files_moved: AtomicU64,
     errors: AtomicU64,
     stop_requested: AtomicBool,
+    cancel_flag: AtomicI32,
     done: AtomicBool,
     pause_lock: Mutex<bool>,
     pause_cvar: Condvar,
@@ -79,6 +164,7 @@ struct SharedState {
 
 pub struct TransferJob {
     state: Arc<SharedState>,
+    queue: Arc<TransferQueue>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -90,6 +176,7 @@ impl SharedState {
             files_moved: AtomicU64::new(initial_files_moved),
             errors: AtomicU64::new(initial_errors),
             stop_requested: AtomicBool::new(false),
+            cancel_flag: AtomicI32::new(0),
             done: AtomicBool::new(false),
             pause_lock: Mutex::new(false),
             pause_cvar: Condvar::new(),
@@ -150,51 +237,117 @@ impl SharedState {
     }
 }
 
-fn move_file_with_fallback(
-    src_file: &Path,
-    dest_file: &Path,
-    modified: SystemTime,
-    copy_buf: &mut [u8],
-    state: &SharedState,
-) -> Result<(), String> {
-    if fs::rename(src_file, dest_file).is_ok() {
-        return Ok(());
+fn read_existing_dest_names(dest_dir: &Path) -> HashSet<OsString> {
+    let mut set = HashSet::new();
+    let entries = match fs::read_dir(dest_dir) {
+        Ok(iter) => iter,
+        Err(_) => return set,
+    };
+    for entry in entries.flatten() {
+        set.insert(entry.file_name());
     }
-
-    streaming_copy_to_part_and_swap(
-        src_file,
-        dest_file,
-        modified,
-        copy_buf,
-        &state.stop_requested,
-        false,
-    )?;
-
-    if let Err(del_err) = fs::remove_file(src_file) {
-        state.push_log(format!(
-            "⚠ Copied to destination, but could not delete source: {} ({del_err})",
-            src_file.display()
-        ));
-    }
-
-    Ok(())
+    set
 }
 
-fn check_and_move_file(
-    file_path: &Path,
+fn spawn_transfer_worker(
+    queue: Arc<TransferQueue>,
+    state: Arc<SharedState>,
+    log_interval: u64,
+) -> Option<JoinHandle<()>> {
+    thread::Builder::new()
+        .name("transfer_engine_io".to_string())
+        .spawn(move || {
+            while let Some(task) = queue.pop(&state) {
+                if !state.wait_if_paused() {
+                    break;
+                }
+                match fast_move_no_overwrite(
+                    &task.src_file,
+                    &task.dest_file,
+                    task.modified,
+                    &state.stop_requested,
+                    &state.cancel_flag,
+                ) {
+                    Ok(MoveOutcome::Moved) => {
+                        let moved = state.files_moved.fetch_add(1, Ordering::Relaxed) + 1;
+                        if log_interval > 0 && moved % log_interval == 0 {
+                            state.set_phase_and_dir(PHASE_MOVING, &task.dir_name, None);
+                            state.push_log(format!(
+                                "__MOVED__|{moved}|{}|{}",
+                                task.modified_ms, task.file_name
+                            ));
+                        }
+                    }
+                    Ok(MoveOutcome::CopiedSourceDeleteFailed(del_err)) => {
+                        state.push_log(format!(
+                            "⚠ Copied to destination, but could not delete source: {} ({del_err})",
+                            task.src_file.display()
+                        ));
+                        let moved = state.files_moved.fetch_add(1, Ordering::Relaxed) + 1;
+                        if log_interval > 0 && moved % log_interval == 0 {
+                            state.set_phase_and_dir(PHASE_MOVING, &task.dir_name, None);
+                            state.push_log(format!(
+                                "__MOVED__|{moved}|{}|{}",
+                                task.modified_ms, task.file_name
+                            ));
+                        }
+                    }
+                    Err(err) if err == "__STOPPED__" => break,
+                    Err(err) if err == "__EXISTS__" => {
+                        state.push_log(format!(
+                            "⚠ Skipped {}: a file with that name already exists at the destination",
+                            task.file_name
+                        ));
+                        state.errors.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(err) => {
+                        state.push_log(format!(
+                            "✗ Failed to move {}: {err}",
+                            task.src_file.display()
+                        ));
+                        state.errors.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
+        })
+        .ok()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn inspect_and_enqueue_file(
+    file_path: PathBuf,
+    file_name_os: OsString,
     parent_dir: &Path,
     dir_name: &str,
-    known_metadata: Option<fs::Metadata>,
+    known_metadata: Option<Metadata>,
     config: &TransferConfig,
-    created_dirs: &mut HashSet<PathBuf>,
-    copy_buf: &mut [u8],
+    dest_dir: &Path,
+    dest_dir_created: &mut bool,
+    existing_dest: &mut Option<HashSet<OsString>>,
+    queue: &TransferQueue,
     state: &SharedState,
-) {
+) -> bool {
     state.files_scanned.fetch_add(1, Ordering::Relaxed);
 
-    let meta = match known_metadata {
-        Some(m) => m,
-        None => match fs::metadata(file_path) {
+    let mut modified: Option<SystemTime> = None;
+    let mut modified_ms: i64 = 0;
+
+    if config.enable_age_filter || config.enable_date_range {
+        let meta = match known_metadata {
+            Some(m) => m,
+            None => match fs::metadata(&file_path) {
+                Ok(m) => m,
+                Err(e) => {
+                    state.push_log(format!(
+                        "✗ Error accessing {}: {e}",
+                        file_path.display()
+                    ));
+                    state.errors.fetch_add(1, Ordering::Relaxed);
+                    return true;
+                }
+            },
+        };
+        let mtime = match meta.modified() {
             Ok(m) => m,
             Err(e) => {
                 state.push_log(format!(
@@ -202,98 +355,67 @@ fn check_and_move_file(
                     file_path.display()
                 ));
                 state.errors.fetch_add(1, Ordering::Relaxed);
-                return;
+                return true;
             }
-        },
-    };
-
-    let modified = match meta.modified() {
-        Ok(m) => m,
-        Err(e) => {
-            state.push_log(format!(
-                "✗ Error accessing {}: {e}",
-                file_path.display()
-            ));
-            state.errors.fetch_add(1, Ordering::Relaxed);
-            return;
+        };
+        let ms = system_time_to_epoch_ms(mtime);
+        if config.enable_age_filter && ms > config.age_threshold_epoch_ms {
+            return true;
         }
-    };
-
-    let modified_ms = system_time_to_epoch_ms(modified);
-
-    if config.enable_age_filter && modified_ms > config.age_threshold_epoch_ms {
-        return;
+        if config.enable_date_range
+            && (ms < config.from_inclusive_epoch_ms || ms >= config.to_exclusive_epoch_ms)
+        {
+            return true;
+        }
+        modified = Some(mtime);
+        modified_ms = ms;
     }
 
-    if config.enable_date_range
-        && (modified_ms < config.from_inclusive_epoch_ms
-            || modified_ms >= config.to_exclusive_epoch_ms)
-    {
-        return;
-    }
+    let file_name = file_name_os.to_string_lossy().into_owned();
 
-    let file_name = path_basename(file_path);
-    let rel_dir = parent_dir
-        .strip_prefix(&config.source_path)
-        .unwrap_or_else(|_| Path::new(""));
-    let dest_dir = if rel_dir.as_os_str().is_empty() {
-        config.dest_path.clone()
-    } else {
-        config.dest_path.join(rel_dir)
-    };
-    let dest_file = dest_dir.join(&file_name);
-
-    if !created_dirs.contains(&dest_dir) {
-        if let Err(e) = fs::create_dir_all(&dest_dir) {
+    if !*dest_dir_created {
+        if let Err(e) = fs::create_dir_all(dest_dir) {
             state.push_log(format!(
                 "✗ Failed to move {}: {e}",
                 file_path.display()
             ));
             state.errors.fetch_add(1, Ordering::Relaxed);
-            return;
+            return true;
         }
-        created_dirs.insert(dest_dir);
+        *dest_dir_created = true;
     }
 
-    if fs::symlink_metadata(&dest_file).is_ok() {
+    let dest_names = existing_dest.get_or_insert_with(|| read_existing_dest_names(dest_dir));
+    if dest_names.contains(&file_name_os) {
         state.push_log(format!(
             "⚠ Skipped {file_name}: a file with that name already exists at the destination"
         ));
         state.errors.fetch_add(1, Ordering::Relaxed);
-        return;
+        return true;
     }
+    dest_names.insert(file_name_os.clone());
 
-    match move_file_with_fallback(file_path, &dest_file, modified, copy_buf, state) {
-        Ok(()) => {
-            let moved = state.files_moved.fetch_add(1, Ordering::Relaxed) + 1;
-            if config.log_interval > 0 && moved % config.log_interval == 0 {
-                state.set_phase_and_dir(PHASE_MOVING, dir_name, None);
-                state.push_log(format!("__MOVED__|{moved}|{modified_ms}|{file_name}"));
-            }
-        }
-        Err(err) if err == "__STOPPED__" => {}
-        Err(err) if err == "__EXISTS__" => {
-            state.push_log(format!(
-                "⚠ Skipped {file_name}: a file with that name already exists at the destination"
-            ));
-            state.errors.fetch_add(1, Ordering::Relaxed);
-        }
-        Err(err) => {
-            state.push_log(format!(
-                "✗ Failed to move {}: {err}",
-                file_path.display()
-            ));
-            state.errors.fetch_add(1, Ordering::Relaxed);
-        }
-    }
+    let dest_file = dest_dir.join(&file_name_os);
+    let _ = parent_dir;
+
+    queue.push(
+        TransferTask {
+            src_file: file_path,
+            dest_file,
+            dir_name: dir_name.to_string(),
+            file_name,
+            modified,
+            modified_ms,
+        },
+        state,
+    )
 }
 
-fn run_transfer(config: TransferConfig, state: Arc<SharedState>) {
-    let mut copy_buf = vec![0u8; COPY_BUFFER_BYTES];
-    let mut created_dirs: HashSet<PathBuf> = HashSet::new();
-    let mut visited_dirs: HashSet<PathBuf> = HashSet::new();
-    let mut dirs_to_process: VecDeque<PathBuf> = VecDeque::new();
-
+fn run_transfer(
+    config: TransferConfig,
+    state: Arc<SharedState>,
+    queue: Arc<TransferQueue>,
+) {
     let canonical_source_root = match fs::canonicalize(&config.source_path) {
         Ok(p) => p,
         Err(e) => {
@@ -301,6 +423,7 @@ fn run_transfer(config: TransferConfig, state: Arc<SharedState>) {
                 "Failed to access source directory {}: {e}",
                 config.source_path.display()
             ));
+            queue.close(true);
             state.set_phase_and_dir(PHASE_DONE, "", None);
             state.done.store(true, Ordering::Release);
             return;
@@ -308,7 +431,23 @@ fn run_transfer(config: TransferConfig, state: Arc<SharedState>) {
     };
 
     let _ = &config.last_scanned_dir;
+    let norm_dest = normalize_lexical(&config.dest_path);
+    let canon_dest = fs::canonicalize(&config.dest_path).ok();
 
+    let mut workers = Vec::with_capacity(DEFAULT_IO_WORKERS);
+    for _ in 0..DEFAULT_IO_WORKERS {
+        if let Some(h) = spawn_transfer_worker(
+            Arc::clone(&queue),
+            Arc::clone(&state),
+            config.log_interval,
+        ) {
+            workers.push(h);
+        }
+    }
+
+    let mut visited_symlinks: HashSet<PathBuf> = HashSet::new();
+    let mut created_dirs: HashSet<PathBuf> = HashSet::new();
+    let mut dirs_to_process: VecDeque<PathBuf> = VecDeque::new();
     dirs_to_process.push_back(config.source_path.clone());
     let recursive = !config.exclude_subfolders;
 
@@ -319,13 +458,8 @@ fn run_transfer(config: TransferConfig, state: Arc<SharedState>) {
 
         let dir_name = path_basename(&dir);
 
-        if paths_equal_or_within(&config.dest_path, &dir) {
+        if lexical_equal_or_within(&norm_dest, &dir) {
             state.push_log(format!("ℹ Skipping destination folder: {dir_name}"));
-            continue;
-        }
-
-        let canonical_dir = fs::canonicalize(&dir).unwrap_or_else(|_| normalize_lexical(&dir));
-        if !visited_dirs.insert(canonical_dir) {
             continue;
         }
 
@@ -345,6 +479,16 @@ fn run_transfer(config: TransferConfig, state: Arc<SharedState>) {
             }
         };
 
+        let rel_dir = dir
+            .strip_prefix(&config.source_path)
+            .unwrap_or_else(|_| Path::new(""));
+        let dest_dir = if rel_dir.as_os_str().is_empty() {
+            config.dest_path.clone()
+        } else {
+            config.dest_path.join(rel_dir)
+        };
+        let mut dest_dir_created = created_dirs.contains(&dest_dir);
+        let mut existing_dest: Option<HashSet<OsString>> = None;
         let mut subdirs: Vec<PathBuf> = Vec::new();
 
         for entry_res in entries {
@@ -374,17 +518,26 @@ fn run_transfer(config: TransferConfig, state: Arc<SharedState>) {
             };
 
             if file_type.is_file() {
-                let meta = entry.metadata().ok();
-                check_and_move_file(
-                    &entry_path,
+                let meta = if config.enable_age_filter || config.enable_date_range {
+                    entry.metadata().ok()
+                } else {
+                    None
+                };
+                if !inspect_and_enqueue_file(
+                    entry_path,
+                    entry.file_name(),
                     &dir,
                     &dir_name,
                     meta,
                     &config,
-                    &mut created_dirs,
-                    &mut copy_buf,
+                    &dest_dir,
+                    &mut dest_dir_created,
+                    &mut existing_dest,
+                    &queue,
                     &state,
-                );
+                ) {
+                    break;
+                }
             } else if file_type.is_dir() {
                 if recursive {
                     subdirs.push(entry_path);
@@ -397,33 +550,54 @@ fn run_transfer(config: TransferConfig, state: Arc<SharedState>) {
                     ));
                     continue;
                 }
-                if let Ok(target_meta) = fs::metadata(&entry_path) {
-                    if target_meta.is_dir() {
-                        if recursive {
-                            subdirs.push(entry_path);
+                if let Ok(canon_target) = fs::canonicalize(&entry_path) {
+                    if let Some(ref cd) = canon_dest {
+                        if canon_target == *cd || canon_target.starts_with(cd) {
+                            continue;
                         }
-                    } else if target_meta.is_file() {
-                        check_and_move_file(
-                            &entry_path,
-                            &dir,
-                            &dir_name,
-                            Some(target_meta),
-                            &config,
-                            &mut created_dirs,
-                            &mut copy_buf,
-                            &state,
-                        );
+                    }
+                    if let Ok(target_meta) = fs::metadata(&entry_path) {
+                        if target_meta.is_dir() {
+                            if recursive && visited_symlinks.insert(canon_target) {
+                                subdirs.push(entry_path);
+                            }
+                        } else if target_meta.is_file() {
+                            if !inspect_and_enqueue_file(
+                                entry_path,
+                                entry.file_name(),
+                                &dir,
+                                &dir_name,
+                                Some(target_meta),
+                                &config,
+                                &dest_dir,
+                                &mut dest_dir_created,
+                                &mut existing_dest,
+                                &queue,
+                                &state,
+                            ) {
+                                break;
+                            }
+                        }
                     }
                 }
             }
         }
 
-        if recursive && !subdirs.is_empty() {
+        if dest_dir_created {
+            created_dirs.insert(dest_dir);
+        }
+
+        if recursive && !subdirs.is_empty() && !state.is_stopped() {
             subdirs.sort_by(|a, b| path_basename(a).cmp(&path_basename(b)));
             for sub in subdirs {
                 dirs_to_process.push_back(sub);
             }
         }
+    }
+
+    queue.close(state.is_stopped());
+    for w in workers {
+        let _ = w.join();
     }
 
     state.set_phase_and_dir(PHASE_DONE, "", None);
@@ -521,14 +695,17 @@ pub unsafe extern "C" fn transfer_engine_start(cfg: *const TransferConfigC) -> *
             config.initial_files_moved,
             config.initial_errors,
         ));
+        let queue = Arc::new(TransferQueue::new());
         let worker_state = Arc::clone(&state);
+        let worker_queue = Arc::clone(&queue);
 
         let handle = thread::Builder::new()
-            .name("transfer_engine_worker".to_string())
+            .name("transfer_engine_coordinator".to_string())
             .spawn(move || {
                 let state_for_panic = Arc::clone(&worker_state);
+                let queue_for_panic = Arc::clone(&worker_queue);
                 let run_res = catch_unwind(AssertUnwindSafe(|| {
-                    run_transfer(config, worker_state);
+                    run_transfer(config, worker_state, worker_queue);
                 }));
                 if let Err(panic_info) = run_res {
                     let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
@@ -538,6 +715,7 @@ pub unsafe extern "C" fn transfer_engine_start(cfg: *const TransferConfigC) -> *
                     } else {
                         "Unknown worker panic".to_string()
                     };
+                    queue_for_panic.close(true);
                     state_for_panic.set_critical_error(msg);
                     state_for_panic.set_phase_and_dir(PHASE_DONE, "", None);
                     state_for_panic.done.store(true, Ordering::Release);
@@ -548,6 +726,7 @@ pub unsafe extern "C" fn transfer_engine_start(cfg: *const TransferConfigC) -> *
         match handle {
             Some(h) => Box::into_raw(Box::new(TransferJob {
                 state,
+                queue,
                 handle: Some(h),
             })),
             None => std::ptr::null_mut(),
@@ -595,12 +774,14 @@ pub unsafe extern "C" fn transfer_engine_stop(job: *mut TransferJob) {
             return;
         }
         let job_ref = &*job;
+        job_ref.state.cancel_flag.store(1, Ordering::Release);
         job_ref.state.stop_requested.store(true, Ordering::Release);
         job_ref.state.set_phase_and_dir(PHASE_STOPPING, "", None);
         if let Ok(mut paused) = job_ref.state.pause_lock.lock() {
             *paused = false;
         }
         job_ref.state.pause_cvar.notify_all();
+        job_ref.queue.close(true);
     }));
 }
 
@@ -628,11 +809,13 @@ pub unsafe extern "C" fn transfer_engine_destroy(job: *mut TransferJob) {
             return;
         }
         let mut boxed = Box::from_raw(job);
+        boxed.state.cancel_flag.store(1, Ordering::Release);
         boxed.state.stop_requested.store(true, Ordering::Release);
         if let Ok(mut paused) = boxed.state.pause_lock.lock() {
             *paused = false;
         }
         boxed.state.pause_cvar.notify_all();
+        boxed.queue.close(true);
         if let Some(handle) = boxed.handle.take() {
             let _ = handle.join();
         }
@@ -663,7 +846,8 @@ mod tests {
             cfg.initial_files_moved,
             cfg.initial_errors,
         ));
-        run_transfer(cfg, Arc::clone(&state));
+        let queue = Arc::new(TransferQueue::new());
+        run_transfer(cfg, Arc::clone(&state), queue);
         let logs = state.ui.lock().unwrap().logs.drain(..).collect();
         (state, logs)
     }
@@ -702,6 +886,44 @@ mod tests {
         assert_eq!(state.files_moved.load(Ordering::Relaxed), 2);
         assert_eq!(state.files_scanned.load(Ordering::Relaxed), 2);
         assert_eq!(state.errors.load(Ordering::Relaxed), 0);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parallel_moves_100_files_across_nested_folders() {
+        let root = make_temp_dir("rust_tx_parallel_100");
+        let src = root.join("source");
+        let dst = root.join("dest");
+        fs::create_dir_all(&dst).unwrap();
+        for d in 0..5 {
+            let sub = src.join(format!("dir_{d}"));
+            fs::create_dir_all(&sub).unwrap();
+            for f in 0..20 {
+                fs::write(sub.join(format!("f_{f}.bin")), b"PAYLOAD").unwrap();
+            }
+        }
+
+        let (state, _) = run_sync(TransferConfig {
+            source_path: src.clone(),
+            dest_path: dst.clone(),
+            last_scanned_dir: None,
+            enable_age_filter: false,
+            age_threshold_epoch_ms: 0,
+            enable_date_range: false,
+            from_inclusive_epoch_ms: 0,
+            to_exclusive_epoch_ms: 0,
+            exclude_subfolders: false,
+            initial_files_moved: 0,
+            initial_errors: 0,
+            log_interval: 25,
+        });
+
+        assert_eq!(state.files_scanned.load(Ordering::Relaxed), 100);
+        assert_eq!(state.files_moved.load(Ordering::Relaxed), 100);
+        assert_eq!(state.errors.load(Ordering::Relaxed), 0);
+        assert!(dst.join("dir_4").join("f_19.bin").exists());
+        assert!(!src.join("dir_4").join("f_19.bin").exists());
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -761,9 +983,6 @@ mod tests {
         old_f.set_modified(t_old).unwrap();
         match_f.set_modified(t_match).unwrap();
         new_f.set_modified(t_new).unwrap();
-        drop(old_f);
-        drop(match_f);
-        drop(new_f);
 
         let (state, _) = run_sync(TransferConfig {
             source_path: src.clone(),
@@ -806,8 +1025,6 @@ mod tests {
             .set_modified(now - Duration::from_secs(60 * 60 * 24 * 40))
             .unwrap();
         recent_f.set_modified(now).unwrap();
-        drop(old_f);
-        drop(recent_f);
 
         let threshold_ms = system_time_to_epoch_ms(now - Duration::from_secs(60 * 60 * 24 * 30));
 

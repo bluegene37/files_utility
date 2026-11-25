@@ -1,5 +1,6 @@
-// Gene - Nov, 25, 2026: Native Rust parallel copy engine with bounded 4-worker pool,
-// 512 KiB reusable buffers, destination pre-listing, resume checkpoints, and symlink safety.
+// Gene - Nov, 25, 2026: High-speed 8-worker Rust copy engine with bounded streaming
+// queue (no per-batch barrier stalls), kernel CopyFileExW / fs::copy offload,
+// destination pre-listing, zero-canonicalize normal walks, and exact resume tracking.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::{CString, OsString};
@@ -8,19 +9,16 @@ use std::fs::{self, Metadata};
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::common::{
-    c_str_to_string, normalize_lexical, path_basename, push_json_escaped, relative_dir_string,
-    resolve_within_root, streaming_copy_to_part_and_swap, system_time_to_epoch_ms,
-    COPY_BUFFER_BYTES, MAX_QUEUED_LOGS,
+    c_str_to_string, fast_copy_to_part_and_swap, path_basename, push_json_escaped,
+    relative_dir_string, resolve_within_root, system_time_to_epoch_ms, DEFAULT_IO_WORKERS,
+    MAX_QUEUED_LOGS, MAX_QUEUE_CAPACITY,
 };
-
-const NUM_COPY_WORKERS: usize = 4;
-const BATCH_FLUSH_THRESHOLD: usize = 32;
 
 const PHASE_SCANNING: u8 = 1;
 const PHASE_COPYING: u8 = 2;
@@ -69,70 +67,79 @@ struct CopyConfig {
 struct CopyTask {
     src: PathBuf,
     dest: PathBuf,
-    modified: SystemTime,
+    modified: Option<SystemTime>,
+    dir_pending: Option<Arc<AtomicUsize>>,
 }
 
 struct QueueInner {
     tasks: VecDeque<CopyTask>,
-    in_flight: usize,
     closed: bool,
 }
 
 struct CopyQueue {
     inner: Mutex<QueueInner>,
-    work_cv: Condvar,
-    idle_cv: Condvar,
+    not_empty: Condvar,
+    not_full: Condvar,
 }
 
 impl CopyQueue {
     fn new() -> Self {
         Self {
             inner: Mutex::new(QueueInner {
-                tasks: VecDeque::new(),
-                in_flight: 0,
+                tasks: VecDeque::with_capacity(MAX_QUEUE_CAPACITY),
                 closed: false,
             }),
-            work_cv: Condvar::new(),
-            idle_cv: Condvar::new(),
+            not_empty: Condvar::new(),
+            not_full: Condvar::new(),
         }
     }
 
-    fn push(&self, task: CopyTask) {
-        if let Ok(mut guard) = self.inner.lock() {
-            guard.tasks.push_back(task);
-            self.work_cv.notify_one();
-        }
-    }
-
-    fn wait_idle(&self, stop_requested: &AtomicBool) {
+    fn push(&self, task: CopyTask, state: &CopySharedState) -> bool {
         let mut guard = match self.inner.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        while (!guard.tasks.is_empty() || guard.in_flight > 0)
-            && !stop_requested.load(Ordering::Acquire)
-        {
-            guard = match self.idle_cv.wait(guard) {
+        while guard.tasks.len() >= MAX_QUEUE_CAPACITY && !guard.closed && !state.is_stopped() {
+            guard = match self.not_full.wait(guard) {
                 Ok(g) => g,
                 Err(p) => p.into_inner(),
             };
         }
-    }
-
-    fn close_and_clear(&self) {
-        if let Ok(mut guard) = self.inner.lock() {
-            guard.tasks.clear();
-            guard.closed = true;
-            self.work_cv.notify_all();
-            self.idle_cv.notify_all();
+        if guard.closed || state.is_stopped() {
+            return false;
         }
+        guard.tasks.push_back(task);
+        self.not_empty.notify_one();
+        true
     }
 
-    fn close(&self) {
+    fn pop(&self, state: &CopySharedState) -> Option<CopyTask> {
+        let mut guard = match self.inner.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        while guard.tasks.is_empty() && !guard.closed && !state.is_stopped() {
+            guard = match self.not_empty.wait(guard) {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+        }
+        if state.is_stopped() || (guard.closed && guard.tasks.is_empty()) {
+            return None;
+        }
+        let popped = guard.tasks.pop_front();
+        self.not_full.notify_one();
+        popped
+    }
+
+    fn close(&self, clear_pending: bool) {
         if let Ok(mut guard) = self.inner.lock() {
+            if clear_pending {
+                guard.tasks.clear();
+            }
             guard.closed = true;
-            self.work_cv.notify_all();
-            self.idle_cv.notify_all();
+            self.not_empty.notify_all();
+            self.not_full.notify_all();
         }
     }
 }
@@ -154,6 +161,7 @@ struct CopySharedState {
     files_inspected: AtomicU64,
     dirs_skipped: AtomicU64,
     stop_requested: AtomicBool,
+    cancel_flag: AtomicI32,
     done: AtomicBool,
     pause_lock: Mutex<bool>,
     pause_cvar: Condvar,
@@ -176,6 +184,7 @@ impl CopySharedState {
             files_inspected: AtomicU64::new(cfg.initial_inspected),
             dirs_skipped: AtomicU64::new(0),
             stop_requested: AtomicBool::new(false),
+            cancel_flag: AtomicI32::new(0),
             done: AtomicBool::new(false),
             pause_lock: Mutex::new(false),
             pause_cvar: Condvar::new(),
@@ -300,80 +309,52 @@ fn spawn_copy_worker(
     log_interval: u64,
 ) -> Option<JoinHandle<()>> {
     thread::Builder::new()
-        .name("copy_engine_worker".to_string())
+        .name("copy_engine_io".to_string())
         .spawn(move || {
-            let mut copy_buf = vec![0u8; COPY_BUFFER_BYTES];
-            loop {
-                let task = {
-                    let mut guard = match queue.inner.lock() {
-                        Ok(g) => g,
-                        Err(p) => p.into_inner(),
-                    };
-                    while guard.tasks.is_empty() && !guard.closed && !state.is_stopped() {
-                        guard = match queue.work_cv.wait(guard) {
-                            Ok(g) => g,
-                            Err(p) => p.into_inner(),
-                        };
+            while let Some(task) = queue.pop(&state) {
+                if !state.wait_if_paused() {
+                    if let Some(ref cnt) = task.dir_pending {
+                        cnt.fetch_sub(1, Ordering::Release);
                     }
-                    if state.is_stopped() || (guard.closed && guard.tasks.is_empty()) {
-                        break;
-                    }
-                    let popped = guard.tasks.pop_front();
-                    if popped.is_some() {
-                        guard.in_flight += 1;
-                    }
-                    popped
-                };
+                    break;
+                }
 
-                let Some(task) = task else {
-                    continue;
-                };
-
-                if state.wait_if_paused() {
-                    let file_name = path_basename(&task.src);
-                    match streaming_copy_to_part_and_swap(
-                        &task.src,
-                        &task.dest,
-                        task.modified,
-                        &mut copy_buf,
-                        &state.stop_requested,
-                        true,
-                    ) {
-                        Ok(()) => {
-                            let copied = state.files_copied.fetch_add(1, Ordering::Relaxed) + 1;
-                            if log_interval > 0 && copied % log_interval == 0 {
-                                state.set_phase(PHASE_COPYING, None, Some(&file_name));
-                                state.push_log(format!(
-                                    "✓ Copied {log_interval} files (total: {copied}) – latest: {file_name}"
-                                ));
-                            }
-                        }
-                        Err(err) if err == "__STOPPED__" => {}
-                        Err(err) => {
-                            state.errors.fetch_add(1, Ordering::Relaxed);
-                            state.push_error_log(format!(
-                                "✗ Failed to copy {file_name}: {err}"
+                let file_name = path_basename(&task.src);
+                match fast_copy_to_part_and_swap(
+                    &task.src,
+                    &task.dest,
+                    task.modified,
+                    &state.stop_requested,
+                    &state.cancel_flag,
+                    true,
+                ) {
+                    Ok(()) => {
+                        let copied = state.files_copied.fetch_add(1, Ordering::Relaxed) + 1;
+                        if log_interval > 0 && copied % log_interval == 0 {
+                            state.set_phase(PHASE_COPYING, None, Some(&file_name));
+                            state.push_log(format!(
+                                "✓ Copied {log_interval} files (total: {copied}) – latest: {file_name}"
                             ));
                         }
                     }
+                    Err(err) if err == "__STOPPED__" => {
+                        if let Some(ref cnt) = task.dir_pending {
+                            cnt.fetch_sub(1, Ordering::Release);
+                        }
+                        break;
+                    }
+                    Err(err) => {
+                        state.errors.fetch_add(1, Ordering::Relaxed);
+                        state.push_error_log(format!("✗ Failed to copy {file_name}: {err}"));
+                    }
                 }
 
-                if let Ok(mut guard) = queue.inner.lock() {
-                    guard.in_flight = guard.in_flight.saturating_sub(1);
-                    if guard.tasks.is_empty() && guard.in_flight == 0 {
-                        queue.idle_cv.notify_all();
-                    }
+                if let Some(ref cnt) = task.dir_pending {
+                    cnt.fetch_sub(1, Ordering::Release);
                 }
             }
         })
         .ok()
-}
-
-struct FileCandidate {
-    path: PathBuf,
-    name_os: OsString,
-    name: String,
-    known_meta: Option<Metadata>,
 }
 
 fn read_dest_sizes(dest_dir: &Path) -> HashMap<OsString, u64> {
@@ -394,6 +375,136 @@ fn read_dest_sizes(dest_dir: &Path) -> HashMap<OsString, u64> {
     map
 }
 
+fn drain_completed_trackers(
+    pending_trackers: &mut Vec<(String, Arc<AtomicUsize>)>,
+    completed_dirs: &mut HashSet<String>,
+    last_processed_files: &mut HashMap<String, String>,
+) {
+    pending_trackers.retain(|(rel, cnt)| {
+        if cnt.load(Ordering::Acquire) == 0 {
+            completed_dirs.insert(rel.clone());
+            last_processed_files.remove(rel);
+            false
+        } else {
+            true
+        }
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn inspect_and_enqueue_copy_file(
+    file_path: PathBuf,
+    name_os: OsString,
+    name_str: &str,
+    known_meta: Option<Metadata>,
+    dir_name: &str,
+    rel_path: &str,
+    dest_dir: &Path,
+    dest_dir_created: &mut bool,
+    dest_sizes: &mut Option<HashMap<OsString, u64>>,
+    created_dirs: &mut HashSet<PathBuf>,
+    dir_pending: &Option<Arc<AtomicUsize>>,
+    config: &CopyConfig,
+    state: &CopySharedState,
+    queue: &CopyQueue,
+    last_processed_files: &mut HashMap<String, String>,
+) -> bool {
+    state.files_inspected.fetch_add(1, Ordering::Relaxed);
+
+    let meta = match known_meta {
+        Some(m) => m,
+        None => match fs::metadata(&file_path) {
+            Ok(m) => m,
+            Err(e) => {
+                state.errors.fetch_add(1, Ordering::Relaxed);
+                state.push_error_log(format!("✗ Failed to inspect {name_str}: {e}"));
+                return true;
+            }
+        },
+    };
+
+    let src_size = meta.len();
+    let modified = match meta.modified() {
+        Ok(m) => m,
+        Err(e) => {
+            state.errors.fetch_add(1, Ordering::Relaxed);
+            state.push_error_log(format!("✗ Failed to inspect {name_str}: {e}"));
+            return true;
+        }
+    };
+
+    if config.enable_age_filter || config.enable_date_range {
+        let modified_ms = system_time_to_epoch_ms(modified);
+        if config.enable_age_filter && modified_ms > config.age_threshold_epoch_ms {
+            state.files_skipped.fetch_add(1, Ordering::Relaxed);
+            return true;
+        }
+        if config.enable_date_range
+            && (modified_ms < config.from_inclusive_epoch_ms
+                || modified_ms >= config.to_exclusive_epoch_ms)
+        {
+            state.files_skipped.fetch_add(1, Ordering::Relaxed);
+            return true;
+        }
+    }
+
+    let sizes_map = dest_sizes.get_or_insert_with(|| read_dest_sizes(dest_dir));
+    if sizes_map.get(&name_os) == Some(&src_size) {
+        let already = state.files_already_exist.fetch_add(1, Ordering::Relaxed) + 1;
+        if config.log_interval > 0 && already % config.log_interval == 0 {
+            state.set_phase(PHASE_CHECKING, Some(dir_name), None);
+            state.push_log(format!(
+                "⏭ {already} files already exist at destination (skipping)"
+            ));
+        }
+        return true;
+    }
+
+    if !*dest_dir_created {
+        if !created_dirs.contains(dest_dir) {
+            if let Err(e) = fs::create_dir_all(dest_dir) {
+                state.errors.fetch_add(1, Ordering::Relaxed);
+                state.push_error_log(format!("✗ Failed to copy {name_str}: {e}"));
+                return true;
+            }
+            created_dirs.insert(dest_dir.to_path_buf());
+        }
+        *dest_dir_created = true;
+    }
+
+    if let Some(ref cnt) = dir_pending {
+        cnt.fetch_add(1, Ordering::AcqRel);
+    }
+
+    let ok = queue.push(
+        CopyTask {
+            src: file_path,
+            dest: dest_dir.join(&name_os),
+            modified: Some(modified),
+            dir_pending: dir_pending.clone(),
+        },
+        state,
+    );
+    if !ok {
+        if let Some(ref cnt) = dir_pending {
+            cnt.fetch_sub(1, Ordering::AcqRel);
+        }
+        return false;
+    }
+
+    if config.progress_file_path.is_some() {
+        last_processed_files.insert(rel_path.to_string(), name_str.to_string());
+    }
+    true
+}
+
+struct ResumeFileCandidate {
+    path: PathBuf,
+    name_os: OsString,
+    name: String,
+    known_meta: Option<Metadata>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn walk_and_copy(
     dir: &Path,
@@ -401,18 +512,14 @@ fn walk_and_copy(
     config: &CopyConfig,
     state: &CopySharedState,
     queue: &CopyQueue,
-    visited_dirs: &mut HashSet<PathBuf>,
+    visited_symlinks: &mut HashSet<PathBuf>,
     created_dirs: &mut HashSet<PathBuf>,
     completed_dirs: &mut HashSet<String>,
     last_processed_files: &mut HashMap<String, String>,
+    pending_trackers: &mut Vec<(String, Arc<AtomicUsize>)>,
     last_save: &mut Instant,
 ) {
     if state.is_stopped() || !state.wait_if_paused() {
-        return;
-    }
-
-    let canonical_dir = fs::canonicalize(dir).unwrap_or_else(|_| normalize_lexical(dir));
-    if !visited_dirs.insert(canonical_dir) {
         return;
     }
 
@@ -434,190 +541,196 @@ fn walk_and_copy(
         }
     };
 
-    let mut files: Vec<FileCandidate> = Vec::new();
+    let dest_dir = if rel_path == "." {
+        config.dest_path.clone()
+    } else {
+        config.dest_path.join(&rel_path)
+    };
+    let mut dest_dir_created = created_dirs.contains(&dest_dir);
+    let mut dest_sizes: Option<HashMap<OsString, u64>> = None;
+    let dir_pending = config
+        .progress_file_path
+        .as_ref()
+        .map(|_| Arc::new(AtomicUsize::new(0)));
+
     let mut subdirs: Vec<PathBuf> = Vec::new();
+    let resume_last_name = last_processed_files.get(&rel_path).cloned();
 
-    for entry_res in entries {
-        if state.is_stopped() {
-            return;
-        }
-        let entry = match entry_res {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let entry_path = entry.path();
-        let ft = match entry.file_type() {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-
-        if ft.is_file() {
-            let name_os = entry.file_name();
-            let name = name_os.to_string_lossy().into_owned();
-            files.push(FileCandidate {
-                path: entry_path,
-                name_os,
-                name,
-                known_meta: entry.metadata().ok(),
-            });
-        } else if ft.is_dir() {
-            subdirs.push(entry_path);
-        } else if ft.is_symlink() {
-            if !resolve_within_root(canonical_root, &entry_path) {
-                continue;
+    if let Some(ref last_name) = resume_last_name {
+        // Resuming an interrupted directory requires deterministic filename sorting.
+        let mut files: Vec<ResumeFileCandidate> = Vec::new();
+        for entry_res in entries {
+            if state.is_stopped() {
+                return;
             }
-            if let Ok(meta) = fs::metadata(&entry_path) {
-                if meta.is_dir() {
-                    subdirs.push(entry_path);
-                } else if meta.is_file() {
-                    let name_os = entry.file_name();
-                    let name = name_os.to_string_lossy().into_owned();
-                    files.push(FileCandidate {
-                        path: entry_path,
-                        name_os,
-                        name,
-                        known_meta: Some(meta),
-                    });
+            let entry = match entry_res {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let entry_path = entry.path();
+            let ft = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if ft.is_file() {
+                let name_os = entry.file_name();
+                let name = name_os.to_string_lossy().into_owned();
+                files.push(ResumeFileCandidate {
+                    path: entry_path,
+                    name_os,
+                    name,
+                    known_meta: entry.metadata().ok(),
+                });
+            } else if ft.is_dir() {
+                subdirs.push(entry_path);
+            } else if ft.is_symlink() && resolve_within_root(canonical_root, &entry_path) {
+                if let Ok(canon_target) = fs::canonicalize(&entry_path) {
+                    if let Ok(meta) = fs::metadata(&entry_path) {
+                        if meta.is_dir() {
+                            if visited_symlinks.insert(canon_target) {
+                                subdirs.push(entry_path);
+                            }
+                        } else if meta.is_file() {
+                            let name_os = entry.file_name();
+                            let name = name_os.to_string_lossy().into_owned();
+                            files.push(ResumeFileCandidate {
+                                path: entry_path,
+                                name_os,
+                                name,
+                                known_meta: Some(meta),
+                            });
+                        }
+                    }
                 }
             }
         }
-    }
 
-    files.sort_by(|a, b| a.name.cmp(&b.name));
-    subdirs.sort_by(|a, b| path_basename(a).cmp(&path_basename(b)));
+        files.sort_by(|a, b| a.name.cmp(&b.name));
+        let start_idx = files
+            .iter()
+            .position(|f| &f.name == last_name)
+            .map(|i| i + 1)
+            .unwrap_or(0);
 
-    let mut start_index = 0usize;
-    if let Some(last_name) = last_processed_files.get(&rel_path) {
-        if let Some(idx) = files.iter().position(|f| &f.name == last_name) {
-            start_index = idx + 1;
-        }
-    }
-
-    if !files.is_empty() && start_index < files.len() {
-        let dest_dir = if rel_path == "." {
-            config.dest_path.clone()
-        } else {
-            config.dest_path.join(&rel_path)
-        };
-        let dest_sizes = read_dest_sizes(&dest_dir);
-
-        let mut batch_queued = 0usize;
-        let mut last_in_batch: Option<String> = None;
-
-        for candidate in &files[start_index..] {
+        for candidate in files.into_iter().skip(start_idx) {
             if state.is_stopped() || !state.wait_if_paused() {
                 break;
             }
-
-            state.files_inspected.fetch_add(1, Ordering::Relaxed);
-
-            let meta = match &candidate.known_meta {
-                Some(m) => m.clone(),
-                None => match fs::metadata(&candidate.path) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        state.errors.fetch_add(1, Ordering::Relaxed);
-                        state.push_error_log(format!(
-                            "✗ Failed to inspect {}: {e}",
-                            candidate.name
-                        ));
-                        continue;
-                    }
-                },
-            };
-
-            let src_size = meta.len();
-            let modified = match meta.modified() {
-                Ok(m) => m,
-                Err(e) => {
-                    state.errors.fetch_add(1, Ordering::Relaxed);
-                    state.push_error_log(format!(
-                        "✗ Failed to inspect {}: {e}",
-                        candidate.name
-                    ));
-                    continue;
-                }
-            };
-            let modified_ms = system_time_to_epoch_ms(modified);
-
-            if config.enable_age_filter && modified_ms > config.age_threshold_epoch_ms {
-                state.files_skipped.fetch_add(1, Ordering::Relaxed);
-                continue;
-            }
-
-            if config.enable_date_range
-                && (modified_ms < config.from_inclusive_epoch_ms
-                    || modified_ms >= config.to_exclusive_epoch_ms)
-            {
-                state.files_skipped.fetch_add(1, Ordering::Relaxed);
-                continue;
-            }
-
-            if dest_sizes.get(&candidate.name_os) == Some(&src_size) {
-                let already = state.files_already_exist.fetch_add(1, Ordering::Relaxed) + 1;
-                if config.log_interval > 0 && already % config.log_interval == 0 {
-                    state.set_phase(PHASE_CHECKING, Some(&dir_name), None);
-                    state.push_log(format!(
-                        "⏭ {already} files already exist at destination (skipping)"
-                    ));
-                }
-                continue;
-            }
-
-            if !created_dirs.contains(&dest_dir) {
-                if let Err(e) = fs::create_dir_all(&dest_dir) {
-                    state.errors.fetch_add(1, Ordering::Relaxed);
-                    state.push_error_log(format!(
-                        "✗ Failed to copy {}: {e}",
-                        candidate.name
-                    ));
-                    continue;
-                }
-                created_dirs.insert(dest_dir.clone());
-            }
-
-            queue.push(CopyTask {
-                src: candidate.path.clone(),
-                dest: dest_dir.join(&candidate.name_os),
-                modified,
-            });
-            batch_queued += 1;
-            last_in_batch = Some(candidate.name.clone());
-
-            if batch_queued >= BATCH_FLUSH_THRESHOLD {
-                queue.wait_idle(&state.stop_requested);
-                if !state.is_stopped() {
-                    if let Some(ref name) = last_in_batch {
-                        last_processed_files.insert(rel_path.clone(), name.clone());
-                    }
-                }
-                batch_queued = 0;
-
-                if let Some(ref progress_path) = config.progress_file_path {
-                    if last_save.elapsed() >= Duration::from_secs(1) {
-                        save_progress_file(
-                            progress_path,
-                            config,
-                            completed_dirs,
-                            last_processed_files,
-                            state,
-                        );
-                        *last_save = Instant::now();
-                    }
-                }
+            if !inspect_and_enqueue_copy_file(
+                candidate.path,
+                candidate.name_os,
+                &candidate.name,
+                candidate.known_meta,
+                &dir_name,
+                &rel_path,
+                &dest_dir,
+                &mut dest_dir_created,
+                &mut dest_sizes,
+                created_dirs,
+                &dir_pending,
+                config,
+                state,
+                queue,
+                last_processed_files,
+            ) {
+                break;
             }
         }
+    } else {
+        // Streaming fast-path: process read_dir entries directly with zero sorting overhead.
+        for entry_res in entries {
+            if state.is_stopped() || !state.wait_if_paused() {
+                break;
+            }
+            let entry = match entry_res {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let entry_path = entry.path();
+            let ft = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
 
-        if batch_queued > 0 {
-            queue.wait_idle(&state.stop_requested);
-            if !state.is_stopped() {
-                if let Some(ref name) = last_in_batch {
-                    last_processed_files.insert(rel_path.clone(), name.clone());
+            if ft.is_file() {
+                let name_os = entry.file_name();
+                let name_str = name_os.to_string_lossy().into_owned();
+                if !inspect_and_enqueue_copy_file(
+                    entry_path,
+                    name_os,
+                    &name_str,
+                    entry.metadata().ok(),
+                    &dir_name,
+                    &rel_path,
+                    &dest_dir,
+                    &mut dest_dir_created,
+                    &mut dest_sizes,
+                    created_dirs,
+                    &dir_pending,
+                    config,
+                    state,
+                    queue,
+                    last_processed_files,
+                ) {
+                    break;
+                }
+            } else if ft.is_dir() {
+                subdirs.push(entry_path);
+            } else if ft.is_symlink() && resolve_within_root(canonical_root, &entry_path) {
+                if let Ok(canon_target) = fs::canonicalize(&entry_path) {
+                    if let Ok(meta) = fs::metadata(&entry_path) {
+                        if meta.is_dir() {
+                            if visited_symlinks.insert(canon_target) {
+                                subdirs.push(entry_path);
+                            }
+                        } else if meta.is_file() {
+                            let name_os = entry.file_name();
+                            let name_str = name_os.to_string_lossy().into_owned();
+                            if !inspect_and_enqueue_copy_file(
+                                entry_path,
+                                name_os,
+                                &name_str,
+                                Some(meta),
+                                &dir_name,
+                                &rel_path,
+                                &dest_dir,
+                                &mut dest_dir_created,
+                                &mut dest_sizes,
+                                created_dirs,
+                                &dir_pending,
+                                config,
+                                state,
+                                queue,
+                                last_processed_files,
+                            ) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some(ref progress_path) = config.progress_file_path {
+                if last_save.elapsed() >= Duration::from_secs(2) {
+                    drain_completed_trackers(pending_trackers, completed_dirs, last_processed_files);
+                    save_progress_file(
+                        progress_path,
+                        config,
+                        completed_dirs,
+                        last_processed_files,
+                        state,
+                    );
+                    *last_save = Instant::now();
                 }
             }
         }
     }
 
+    if let Some(cnt) = dir_pending {
+        pending_trackers.push((rel_path.clone(), cnt));
+    }
+
+    subdirs.sort_by(|a, b| path_basename(a).cmp(&path_basename(b)));
     for sub in subdirs {
         if state.is_stopped() {
             return;
@@ -628,28 +741,26 @@ fn walk_and_copy(
             config,
             state,
             queue,
-            visited_dirs,
+            visited_symlinks,
             created_dirs,
             completed_dirs,
             last_processed_files,
+            pending_trackers,
             last_save,
         );
     }
 
-    if !state.is_stopped() {
-        completed_dirs.insert(rel_path.clone());
-        last_processed_files.remove(&rel_path);
-        if let Some(ref progress_path) = config.progress_file_path {
-            if completed_dirs.len() % 100 == 0 || last_save.elapsed() >= Duration::from_secs(1) {
-                save_progress_file(
-                    progress_path,
-                    config,
-                    completed_dirs,
-                    last_processed_files,
-                    state,
-                );
-                *last_save = Instant::now();
-            }
+    if let Some(ref progress_path) = config.progress_file_path {
+        drain_completed_trackers(pending_trackers, completed_dirs, last_processed_files);
+        if last_save.elapsed() >= Duration::from_secs(2) {
+            save_progress_file(
+                progress_path,
+                config,
+                completed_dirs,
+                last_processed_files,
+                state,
+            );
+            *last_save = Instant::now();
         }
     }
 }
@@ -669,15 +780,15 @@ fn run_copy_coordinator(
                 "Failed to access source directory {}: {e}",
                 config.source_path.display()
             ));
-            queue.close_and_clear();
+            queue.close(true);
             state.set_phase(PHASE_DONE, None, None);
             state.done.store(true, Ordering::Release);
             return;
         }
     };
 
-    let mut workers = Vec::with_capacity(NUM_COPY_WORKERS);
-    for _ in 0..NUM_COPY_WORKERS {
+    let mut workers = Vec::with_capacity(DEFAULT_IO_WORKERS);
+    for _ in 0..DEFAULT_IO_WORKERS {
         if let Some(h) = spawn_copy_worker(
             Arc::clone(&queue),
             Arc::clone(&state),
@@ -687,10 +798,11 @@ fn run_copy_coordinator(
         }
     }
 
-    let mut visited_dirs: HashSet<PathBuf> = HashSet::new();
+    let mut visited_symlinks: HashSet<PathBuf> = HashSet::new();
     let mut created_dirs: HashSet<PathBuf> = HashSet::new();
     let mut completed_dirs = config.completed_dirs.clone();
     let mut last_processed_files = config.last_processed_files.clone();
+    let mut pending_trackers: Vec<(String, Arc<AtomicUsize>)> = Vec::new();
     let mut last_save = Instant::now();
 
     walk_and_copy(
@@ -699,23 +811,21 @@ fn run_copy_coordinator(
         &config,
         &state,
         &queue,
-        &mut visited_dirs,
+        &mut visited_symlinks,
         &mut created_dirs,
         &mut completed_dirs,
         &mut last_processed_files,
+        &mut pending_trackers,
         &mut last_save,
     );
 
-    if state.is_stopped() {
-        queue.close_and_clear();
-    } else {
-        queue.close();
-    }
+    queue.close(state.is_stopped());
     for w in workers {
         let _ = w.join();
     }
 
     if state.is_stopped() {
+        drain_completed_trackers(&mut pending_trackers, &mut completed_dirs, &mut last_processed_files);
         if let Some(ref progress_path) = config.progress_file_path {
             save_progress_file(
                 progress_path,
@@ -885,7 +995,7 @@ pub unsafe extern "C" fn copy_engine_start(cfg: *const CopyConfigC) -> *mut Copy
                     } else {
                         "Unknown copy coordinator panic".to_string()
                     };
-                    queue_for_panic.close_and_clear();
+                    queue_for_panic.close(true);
                     state_for_panic.set_critical_error(msg);
                     state_for_panic.set_phase(PHASE_DONE, None, None);
                     state_for_panic.done.store(true, Ordering::Release);
@@ -940,12 +1050,13 @@ pub unsafe extern "C" fn copy_engine_stop(job: *mut CopyJob) {
             return;
         }
         let job_ref = &*job;
+        job_ref.state.cancel_flag.store(1, Ordering::Release);
         job_ref.state.stop_requested.store(true, Ordering::Release);
         if let Ok(mut paused) = job_ref.state.pause_lock.lock() {
             *paused = false;
         }
         job_ref.state.pause_cvar.notify_all();
-        job_ref.queue.close_and_clear();
+        job_ref.queue.close(true);
     }));
 }
 
@@ -973,12 +1084,13 @@ pub unsafe extern "C" fn copy_engine_destroy(job: *mut CopyJob) {
             return;
         }
         let mut boxed = Box::from_raw(job);
+        boxed.state.cancel_flag.store(1, Ordering::Release);
         boxed.state.stop_requested.store(true, Ordering::Release);
         if let Ok(mut paused) = boxed.state.pause_lock.lock() {
             *paused = false;
         }
         boxed.state.pause_cvar.notify_all();
-        boxed.queue.close_and_clear();
+        boxed.queue.close(true);
         if let Some(handle) = boxed.handle.take() {
             let _ = handle.join();
         }
@@ -1072,6 +1184,50 @@ mod tests {
         assert_eq!(state.files_skipped.load(Ordering::Relaxed), 1);
         assert_eq!(fs::read(dst.join("sub").join("match.txt")).unwrap(), b"HELLO");
         assert!(!dst.join("sub").join("old.txt").exists());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parallel_copies_100_files_across_nested_folders() {
+        let root = make_temp_dir("rust_copy_parallel_100");
+        let src = root.join("source");
+        let dst = root.join("dest");
+        fs::create_dir_all(&dst).unwrap();
+        for d in 0..5 {
+            let sub = src.join(format!("dir_{d}"));
+            fs::create_dir_all(&sub).unwrap();
+            for f in 0..20 {
+                fs::write(sub.join(format!("f_{f}.bin")), b"PAYLOAD").unwrap();
+            }
+        }
+
+        let cfg = CopyConfig {
+            source_path: src.clone(),
+            dest_path: dst.clone(),
+            progress_file_path: None,
+            completed_dirs: HashSet::new(),
+            last_processed_files: HashMap::new(),
+            enable_age_filter: false,
+            age_threshold_epoch_ms: 0,
+            enable_date_range: false,
+            from_inclusive_epoch_ms: 0,
+            to_exclusive_epoch_ms: 0,
+            initial_copied: 0,
+            initial_skipped: 0,
+            initial_already_exist: 0,
+            initial_errors: 0,
+            initial_inspected: 0,
+            log_interval: 25,
+        };
+        let state = Arc::new(CopySharedState::new(&cfg));
+        let queue = Arc::new(CopyQueue::new());
+        run_copy_coordinator(cfg, Arc::clone(&state), queue);
+
+        assert_eq!(state.files_inspected.load(Ordering::Relaxed), 100);
+        assert_eq!(state.files_copied.load(Ordering::Relaxed), 100);
+        assert_eq!(state.errors.load(Ordering::Relaxed), 0);
+        assert!(dst.join("dir_4").join("f_19.bin").exists());
 
         let _ = fs::remove_dir_all(&root);
     }

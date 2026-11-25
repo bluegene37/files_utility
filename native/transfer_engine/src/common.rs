@@ -1,16 +1,18 @@
-// Gene - Nov, 25, 2026: Shared utilities, JSON encoding, path containment, and reusable
-// 512 KiB streaming copy helper for all native Rust file engines.
+// Gene - Nov, 25, 2026: Shared utilities, JSON encoding, symlink containment, and
+// OS-native zero-copy / SMB-offloaded file move & copy helpers.
 
 use std::ffi::{CStr, OsString};
 use std::fmt::Write as _;
-use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::fs;
+#[cfg(not(windows))]
+use std::fs::OpenOptions;
 use std::os::raw::c_char;
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub const COPY_BUFFER_BYTES: usize = 512 * 1024;
+pub const DEFAULT_IO_WORKERS: usize = 8;
+pub const MAX_QUEUE_CAPACITY: usize = 256;
 pub const MAX_QUEUED_LOGS: usize = 2000;
 
 pub unsafe fn c_str_to_string(ptr: *const c_char) -> Option<String> {
@@ -54,18 +56,9 @@ pub fn normalize_lexical(path: &Path) -> PathBuf {
     out
 }
 
-pub fn paths_equal_or_within(parent: &Path, candidate: &Path) -> bool {
-    let norm_parent = normalize_lexical(parent);
+pub fn lexical_equal_or_within(norm_parent: &Path, candidate: &Path) -> bool {
     let norm_candidate = normalize_lexical(candidate);
-    if norm_candidate == norm_parent || norm_candidate.starts_with(&norm_parent) {
-        return true;
-    }
-    if let (Ok(canon_parent), Ok(canon_candidate)) =
-        (fs::canonicalize(parent), fs::canonicalize(candidate))
-    {
-        return canon_candidate == canon_parent || canon_candidate.starts_with(&canon_parent);
-    }
-    false
+    norm_candidate == norm_parent || norm_candidate.starts_with(norm_parent)
 }
 
 pub fn relative_dir_string(dir: &Path, root: &Path) -> String {
@@ -107,80 +100,224 @@ pub fn push_json_escaped(out: &mut String, s: &str) {
     out.push('"');
 }
 
-/// Streams `src_file` into `<dest_file>.part` using a caller-owned reusable buffer,
-/// verifies exact byte count, preserves `modified`, closes handles before rename
-/// (required on Windows), and cleans up `.part` on any error or stop signal.
-pub fn streaming_copy_to_part_and_swap(
+pub enum MoveOutcome {
+    Moved,
+    CopiedSourceDeleteFailed(String),
+}
+
+#[cfg(windows)]
+mod win32_fs {
+    use std::ffi::c_void;
+    use std::io;
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::Path;
+    use std::sync::atomic::AtomicI32;
+
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const ERROR_FILE_EXISTS: i32 = 80;
+    const ERROR_ALREADY_EXISTS: i32 = 183;
+    const ERROR_REQUEST_ABORTED: i32 = 1235;
+
+    pub enum WinMoveErr {
+        AlreadyExists,
+        Other(io::Error),
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CopyFileExW(
+            lpExistingFileName: *const u16,
+            lpNewFileName: *const u16,
+            lpProgressRoutine: *const c_void,
+            lpData: *mut c_void,
+            pbCancel: *const i32,
+            dwCopyFlags: u32,
+        ) -> i32;
+
+        fn MoveFileExW(
+            lpExistingFileName: *const u16,
+            lpNewFileName: *const u16,
+            dwFlags: u32,
+        ) -> i32;
+    }
+
+    fn to_wide_null(path: &Path) -> Vec<u16> {
+        path.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+
+    pub fn move_no_overwrite(src: &Path, dst: &Path) -> Result<(), WinMoveErr> {
+        let src_w = to_wide_null(src);
+        let dst_w = to_wide_null(dst);
+        let ok = unsafe { MoveFileExW(src_w.as_ptr(), dst_w.as_ptr(), 0) };
+        if ok != 0 {
+            return Ok(());
+        }
+        let err = io::Error::last_os_error();
+        match err.raw_os_error() {
+            Some(ERROR_FILE_EXISTS) | Some(ERROR_ALREADY_EXISTS) => Err(WinMoveErr::AlreadyExists),
+            _ => Err(WinMoveErr::Other(err)),
+        }
+    }
+
+    pub fn move_replace(src: &Path, dst: &Path) -> Result<(), String> {
+        let src_w = to_wide_null(src);
+        let dst_w = to_wide_null(dst);
+        let ok = unsafe { MoveFileExW(src_w.as_ptr(), dst_w.as_ptr(), MOVEFILE_REPLACE_EXISTING) };
+        if ok != 0 {
+            return Ok(());
+        }
+        Err(format!(
+            "MoveFileExW failed: {}",
+            io::Error::last_os_error()
+        ))
+    }
+
+    pub fn copy_file_ex(src: &Path, dst: &Path, cancel_flag: &AtomicI32) -> Result<(), String> {
+        let src_w = to_wide_null(src);
+        let dst_w = to_wide_null(dst);
+        let ok = unsafe {
+            CopyFileExW(
+                src_w.as_ptr(),
+                dst_w.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                cancel_flag.as_ptr(),
+                0,
+            )
+        };
+        if ok != 0 {
+            return Ok(());
+        }
+        let err = io::Error::last_os_error();
+        if err.raw_os_error() == Some(ERROR_REQUEST_ABORTED) {
+            return Err("__STOPPED__".to_string());
+        }
+        Err(format!("CopyFileExW failed: {err}"))
+    }
+}
+
+/// Copies `src_file` into `<dest_file>.part` using OS-native kernel/SMB offload
+/// (`CopyFileExW` on Windows, `fs::copy` / `fcopyfile` / `copy_file_range` on Unix),
+/// preserves modification timestamps, and swaps into `dest_file` atomically.
+pub fn fast_copy_to_part_and_swap(
     src_file: &Path,
     dest_file: &Path,
-    modified: SystemTime,
-    copy_buf: &mut [u8],
+    modified: Option<SystemTime>,
     stop_requested: &AtomicBool,
+    cancel_flag: &AtomicI32,
     allow_overwrite: bool,
 ) -> Result<(), String> {
+    if stop_requested.load(Ordering::Acquire) {
+        return Err("__STOPPED__".to_string());
+    }
+
     let temp_path = append_part_extension(dest_file);
 
-    let result: Result<(), String> = (|| {
-        let mut src = File::open(src_file).map_err(|e| format!("open source: {e}"))?;
-        let src_len = src
-            .metadata()
-            .map_err(|e| format!("stat source: {e}"))?
-            .len();
-
-        let mut dst = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&temp_path)
-            .map_err(|e| format!("create temp file: {e}"))?;
-
-        let mut bytes_copied: u64 = 0;
-        loop {
+    #[cfg(windows)]
+    let result: Result<(), String> = {
+        let _ = modified;
+        let res = (|| {
+            win32_fs::copy_file_ex(src_file, &temp_path, cancel_flag)?;
             if stop_requested.load(Ordering::Acquire) {
-                drop(dst);
-                let _ = fs::remove_file(&temp_path);
                 return Err("__STOPPED__".to_string());
             }
-
-            let n = src
-                .read(copy_buf)
-                .map_err(|e| format!("read source: {e}"))?;
-            if n == 0 {
-                break;
+            if allow_overwrite {
+                win32_fs::move_replace(&temp_path, dest_file)
+            } else {
+                match win32_fs::move_no_overwrite(&temp_path, dest_file) {
+                    Ok(()) => Ok(()),
+                    Err(win32_fs::WinMoveErr::AlreadyExists) => Err("__EXISTS__".to_string()),
+                    Err(win32_fs::WinMoveErr::Other(e)) => {
+                        Err(format!("MoveFileExW failed: {e}"))
+                    }
+                }
             }
-            dst.write_all(&copy_buf[..n])
-                .map_err(|e| format!("write temp file: {e}"))?;
-            bytes_copied += n as u64;
-        }
+        })();
+        res
+    };
 
-        dst.flush().map_err(|e| format!("flush temp file: {e}"))?;
-
-        let dst_len = dst
-            .metadata()
-            .map_err(|e| format!("stat temp file: {e}"))?
-            .len();
-        if bytes_copied != src_len || dst_len != src_len {
-            return Err(format!(
-                "Incomplete copy ({dst_len} of {src_len} bytes)"
-            ));
-        }
-
-        let _ = dst.set_modified(modified);
-        // Must close handle before renaming on Windows.
-        drop(dst);
-        drop(src);
-
-        if !allow_overwrite && fs::symlink_metadata(dest_file).is_ok() {
-            return Err("__EXISTS__".to_string());
-        }
-
-        fs::rename(&temp_path, dest_file).map_err(|e| format!("rename temp to dest: {e}"))?;
-        Ok(())
-    })();
+    #[cfg(not(windows))]
+    let result: Result<(), String> = {
+        let _ = cancel_flag;
+        (|| {
+            let copied = fs::copy(src_file, &temp_path)
+                .map_err(|e| format!("copy to temp file: {e}"))?;
+            if stop_requested.load(Ordering::Acquire) {
+                return Err("__STOPPED__".to_string());
+            }
+            if let Ok(src_meta) = fs::metadata(src_file) {
+                let src_len = src_meta.len();
+                if copied != src_len {
+                    return Err(format!("Incomplete copy ({copied} of {src_len} bytes)"));
+                }
+            }
+            if let Some(mtime) = modified {
+                if let Ok(f) = OpenOptions::new().write(true).open(&temp_path) {
+                    let _ = f.set_modified(mtime);
+                }
+            }
+            if !allow_overwrite && fs::symlink_metadata(dest_file).is_ok() {
+                return Err("__EXISTS__".to_string());
+            }
+            fs::rename(&temp_path, dest_file).map_err(|e| format!("rename temp to dest: {e}"))
+        })()
+    };
 
     if result.is_err() {
         let _ = fs::remove_file(&temp_path);
     }
 
     result
+}
+
+/// Moves `src_file` to `dest_file` without ever overwriting an existing destination.
+/// Uses atomic `MoveFileExW` / `fs::rename` first, falling back to kernel-offloaded
+/// `.part` copy + source delete across volumes/SMB shares.
+pub fn fast_move_no_overwrite(
+    src_file: &Path,
+    dest_file: &Path,
+    modified: Option<SystemTime>,
+    stop_requested: &AtomicBool,
+    cancel_flag: &AtomicI32,
+) -> Result<MoveOutcome, String> {
+    if stop_requested.load(Ordering::Acquire) {
+        return Err("__STOPPED__".to_string());
+    }
+
+    #[cfg(windows)]
+    {
+        match win32_fs::move_no_overwrite(src_file, dest_file) {
+            Ok(()) => return Ok(MoveOutcome::Moved),
+            Err(win32_fs::WinMoveErr::AlreadyExists) => return Err("__EXISTS__".to_string()),
+            Err(win32_fs::WinMoveErr::Other(_)) => {}
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        if fs::symlink_metadata(dest_file).is_ok() {
+            return Err("__EXISTS__".to_string());
+        }
+        if fs::rename(src_file, dest_file).is_ok() {
+            return Ok(MoveOutcome::Moved);
+        }
+    }
+
+    fast_copy_to_part_and_swap(
+        src_file,
+        dest_file,
+        modified.or_else(|| fs::metadata(src_file).and_then(|m| m.modified()).ok()),
+        stop_requested,
+        cancel_flag,
+        false,
+    )?;
+
+    if let Err(del_err) = fs::remove_file(src_file) {
+        return Ok(MoveOutcome::CopiedSourceDeleteFailed(del_err.to_string()));
+    }
+
+    Ok(MoveOutcome::Moved)
 }

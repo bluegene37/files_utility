@@ -5,10 +5,12 @@ import 'dart:io';
 import 'package:files_utility/providers/copy_files_provider.dart';
 import 'package:files_utility/providers/count_files_provider.dart';
 import 'package:files_utility/providers/delete_files_provider.dart';
+import 'package:files_utility/providers/transfer_files_provider.dart';
 import 'package:files_utility/services/app_sqlite_service.dart';
 import 'package:files_utility/services/file_creation_date.dart';
 import 'package:files_utility/services/local_db_service.dart';
 import 'package:files_utility/services/rust_file_engines.dart';
+import 'package:files_utility/services/window_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -242,4 +244,84 @@ void main() {
       expect(creationDates.containsKey(f2.path), isTrue);
     },
   );
+
+  test(
+    'Parallel Rust engines process 100+ nested files cleanly across Transfer, Copy, Count, and Delete',
+    () async {
+      final tmp = Directory.systemTemp.createTempSync('qa_rust_parallel_');
+      addTearDown(() {
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final src = Directory('${tmp.path}/src')..createSync();
+      final copyDst = Directory('${tmp.path}/copy_dst')..createSync();
+      final moveDst = Directory('${tmp.path}/move_dst')..createSync();
+
+      final oldDate = DateTime(2020, 1, 15, 12, 0);
+      for (int d = 0; d < 5; d++) {
+        final sub = Directory('${src.path}/dir_$d')..createSync();
+        for (int f = 0; f < 24; f++) {
+          final file = File('${sub.path}/file_$f.txt')
+            ..writeAsStringSync('DATA_${d}_$f');
+          await file.setLastModified(oldDate);
+        }
+      }
+
+      // 1. Count 120 files across 5 directories
+      final countProvider = CountFilesProvider();
+      addTearDown(() => countProvider.dispose());
+      countProvider.setTargetPath(src.path);
+      await countProvider.startCounting();
+      await _waitUntil(() => !countProvider.isCounting);
+      expect(countProvider.totalFiles, equals(120));
+      expect(countProvider.totalFolders, equals(5));
+
+      // 2. Copy 120 files
+      final copyProvider = CopyFilesProvider(persistSettings: false);
+      addTearDown(() => copyProvider.dispose());
+      copyProvider.setSourcePath(src.path);
+      copyProvider.setDestPath(copyDst.path);
+      copyProvider.setOnCompletionAction('stop');
+      await copyProvider.startProcessing();
+      await _waitUntil(() => !copyProvider.isProcessing);
+      expect(copyProvider.filesCopied, equals(120));
+      expect(copyProvider.errors, equals(0));
+
+      // 3. Transfer 120 files from src -> moveDst
+      final txProvider = TransferFilesProvider();
+      addTearDown(() => txProvider.dispose());
+      await txProvider.clearProgress();
+      txProvider.setSourcePath(src.path);
+      txProvider.setDestPath(moveDst.path);
+      txProvider.setEnableDateRange(false);
+      txProvider.setEnableAgeFilter(false);
+      txProvider.setOnCompletionAction('stop');
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await txProvider.startProcessing();
+      await _waitUntil(() => !txProvider.isProcessing);
+      expect(txProvider.filesMoved, equals(120));
+      expect(txProvider.errors, equals(0));
+      expect(File('${src.path}/dir_4/file_23.txt').existsSync(), isFalse);
+      expect(File('${moveDst.path}/dir_4/file_23.txt').existsSync(), isTrue);
+
+      // 4. Delete all 120 files + empty folders in moveDst
+      final delProvider = DeleteFilesProvider();
+      addTearDown(() => delProvider.dispose());
+      delProvider.setTargetPath(moveDst.path);
+      delProvider.selectedYear = 2020;
+      delProvider.validMonths = ['Jan'];
+      await delProvider.deleteFiles();
+      await _waitUntil(() => !delProvider.isProcessing);
+      expect(delProvider.deletedCount, equals(120));
+      expect(Directory('${moveDst.path}/dir_4').existsSync(), isFalse);
+    },
+  );
+
+  test('WindowService.buildTitle omits live status/scanning counter', () {
+    final title = WindowService.buildTitle('Transfer Files', 'Default');
+    expect(title, equals('Files Utility — Transfer Files [Default]'));
+    expect(title.contains('Scanning'), isFalse);
+  });
 }

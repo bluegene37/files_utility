@@ -11,6 +11,8 @@ class WindowService {
   WindowService._internal();
 
   bool _initialized = false;
+  // Gene - Nov, 25, 2026: Cache last window title to avoid redundant Win32 SetWindowTextW platform calls.
+  String? _lastTitle;
 
   Future<void> init() async {
     if (_initialized || kIsWeb) return;
@@ -44,6 +46,10 @@ class WindowService {
     } catch (_) {}
   }
 
+  // Gene - Nov, 25, 2026: Build clean window title without status/scanning counter.
+  static String buildTitle(String screenName, String profileName) =>
+      '${AppInfo.appName} — $screenName [$profileName]';
+
   Future<void> updateTitle(String screenName, {String? status}) async {
     if (kIsWeb) return;
     if (!_initialized) await init();
@@ -54,11 +60,13 @@ class WindowService {
         orElse: () => GlobalDbService().profiles.first,
       );
 
-      String title =
-          '${AppInfo.appName} — $screenName [${currentProfile.name}]';
-      if (status != null && status.isNotEmpty && status != 'Idle') {
-        title += ' ($status)';
-      }
+      final String title = buildTitle(screenName, currentProfile.name);
+      // Gene - Nov, 25, 2026: Remove live scanning/status counter from the top window title bar; counter remains near the Start button.
+      // if (status != null && status.isNotEmpty && status != 'Idle') {
+      //   title += ' ($status)';
+      // }
+      if (title == _lastTitle) return;
+      _lastTitle = title;
 
       await windowManager.setTitle(title);
     } catch (_) {}

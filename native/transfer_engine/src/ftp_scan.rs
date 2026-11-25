@@ -1,4 +1,5 @@
-// Gene - Nov, 25, 2026: Native Rust FTP local directory scanner and OS file creation-time (birthtime) lookup.
+// Gene - Nov, 25, 2026: Native Rust FTP local directory scanner (verifies root containment
+// once per directory instead of per-file canonicalize) and OS birthtime lookup.
 
 use std::ffi::CString;
 use std::fmt::Write as _;
@@ -51,6 +52,10 @@ fn run_ftp_scan(
         }
     };
 
+    if !resolve_within_root(&canonical_root, &dir_path) {
+        return FtpScanResult { files, errors };
+    }
+
     let entries = match fs::read_dir(&dir_path) {
         Ok(iter) => iter,
         Err(e) => {
@@ -75,15 +80,12 @@ fn run_ftp_scan(
             Ok(t) => t,
             Err(_) => continue,
         };
+        // Non-symlink regular file inside an already-verified directory.
         if !ft.is_file() {
             continue;
         }
 
         let entry_path = entry.path();
-        if !resolve_within_root(&canonical_root, &entry_path) {
-            continue;
-        }
-
         match entry.metadata() {
             Ok(meta) if meta.is_file() => {
                 let size = meta.len();
@@ -283,7 +285,6 @@ mod tests {
 
         let c_path = CString::new(res.files[0].path.as_str()).unwrap();
         let created = unsafe { native_file_creation_ms(c_path.as_ptr()) };
-        // On platforms supporting birthtime (macOS/Windows/modern Linux), created > 0.
         assert!(created == i64::MIN || created > 0);
 
         let _ = fs::remove_dir_all(&root);

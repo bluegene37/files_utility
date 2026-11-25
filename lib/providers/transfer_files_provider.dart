@@ -159,7 +159,8 @@ class TransferFilesProvider with ChangeNotifier {
   String onCompletionAction = 'pause'; // 'pause' or 'stop'
 
   bool _stopRequested = false;
-  Timer? _refreshTimer;
+  // Gene - Nov, 25, 2026: Removed redundant 200ms _refreshTimer; 150ms _pollTimer drives UI updates directly.
+  // Timer? _refreshTimer;
   // Gene - Nov, 25, 2026: Replaced Dart isolate handle/ports with RustTransferJob and polling timer.
   // Timer? _isolateKillTimer;
 
@@ -191,7 +192,8 @@ class TransferFilesProvider with ChangeNotifier {
   void dispose() {
     _isDisposed = true;
     LocalDbService().removeListener(_onProfileChanged);
-    _refreshTimer?.cancel();
+    // Gene - Nov, 25, 2026: Replaced _refreshTimer with _pollTimer.
+    // _refreshTimer?.cancel();
     _scheduleTimer?.cancel();
     _completionRescheduleTimer?.cancel();
     // Gene - Nov, 25, 2026: Dispose native Rust transfer job and poll/stop timers instead of Dart isolate.
@@ -211,18 +213,19 @@ class TransferFilesProvider with ChangeNotifier {
     }
   }
 
-  void _startTimer() {
-    _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      notifyListeners();
-    });
-  }
-
-  void _stopTimer() {
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
-    notifyListeners(); // Ensure final state is updated
-  }
+  // Gene - Nov, 25, 2026: Removed redundant _startTimer/_stopTimer; _pollTimer notifies listeners when state changes.
+  // void _startTimer() {
+  //   _refreshTimer?.cancel();
+  //   _refreshTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
+  //     notifyListeners();
+  //   });
+  // }
+  //
+  // void _stopTimer() {
+  //   _refreshTimer?.cancel();
+  //   _refreshTimer = null;
+  //   notifyListeners(); // Ensure final state is updated
+  // }
 
   void _addLog(String message) {
     final timestamp = DateFormat('HH:mm:ss').format(DateTime.now());
@@ -868,7 +871,8 @@ class TransferFilesProvider with ChangeNotifier {
       }
     }
 
-    _startTimer();
+    // Gene - Nov, 25, 2026: Redundant _refreshTimer removed; _pollTimer drives UI updates.
+    // _startTimer();
 
     try {
       final sourceDir = Directory(sourcePath!);
@@ -960,7 +964,9 @@ class TransferFilesProvider with ChangeNotifier {
       }
 
       _pollTimer?.cancel();
-      _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      // Gene - Nov, 25, 2026: Poll every 150ms and notify only when state changes.
+      // _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 150), (_) {
         _pollRustJob();
       });
     } catch (e, stack) {
@@ -977,6 +983,11 @@ class TransferFilesProvider with ChangeNotifier {
     if (job == null || job.isDisposed) return;
 
     try {
+      final prevScanned = filesScanned;
+      final prevMoved = filesMoved;
+      final prevErrors = errors;
+      final prevStatus = currentStatus;
+
       final snap = job.poll();
       filesScanned = snap.filesScanned;
       dirsScanned = snap.dirsScanned;
@@ -1083,7 +1094,14 @@ class TransferFilesProvider with ChangeNotifier {
         return;
       }
 
-      notifyListeners();
+      if (prevScanned != filesScanned ||
+          prevMoved != filesMoved ||
+          prevErrors != errors ||
+          prevStatus != currentStatus ||
+          snap.logs.isNotEmpty ||
+          snap.criticalError != null) {
+        notifyListeners();
+      }
     } catch (e, stack) {
       _pollTimer?.cancel();
       _pollTimer = null;
@@ -1143,7 +1161,8 @@ class TransferFilesProvider with ChangeNotifier {
       );
     } catch (_) {}
 
-    _stopTimer();
+    // Gene - Nov, 25, 2026: _stopTimer removed; notifyListeners() runs at end of _finishRun.
+    // _stopTimer();
     _scheduleTimer?.cancel();
     _scheduleTimer = null;
 
@@ -1202,7 +1221,8 @@ class TransferFilesProvider with ChangeNotifier {
     isPaused = false;
     currentStatus = '⛔ Stopped by user.';
     _addLog('⛔ Stopped by user.');
-    _stopTimer();
+    // Gene - Nov, 25, 2026: _stopTimer removed; notifyListeners() updates UI immediately below.
+    // _stopTimer();
     notifyListeners();
   }
 

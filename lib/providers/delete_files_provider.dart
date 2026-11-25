@@ -63,7 +63,8 @@ class DeleteFilesProvider with ChangeNotifier {
   // Gene - Nov, 25, 2026: Track live scanned file count from Rust delete_engine.
   int filesScanned = 0;
   bool _stopRequested = false;
-  Timer? _refreshTimer;
+  // Gene - Nov, 25, 2026: Removed redundant 200ms _refreshTimer; 150ms _pollTimer drives UI updates directly.
+  // Timer? _refreshTimer;
   // Isolate? _workerIsolate;
   // ReceivePort? _receivePort;
   RustDeleteJob? _rustJob;
@@ -109,7 +110,7 @@ class DeleteFilesProvider with ChangeNotifier {
   @override
   void dispose() {
     LocalDbService().removeListener(_onProfileChanged);
-    _refreshTimer?.cancel();
+    // _refreshTimer?.cancel();
     // Gene - Nov, 25, 2026: Dispose native RustDeleteJob cleanly.
     // _stopIsolate();
     _stopRustJob();
@@ -176,18 +177,19 @@ class DeleteFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void _startTimer() {
-    _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      notifyListeners();
-    });
-  }
-
-  void _stopTimer() {
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
-    notifyListeners(); // Ensure final state is updated
-  }
+  // Gene - Nov, 25, 2026: Removed redundant _startTimer/_stopTimer; _pollTimer notifies listeners on change.
+  // void _startTimer() {
+  //   _refreshTimer?.cancel();
+  //   _refreshTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
+  //     notifyListeners();
+  //   });
+  // }
+  //
+  // void _stopTimer() {
+  //   _refreshTimer?.cancel();
+  //   _refreshTimer = null;
+  //   notifyListeners(); // Ensure final state is updated
+  // }
 
   void _addLog(String message) {
     final timestamp = DateFormat('HH:mm:ss').format(DateTime.now());
@@ -289,7 +291,7 @@ class DeleteFilesProvider with ChangeNotifier {
       months: validMonths,
     );
 
-    _startTimer();
+    // _startTimer();
 
     try {
       final targetDir = Directory(targetPath!);
@@ -326,7 +328,9 @@ class DeleteFilesProvider with ChangeNotifier {
         validMonths: validMonths,
         logInterval: logInterval,
       );
-      _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      // Gene - Nov, 25, 2026: Poll every 150ms instead of 100ms.
+      // _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 150), (_) {
         _pollRustJob();
       });
     } catch (e, stack) {
@@ -345,6 +349,11 @@ class DeleteFilesProvider with ChangeNotifier {
     if (job == null || job.isDisposed) return;
 
     try {
+      final prevScanned = filesScanned;
+      final prevDeleted = deletedCount;
+      final prevErrors = errorCount;
+      final prevStatus = currentStatus;
+
       final snap = job.poll();
       filesScanned = snap.filesScanned;
       deletedCount = snap.deleted;
@@ -381,7 +390,15 @@ class DeleteFilesProvider with ChangeNotifier {
         return;
       }
 
-      notifyListeners();
+      if (prevScanned != filesScanned ||
+          prevDeleted != deletedCount ||
+          prevErrors != errorCount ||
+          prevStatus != currentStatus ||
+          snap.logs.isNotEmpty ||
+          snap.errorLogs.isNotEmpty ||
+          snap.criticalError != null) {
+        notifyListeners();
+      }
     } catch (e, stack) {
       _stopRustJob();
       _addLog('✗ Critical Error: $e');
@@ -435,7 +452,7 @@ class DeleteFilesProvider with ChangeNotifier {
 
     isProcessing = false;
     currentStatus = 'Idle';
-    _stopTimer();
+    // _stopTimer();
     notifyListeners();
   }
 

@@ -1,4 +1,5 @@
-// Gene - Nov, 25, 2026: Native Rust streaming iterative file-counting engine.
+// Gene - Nov, 25, 2026: Parallel 8-thread Rust directory & file counting engine
+// with zero stat() calls and symlink-only canonicalization.
 
 use std::collections::{HashSet, VecDeque};
 use std::ffi::CString;
@@ -8,11 +9,11 @@ use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::common::{
-    c_str_to_string, normalize_lexical, path_basename, push_json_escaped, resolve_within_root,
+    c_str_to_string, path_basename, push_json_escaped, resolve_within_root, DEFAULT_IO_WORKERS,
     MAX_QUEUED_LOGS,
 };
 
@@ -29,17 +30,80 @@ struct CountUiState {
     error_logs: VecDeque<String>,
 }
 
+struct CountQueueInner {
+    dirs: VecDeque<PathBuf>,
+    active_workers: usize,
+}
+
+struct CountWorkQueue {
+    inner: Mutex<CountQueueInner>,
+    cv: Condvar,
+}
+
+impl CountWorkQueue {
+    fn new(root: PathBuf) -> Self {
+        let mut dirs = VecDeque::new();
+        dirs.push_back(root);
+        Self {
+            inner: Mutex::new(CountQueueInner {
+                dirs,
+                active_workers: 0,
+            }),
+            cv: Condvar::new(),
+        }
+    }
+
+    fn pop_dir(&self, stop_requested: &AtomicBool) -> Option<PathBuf> {
+        let mut guard = match self.inner.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        loop {
+            if stop_requested.load(Ordering::Acquire) {
+                return None;
+            }
+            if let Some(dir) = guard.dirs.pop_front() {
+                guard.active_workers += 1;
+                return Some(dir);
+            }
+            if guard.active_workers == 0 {
+                return None;
+            }
+            guard = match self.cv.wait(guard) {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+        }
+    }
+
+    fn push_subdirs_and_finish_dir(&self, subdirs: Vec<PathBuf>) {
+        if let Ok(mut guard) = self.inner.lock() {
+            for d in subdirs {
+                guard.dirs.push_back(d);
+            }
+            guard.active_workers = guard.active_workers.saturating_sub(1);
+            self.cv.notify_all();
+        }
+    }
+
+    fn wake_all(&self) {
+        self.cv.notify_all();
+    }
+}
+
 struct CountSharedState {
     files: AtomicU64,
     folders: AtomicU64,
     errors: AtomicU64,
     stop_requested: AtomicBool,
     done: AtomicBool,
+    visited_symlinks: Mutex<HashSet<PathBuf>>,
     ui: Mutex<CountUiState>,
 }
 
 pub struct CountJob {
     state: Arc<CountSharedState>,
+    queue: Arc<CountWorkQueue>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -51,6 +115,7 @@ impl CountSharedState {
             errors: AtomicU64::new(0),
             stop_requested: AtomicBool::new(false),
             done: AtomicBool::new(false),
+            visited_symlinks: Mutex::new(HashSet::new()),
             ui: Mutex::new(CountUiState {
                 current_dir_name: String::new(),
                 critical_error: None,
@@ -103,9 +168,90 @@ impl CountSharedState {
     }
 }
 
-fn run_count(target_path: PathBuf, log_interval: u64, state: Arc<CountSharedState>) {
+fn run_count_worker(
+    canonical_root: &PathBuf,
+    log_interval: u64,
+    queue: &CountWorkQueue,
+    state: &CountSharedState,
+) {
+    while let Some(dir) = queue.pop_dir(&state.stop_requested) {
+        let dir_name = path_basename(&dir);
+        state.set_current_dir(&dir_name);
+
+        let mut subdirs = Vec::new();
+        match fs::read_dir(&dir) {
+            Ok(entries) => {
+                for entry_res in entries {
+                    if state.stop_requested.load(Ordering::Acquire) {
+                        break;
+                    }
+                    let entry = match entry_res {
+                        Ok(e) => e,
+                        Err(e) => {
+                            state.errors.fetch_add(1, Ordering::Relaxed);
+                            state.push_error_log(format!(
+                                "Error accessing: {} — {e}",
+                                dir.display()
+                            ));
+                            continue;
+                        }
+                    };
+
+                    let ft = match entry.file_type() {
+                        Ok(ft) => ft,
+                        Err(_) => continue,
+                    };
+
+                    if ft.is_file() {
+                        let name = entry.file_name().to_string_lossy().into_owned();
+                        state.record_counted_file(&name, log_interval);
+                    } else if ft.is_dir() {
+                        state.folders.fetch_add(1, Ordering::Relaxed);
+                        subdirs.push(entry.path());
+                    } else if ft.is_symlink() {
+                        let entry_path = entry.path();
+                        if !resolve_within_root(canonical_root, &entry_path) {
+                            continue;
+                        }
+                        if let Ok(canon_target) = fs::canonicalize(&entry_path) {
+                            if let Ok(meta) = fs::metadata(&entry_path) {
+                                if meta.is_dir() {
+                                    let is_new = state
+                                        .visited_symlinks
+                                        .lock()
+                                        .map(|mut s| s.insert(canon_target))
+                                        .unwrap_or(false);
+                                    if is_new {
+                                        state.folders.fetch_add(1, Ordering::Relaxed);
+                                        subdirs.push(entry_path);
+                                    }
+                                } else if meta.is_file() {
+                                    let name = entry.file_name().to_string_lossy().into_owned();
+                                    state.record_counted_file(&name, log_interval);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                state.errors.fetch_add(1, Ordering::Relaxed);
+                state.push_error_log(format!("Error accessing: {} — {e}", dir.display()));
+            }
+        }
+
+        queue.push_subdirs_and_finish_dir(subdirs);
+    }
+}
+
+fn run_count(
+    target_path: PathBuf,
+    log_interval: u64,
+    queue: Arc<CountWorkQueue>,
+    state: Arc<CountSharedState>,
+) {
     let canonical_root = match fs::canonicalize(&target_path) {
-        Ok(p) => p,
+        Ok(p) => Arc::new(p),
         Err(e) => {
             state.set_critical_error(format!(
                 "Failed to access target directory {}: {e}",
@@ -116,73 +262,23 @@ fn run_count(target_path: PathBuf, log_interval: u64, state: Arc<CountSharedStat
         }
     };
 
-    let mut visited_dirs: HashSet<PathBuf> = HashSet::new();
-    let mut dirs_to_process: VecDeque<PathBuf> = VecDeque::new();
-    dirs_to_process.push_back(target_path);
-
-    while let Some(dir) = dirs_to_process.pop_front() {
-        if state.stop_requested.load(Ordering::Acquire) {
-            break;
+    let mut handles = Vec::with_capacity(DEFAULT_IO_WORKERS);
+    for _ in 0..DEFAULT_IO_WORKERS {
+        let q = Arc::clone(&queue);
+        let s = Arc::clone(&state);
+        let r = Arc::clone(&canonical_root);
+        if let Ok(h) = thread::Builder::new()
+            .name("count_engine_worker".to_string())
+            .spawn(move || {
+                run_count_worker(&r, log_interval, &q, &s);
+            })
+        {
+            handles.push(h);
         }
+    }
 
-        let canonical_dir = fs::canonicalize(&dir).unwrap_or_else(|_| normalize_lexical(&dir));
-        if !visited_dirs.insert(canonical_dir) {
-            continue;
-        }
-
-        let dir_name = path_basename(&dir);
-        state.set_current_dir(&dir_name);
-
-        let entries = match fs::read_dir(&dir) {
-            Ok(iter) => iter,
-            Err(e) => {
-                state.errors.fetch_add(1, Ordering::Relaxed);
-                state.push_error_log(format!("Error accessing: {} — {e}", dir.display()));
-                continue;
-            }
-        };
-
-        for entry_res in entries {
-            if state.stop_requested.load(Ordering::Acquire) {
-                break;
-            }
-
-            let entry = match entry_res {
-                Ok(e) => e,
-                Err(e) => {
-                    state.errors.fetch_add(1, Ordering::Relaxed);
-                    state.push_error_log(format!("Error accessing: {} — {e}", dir.display()));
-                    continue;
-                }
-            };
-
-            let entry_path = entry.path();
-            let file_type = match entry.file_type() {
-                Ok(ft) => ft,
-                Err(_) => continue,
-            };
-
-            if file_type.is_file() {
-                let name = path_basename(&entry_path);
-                state.record_counted_file(&name, log_interval);
-            } else if file_type.is_dir() {
-                state.folders.fetch_add(1, Ordering::Relaxed);
-                dirs_to_process.push_back(entry_path);
-            } else if file_type.is_symlink() {
-                if !resolve_within_root(&canonical_root, &entry_path) {
-                    continue;
-                }
-                if let Ok(meta) = fs::metadata(&entry_path) {
-                    if meta.is_dir() {
-                        state.folders.fetch_add(1, Ordering::Relaxed);
-                        dirs_to_process.push_back(entry_path);
-                    } else if meta.is_file() {
-                        let name = path_basename(&entry_path);
-                        state.record_counted_file(&name, log_interval);
-                    }
-                }
-            }
-        }
+    for h in handles {
+        let _ = h.join();
     }
 
     state.done.store(true, Ordering::Release);
@@ -251,14 +347,16 @@ pub unsafe extern "C" fn count_engine_start(cfg: *const CountConfigC) -> *mut Co
         };
 
         let state = Arc::new(CountSharedState::new());
+        let queue = Arc::new(CountWorkQueue::new(target_path.clone()));
         let worker_state = Arc::clone(&state);
+        let worker_queue = Arc::clone(&queue);
 
         let handle = thread::Builder::new()
-            .name("count_engine_worker".to_string())
+            .name("count_engine_coordinator".to_string())
             .spawn(move || {
                 let state_for_panic = Arc::clone(&worker_state);
                 let run_res = catch_unwind(AssertUnwindSafe(|| {
-                    run_count(target_path, log_interval, worker_state);
+                    run_count(target_path, log_interval, worker_queue, worker_state);
                 }));
                 if let Err(panic_info) = run_res {
                     let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
@@ -277,6 +375,7 @@ pub unsafe extern "C" fn count_engine_start(cfg: *const CountConfigC) -> *mut Co
         match handle {
             Some(h) => Box::into_raw(Box::new(CountJob {
                 state,
+                queue,
                 handle: Some(h),
             })),
             None => std::ptr::null_mut(),
@@ -294,6 +393,7 @@ pub unsafe extern "C" fn count_engine_stop(job: *mut CountJob) {
         }
         let job_ref = &*job;
         job_ref.state.stop_requested.store(true, Ordering::Release);
+        job_ref.queue.wake_all();
     }));
 }
 
@@ -322,6 +422,7 @@ pub unsafe extern "C" fn count_engine_destroy(job: *mut CountJob) {
         }
         let mut boxed = Box::from_raw(job);
         boxed.state.stop_requested.store(true, Ordering::Release);
+        boxed.queue.wake_all();
         if let Some(handle) = boxed.handle.take() {
             let _ = handle.join();
         }
@@ -355,10 +456,33 @@ mod tests {
         fs::write(sub2.join("c.txt"), b"3").unwrap();
 
         let state = Arc::new(CountSharedState::new());
-        run_count(root.clone(), 1, Arc::clone(&state));
+        let queue = Arc::new(CountWorkQueue::new(root.clone()));
+        run_count(root.clone(), 1, queue, Arc::clone(&state));
 
         assert_eq!(state.files.load(Ordering::Relaxed), 3);
         assert_eq!(state.folders.load(Ordering::Relaxed), 2);
+        assert_eq!(state.errors.load(Ordering::Relaxed), 0);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parallel_counts_100_files_accurately() {
+        let root = make_temp_dir("rust_count_parallel_100");
+        for d in 0..10 {
+            let sub = root.join(format!("dir_{d}"));
+            fs::create_dir_all(&sub).unwrap();
+            for f in 0..10 {
+                fs::write(sub.join(format!("f_{f}.txt")), b"X").unwrap();
+            }
+        }
+
+        let state = Arc::new(CountSharedState::new());
+        let queue = Arc::new(CountWorkQueue::new(root.clone()));
+        run_count(root.clone(), 25, queue, Arc::clone(&state));
+
+        assert_eq!(state.files.load(Ordering::Relaxed), 100);
+        assert_eq!(state.folders.load(Ordering::Relaxed), 10);
         assert_eq!(state.errors.load(Ordering::Relaxed), 0);
 
         let _ = fs::remove_dir_all(&root);
@@ -380,7 +504,8 @@ mod tests {
         symlink(&outside, target.join("escape")).unwrap();
 
         let state = Arc::new(CountSharedState::new());
-        run_count(target.clone(), 100, Arc::clone(&state));
+        let queue = Arc::new(CountWorkQueue::new(target.clone()));
+        run_count(target.clone(), 100, queue, Arc::clone(&state));
 
         assert_eq!(state.files.load(Ordering::Relaxed), 1);
         assert_eq!(state.folders.load(Ordering::Relaxed), 0);

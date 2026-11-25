@@ -1,5 +1,5 @@
-// Gene - Nov, 25, 2026: Native Rust iterative post-order file deletion engine with
-// O(log N) binary-search date range matching and symlink containment.
+// Gene - Nov, 25, 2026: Parallel 8-worker Rust file deletion engine with O(log N)
+// binary-search range matching, symlink-only canonicalization, and bottom-up empty folder cleanup.
 
 use std::collections::{HashSet, VecDeque};
 use std::ffi::CString;
@@ -9,13 +9,15 @@ use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::common::{
     c_str_to_string, normalize_lexical, path_basename, push_json_escaped, resolve_within_root,
-    system_time_to_epoch_ms, MAX_QUEUED_LOGS,
+    system_time_to_epoch_ms, DEFAULT_IO_WORKERS, MAX_QUEUED_LOGS,
 };
+
+const DELETE_QUEUE_CAPACITY: usize = 512;
 
 #[repr(C)]
 pub struct DeleteConfigC {
@@ -32,6 +34,85 @@ struct DeleteUiState {
     error_logs: VecDeque<String>,
 }
 
+struct DeleteQueueInner {
+    files: VecDeque<PathBuf>,
+    closed: bool,
+}
+
+struct DeleteQueue {
+    inner: Mutex<DeleteQueueInner>,
+    not_empty: Condvar,
+    not_full: Condvar,
+}
+
+impl DeleteQueue {
+    fn new() -> Self {
+        Self {
+            inner: Mutex::new(DeleteQueueInner {
+                files: VecDeque::with_capacity(DELETE_QUEUE_CAPACITY),
+                closed: false,
+            }),
+            not_empty: Condvar::new(),
+            not_full: Condvar::new(),
+        }
+    }
+
+    fn push(&self, path: PathBuf, stop_requested: &AtomicBool) -> bool {
+        let mut guard = match self.inner.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        while guard.files.len() >= DELETE_QUEUE_CAPACITY
+            && !guard.closed
+            && !stop_requested.load(Ordering::Acquire)
+        {
+            guard = match self.not_full.wait(guard) {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+        }
+        if guard.closed || stop_requested.load(Ordering::Acquire) {
+            return false;
+        }
+        guard.files.push_back(path);
+        self.not_empty.notify_one();
+        true
+    }
+
+    fn pop(&self, stop_requested: &AtomicBool) -> Option<PathBuf> {
+        let mut guard = match self.inner.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        while guard.files.is_empty()
+            && !guard.closed
+            && !stop_requested.load(Ordering::Acquire)
+        {
+            guard = match self.not_empty.wait(guard) {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+        }
+        if stop_requested.load(Ordering::Acquire) || (guard.closed && guard.files.is_empty()) {
+            return None;
+        }
+        let item = guard.files.pop_front();
+        self.not_full.notify_one();
+        item
+    }
+
+    fn close(&self, clear_pending: bool) {
+        if let Ok(mut guard) = self.inner.lock() {
+            if clear_pending {
+                guard.files.clear();
+            }
+            guard.closed = true;
+            self.not_empty.notify_all();
+            self.not_full.notify_all();
+        }
+    }
+}
+
 struct DeleteSharedState {
     files_scanned: AtomicU64,
     deleted: AtomicU64,
@@ -43,6 +124,7 @@ struct DeleteSharedState {
 
 pub struct DeleteJob {
     state: Arc<DeleteSharedState>,
+    queue: Arc<DeleteQueue>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -95,11 +177,6 @@ impl DeleteSharedState {
     }
 }
 
-enum WalkStep {
-    EnterDir(PathBuf),
-    TryRemoveEmpty(PathBuf),
-}
-
 fn matches_any_range(epoch_ms: i64, ranges: &[(i64, i64)]) -> bool {
     if ranges.is_empty() {
         return false;
@@ -112,24 +189,55 @@ fn matches_any_range(epoch_ms: i64, ranges: &[(i64, i64)]) -> bool {
     epoch_ms >= start && epoch_ms < end
 }
 
-fn check_and_delete_file(
-    file_path: &std::path::Path,
+fn spawn_delete_worker(
+    queue: Arc<DeleteQueue>,
+    state: Arc<DeleteSharedState>,
+    log_interval: u64,
+) -> Option<JoinHandle<()>> {
+    thread::Builder::new()
+        .name("delete_engine_io".to_string())
+        .spawn(move || {
+            while let Some(file_path) = queue.pop(&state.stop_requested) {
+                let file_name = path_basename(&file_path);
+                match fs::remove_file(&file_path) {
+                    Ok(()) => {
+                        let count = state.deleted.fetch_add(1, Ordering::Relaxed) + 1;
+                        if log_interval == 1 {
+                            state.push_log(format!("✓ Deleted: {file_name}"));
+                        } else if log_interval > 0 && count % log_interval == 0 {
+                            state.push_log(format!(
+                                "✓ Deleted {log_interval} files (total: {count}) – latest: {file_name}"
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        state.errors.fetch_add(1, Ordering::Relaxed);
+                        state.push_error_log(format!("✗ Failed to delete {file_name}: {e}"));
+                    }
+                }
+            }
+        })
+        .ok()
+}
+
+fn inspect_file_for_delete(
+    file_path: PathBuf,
     known_meta: Option<fs::Metadata>,
     ranges: &[(i64, i64)],
-    log_interval: u64,
+    queue: &DeleteQueue,
     state: &DeleteSharedState,
-) {
+) -> bool {
     state.files_scanned.fetch_add(1, Ordering::Relaxed);
-    let file_name = path_basename(file_path);
+    let file_name = path_basename(&file_path);
 
     let meta = match known_meta {
         Some(m) => m,
-        None => match fs::metadata(file_path) {
+        None => match fs::metadata(&file_path) {
             Ok(m) => m,
             Err(e) => {
                 state.errors.fetch_add(1, Ordering::Relaxed);
                 state.push_error_log(format!("✗ Error checking {file_name}: {e}"));
-                return;
+                return true;
             }
         },
     };
@@ -139,37 +247,23 @@ fn check_and_delete_file(
         Err(e) => {
             state.errors.fetch_add(1, Ordering::Relaxed);
             state.push_error_log(format!("✗ Error checking {file_name}: {e}"));
-            return;
+            return true;
         }
     };
 
     let modified_ms = system_time_to_epoch_ms(modified);
     if !matches_any_range(modified_ms, ranges) {
-        return;
+        return true;
     }
 
-    match fs::remove_file(file_path) {
-        Ok(()) => {
-            let count = state.deleted.fetch_add(1, Ordering::Relaxed) + 1;
-            if log_interval == 1 {
-                state.push_log(format!("✓ Deleted: {file_name}"));
-            } else if log_interval > 0 && count % log_interval == 0 {
-                state.push_log(format!(
-                    "✓ Deleted {log_interval} files (total: {count}) – latest: {file_name}"
-                ));
-            }
-        }
-        Err(e) => {
-            state.errors.fetch_add(1, Ordering::Relaxed);
-            state.push_error_log(format!("✗ Failed to delete {file_name}: {e}"));
-        }
-    }
+    queue.push(file_path, &state.stop_requested)
 }
 
 fn run_delete(
     target_path: PathBuf,
     ranges: Vec<(i64, i64)>,
     log_interval: u64,
+    queue: Arc<DeleteQueue>,
     state: Arc<DeleteSharedState>,
 ) {
     let canonical_root = match fs::canonicalize(&target_path) {
@@ -179,119 +273,134 @@ fn run_delete(
                 "Failed to access target directory {}: {e}",
                 target_path.display()
             ));
+            queue.close(true);
             state.done.store(true, Ordering::Release);
             return;
         }
     };
 
-    let norm_target_root = normalize_lexical(&target_path);
-    let mut visited_dirs: HashSet<PathBuf> = HashSet::new();
-    let mut stack: Vec<WalkStep> = Vec::new();
-    stack.push(WalkStep::EnterDir(target_path));
+    let mut workers = Vec::with_capacity(DEFAULT_IO_WORKERS);
+    for _ in 0..DEFAULT_IO_WORKERS {
+        if let Some(h) = spawn_delete_worker(
+            Arc::clone(&queue),
+            Arc::clone(&state),
+            log_interval,
+        ) {
+            workers.push(h);
+        }
+    }
 
-    while let Some(step) = stack.pop() {
+    let norm_target_root = normalize_lexical(&target_path);
+    let mut visited_symlinks: HashSet<PathBuf> = HashSet::new();
+    let mut dirs_to_walk: VecDeque<PathBuf> = VecDeque::new();
+    let mut candidate_empty_dirs: Vec<PathBuf> = Vec::new();
+    dirs_to_walk.push_back(target_path);
+
+    while let Some(dir) = dirs_to_walk.pop_front() {
         if state.stop_requested.load(Ordering::Acquire) {
             break;
         }
 
-        match step {
-            WalkStep::EnterDir(dir) => {
-                let canonical_dir =
-                    fs::canonicalize(&dir).unwrap_or_else(|_| normalize_lexical(&dir));
-                if !visited_dirs.insert(canonical_dir) {
+        let dir_name = path_basename(&dir);
+        state.set_current_dir(&dir_name);
+
+        let entries = match fs::read_dir(&dir) {
+            Ok(iter) => iter,
+            Err(e) => {
+                state.errors.fetch_add(1, Ordering::Relaxed);
+                state.push_error_log(format!("✗ Error scanning directory: {e}"));
+                continue;
+            }
+        };
+
+        if normalize_lexical(&dir) != norm_target_root {
+            candidate_empty_dirs.push(dir.clone());
+        }
+
+        for entry_res in entries {
+            if state.stop_requested.load(Ordering::Acquire) {
+                break;
+            }
+
+            let entry = match entry_res {
+                Ok(e) => e,
+                Err(e) => {
+                    state.errors.fetch_add(1, Ordering::Relaxed);
+                    state.push_error_log(format!("✗ Error scanning directory: {e}"));
                     continue;
                 }
+            };
 
-                let dir_name = path_basename(&dir);
-                state.set_current_dir(&dir_name);
+            let entry_path = entry.path();
+            let file_type = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
 
-                let entries = match fs::read_dir(&dir) {
-                    Ok(iter) => iter,
-                    Err(e) => {
-                        state.errors.fetch_add(1, Ordering::Relaxed);
-                        state.push_error_log(format!("✗ Error scanning directory: {e}"));
-                        continue;
-                    }
-                };
-
-                let is_root = normalize_lexical(&dir) == norm_target_root;
-                if !is_root {
-                    stack.push(WalkStep::TryRemoveEmpty(dir.clone()));
+            if file_type.is_file() {
+                let meta = entry.metadata().ok();
+                if !inspect_file_for_delete(entry_path, meta, &ranges, &queue, &state) {
+                    break;
                 }
-
-                let mut subdirs: Vec<PathBuf> = Vec::new();
-
-                for entry_res in entries {
-                    if state.stop_requested.load(Ordering::Acquire) {
-                        break;
-                    }
-
-                    let entry = match entry_res {
-                        Ok(e) => e,
-                        Err(e) => {
-                            state.errors.fetch_add(1, Ordering::Relaxed);
-                            state.push_error_log(format!("✗ Error scanning directory: {e}"));
-                            continue;
-                        }
-                    };
-
-                    let entry_path = entry.path();
-                    let file_type = match entry.file_type() {
-                        Ok(ft) => ft,
-                        Err(_) => continue,
-                    };
-
-                    if file_type.is_file() {
-                        let meta = entry.metadata().ok();
-                        check_and_delete_file(&entry_path, meta, &ranges, log_interval, &state);
-                    } else if file_type.is_dir() {
-                        subdirs.push(entry_path);
-                    } else if file_type.is_symlink() {
-                        if !resolve_within_root(&canonical_root, &entry_path) {
-                            state.push_log(format!(
-                                "ℹ Skipped link pointing outside the target: {}",
-                                path_basename(&entry_path)
-                            ));
-                            continue;
-                        }
-                        if let Ok(target_meta) = fs::metadata(&entry_path) {
-                            if target_meta.is_dir() {
-                                subdirs.push(entry_path);
-                            } else if target_meta.is_file() {
-                                check_and_delete_file(
-                                    &entry_path,
-                                    Some(target_meta),
-                                    &ranges,
-                                    log_interval,
-                                    &state,
-                                );
+            } else if file_type.is_dir() {
+                dirs_to_walk.push_back(entry_path);
+            } else if file_type.is_symlink() {
+                if !resolve_within_root(&canonical_root, &entry_path) {
+                    state.push_log(format!(
+                        "ℹ Skipped link pointing outside the target: {}",
+                        path_basename(&entry_path)
+                    ));
+                    continue;
+                }
+                if let Ok(canon_target) = fs::canonicalize(&entry_path) {
+                    if let Ok(target_meta) = fs::metadata(&entry_path) {
+                        if target_meta.is_dir() {
+                            if visited_symlinks.insert(canon_target) {
+                                dirs_to_walk.push_back(entry_path);
+                            }
+                        } else if target_meta.is_file() {
+                            if !inspect_file_for_delete(
+                                entry_path,
+                                Some(target_meta),
+                                &ranges,
+                                &queue,
+                                &state,
+                            ) {
+                                break;
                             }
                         }
                     }
                 }
-
-                if !subdirs.is_empty() && !state.stop_requested.load(Ordering::Acquire) {
-                    subdirs.sort_by(|a, b| path_basename(a).cmp(&path_basename(b)));
-                    for sub in subdirs.into_iter().rev() {
-                        stack.push(WalkStep::EnterDir(sub));
-                    }
-                }
             }
-            WalkStep::TryRemoveEmpty(dir) => {
-                let is_empty = fs::read_dir(&dir)
-                    .map(|mut iter| iter.next().is_none())
-                    .unwrap_or(false);
-                if is_empty {
-                    let dir_name = path_basename(&dir);
-                    match fs::remove_dir(&dir) {
-                        Ok(()) => {
-                            state.push_log(format!("✓ Deleted empty folder: {dir_name}"));
-                        }
-                        Err(e) => {
-                            state.push_error_log(format!(
-                                "✗ Failed to delete folder {dir_name}: {e}"
-                            ));
-                        }
+        }
+    }
+
+    let stopped = state.stop_requested.load(Ordering::Acquire);
+    queue.close(stopped);
+    for w in workers {
+        let _ = w.join();
+    }
+
+    if !state.stop_requested.load(Ordering::Acquire) && !candidate_empty_dirs.is_empty() {
+        // Delete deepest subdirectories first so newly emptied parents collapse cleanly.
+        candidate_empty_dirs.sort_by_key(|p| std::cmp::Reverse(p.components().count()));
+        for dir in candidate_empty_dirs {
+            if state.stop_requested.load(Ordering::Acquire) {
+                break;
+            }
+            let is_empty = fs::read_dir(&dir)
+                .map(|mut iter| iter.next().is_none())
+                .unwrap_or(false);
+            if is_empty {
+                let dir_name = path_basename(&dir);
+                match fs::remove_dir(&dir) {
+                    Ok(()) => {
+                        state.push_log(format!("✓ Deleted empty folder: {dir_name}"));
+                    }
+                    Err(e) => {
+                        state.push_error_log(format!(
+                            "✗ Failed to delete folder {dir_name}: {e}"
+                        ));
                     }
                 }
             }
@@ -373,14 +482,17 @@ pub unsafe extern "C" fn delete_engine_start(cfg: *const DeleteConfigC) -> *mut 
         }
 
         let state = Arc::new(DeleteSharedState::new());
+        let queue = Arc::new(DeleteQueue::new());
         let worker_state = Arc::clone(&state);
+        let worker_queue = Arc::clone(&queue);
 
         let handle = thread::Builder::new()
-            .name("delete_engine_worker".to_string())
+            .name("delete_engine_coordinator".to_string())
             .spawn(move || {
                 let state_for_panic = Arc::clone(&worker_state);
+                let queue_for_panic = Arc::clone(&worker_queue);
                 let run_res = catch_unwind(AssertUnwindSafe(|| {
-                    run_delete(target_path, ranges, log_interval, worker_state);
+                    run_delete(target_path, ranges, log_interval, worker_queue, worker_state);
                 }));
                 if let Err(panic_info) = run_res {
                     let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
@@ -390,6 +502,7 @@ pub unsafe extern "C" fn delete_engine_start(cfg: *const DeleteConfigC) -> *mut 
                     } else {
                         "Unknown delete worker panic".to_string()
                     };
+                    queue_for_panic.close(true);
                     state_for_panic.set_critical_error(msg);
                     state_for_panic.done.store(true, Ordering::Release);
                 }
@@ -399,6 +512,7 @@ pub unsafe extern "C" fn delete_engine_start(cfg: *const DeleteConfigC) -> *mut 
         match handle {
             Some(h) => Box::into_raw(Box::new(DeleteJob {
                 state,
+                queue,
                 handle: Some(h),
             })),
             None => std::ptr::null_mut(),
@@ -416,6 +530,7 @@ pub unsafe extern "C" fn delete_engine_stop(job: *mut DeleteJob) {
         }
         let job_ref = &*job;
         job_ref.state.stop_requested.store(true, Ordering::Release);
+        job_ref.queue.close(true);
     }));
 }
 
@@ -444,6 +559,7 @@ pub unsafe extern "C" fn delete_engine_destroy(job: *mut DeleteJob) {
         }
         let mut boxed = Box::from_raw(job);
         boxed.state.stop_requested.store(true, Ordering::Release);
+        boxed.queue.close(true);
         if let Some(handle) = boxed.handle.take() {
             let _ = handle.join();
         }
@@ -482,12 +598,11 @@ mod tests {
         let t_keep = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
         match_f.set_modified(t_match).unwrap();
         keep_f.set_modified(t_keep).unwrap();
-        drop(match_f);
-        drop(keep_f);
 
         let ranges = vec![(1_577_836_800_000, 1_583_020_800_000)];
         let state = Arc::new(DeleteSharedState::new());
-        run_delete(root.clone(), ranges, 1, Arc::clone(&state));
+        let queue = Arc::new(DeleteQueue::new());
+        run_delete(root.clone(), ranges, 1, queue, Arc::clone(&state));
 
         assert_eq!(state.files_scanned.load(Ordering::Relaxed), 2);
         assert_eq!(state.deleted.load(Ordering::Relaxed), 1);
@@ -518,7 +633,8 @@ mod tests {
 
         let ranges = vec![(1_577_836_800_000, 1_583_020_800_000)];
         let state = Arc::new(DeleteSharedState::new());
-        run_delete(target.clone(), ranges, 1, Arc::clone(&state));
+        let queue = Arc::new(DeleteQueue::new());
+        run_delete(target.clone(), ranges, 1, queue, Arc::clone(&state));
 
         assert!(!target.join("inside.txt").exists());
         assert!(outside.join("precious.txt").exists());

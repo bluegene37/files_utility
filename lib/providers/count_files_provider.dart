@@ -59,7 +59,8 @@ class CountFilesProvider with ChangeNotifier {
   int errors = 0;
   int logInterval = 100;
   bool _stopRequested = false;
-  Timer? _refreshTimer;
+  // Gene - Nov, 25, 2026: Removed redundant 200ms _refreshTimer; 150ms _pollTimer drives UI updates directly.
+  // Timer? _refreshTimer;
   // Gene - Nov, 25, 2026: Track native RustCountJob and poll timer instead of Dart isolate.
   // Isolate? _workerIsolate;
   // ReceivePort? _receivePort;
@@ -78,7 +79,7 @@ class CountFilesProvider with ChangeNotifier {
   @override
   void dispose() {
     LocalDbService().removeListener(_onProfileChanged);
-    _refreshTimer?.cancel();
+    // _refreshTimer?.cancel();
     // _stopIsolate();
     _stopRustJob();
     super.dispose();
@@ -168,18 +169,19 @@ class CountFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void _startTimer() {
-    _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
-      notifyListeners();
-    });
-  }
-
-  void _stopTimer() {
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
-    notifyListeners();
-  }
+  // Gene - Nov, 25, 2026: Removed redundant _startTimer/_stopTimer; _pollTimer notifies listeners on change.
+  // void _startTimer() {
+  //   _refreshTimer?.cancel();
+  //   _refreshTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+  //     notifyListeners();
+  //   });
+  // }
+  //
+  // void _stopTimer() {
+  //   _refreshTimer?.cancel();
+  //   _refreshTimer = null;
+  //   notifyListeners();
+  // }
 
   /// Formats elapsed time from the file logger's tracked start time.
   String _getElapsedStr() {
@@ -218,7 +220,7 @@ class CountFilesProvider with ChangeNotifier {
 
     await _fileLogger.logRunStart(operation: 'Count', targetPath: targetPath);
 
-    _startTimer();
+    // _startTimer();
 
     try {
       final targetDir = Directory(targetPath!);
@@ -278,7 +280,9 @@ class CountFilesProvider with ChangeNotifier {
         targetPath: targetPath!,
         logInterval: logInterval,
       );
-      _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      // Gene - Nov, 25, 2026: Poll every 150ms instead of 100ms.
+      // _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 150), (_) {
         _pollRustJob();
       });
     } catch (e) {
@@ -296,6 +300,11 @@ class CountFilesProvider with ChangeNotifier {
     if (job == null || job.isDisposed) return;
 
     try {
+      final prevFiles = totalFiles;
+      final prevFolders = totalFolders;
+      final prevErrors = errors;
+      final prevStatus = currentStatus;
+
       final snap = job.poll();
       totalFiles = snap.files;
       totalFolders = snap.folders;
@@ -329,7 +338,15 @@ class CountFilesProvider with ChangeNotifier {
         return;
       }
 
-      notifyListeners();
+      if (prevFiles != totalFiles ||
+          prevFolders != totalFolders ||
+          prevErrors != errors ||
+          prevStatus != currentStatus ||
+          snap.logs.isNotEmpty ||
+          snap.errorLogs.isNotEmpty ||
+          snap.criticalError != null) {
+        notifyListeners();
+      }
     } catch (e) {
       _stopRustJob();
       _addLog('✗ Critical Error: $e');
@@ -391,7 +408,7 @@ class CountFilesProvider with ChangeNotifier {
 
     isCounting = false;
     currentStatus = 'Idle';
-    _stopTimer();
+    // _stopTimer();
     notifyListeners();
   }
 
