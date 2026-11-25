@@ -4,7 +4,20 @@ on:
   push:
     tags:
       - "v*"
+  # Gene - Nov, 24, 2026: Add optional Microsoft Store publish and draft (--noCommit) toggles for manual workflow_dispatch runs.
+  # workflow_dispatch:
   workflow_dispatch:
+    inputs:
+      publish_to_store:
+        description: "Publish MSIX package to Microsoft Store"
+        required: false
+        default: false
+        type: boolean
+      store_draft:
+        description: "Upload Microsoft Store submission as draft (--noCommit) without committing for certification"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -22,6 +35,10 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      # Gene - Nov, 25, 2026: Setup Rust toolchain for Windows release build.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install Dependencies
         run: flutter pub get
@@ -53,6 +70,9 @@ jobs:
   build-windows-store:
     name: Build Microsoft Store MSIX
     runs-on: windows-latest
+    # Gene - Nov, 24, 2026: Expose msix_built output so publish-windows-store only runs when an MSIX was built.
+    outputs:
+      msix_built: ${{ steps.package-msix.outputs.msix_built }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -63,6 +83,10 @@ jobs:
           channel: stable
           cache: true
 
+      # Gene - Nov, 25, 2026: Setup Rust toolchain for Microsoft Store MSIX build.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install Dependencies
         run: flutter pub get
 
@@ -72,7 +96,24 @@ jobs:
       - name: Run Test Suite
         run: flutter test
 
+      # Gene - Nov, 24, 2026: Record msix_built job output and verify packaged MSIX contents before upload.
+      # Previous implementation:
+      # - name: Package Microsoft Store MSIX
+      #   shell: pwsh
+      #   env:
+      #     MSSTORE_IDENTITY_NAME: ${{ secrets.MSSTORE_IDENTITY_NAME }}
+      #     MSSTORE_PUBLISHER: ${{ secrets.MSSTORE_PUBLISHER }}
+      #     MSSTORE_DISPLAY_NAME: ${{ secrets.MSSTORE_DISPLAY_NAME }}
+      #     MSSTORE_PUBLISHER_DISPLAY_NAME: ${{ secrets.MSSTORE_PUBLISHER_DISPLAY_NAME }}
+      #   run: |
+      #     if ([string]::IsNullOrWhiteSpace($env:MSSTORE_IDENTITY_NAME) -or [string]::IsNullOrWhiteSpace($env:MSSTORE_PUBLISHER)) {
+      #       Write-Host "::warning ::MSSTORE_IDENTITY_NAME / MSSTORE_PUBLISHER secrets not set. Skipping Microsoft Store MSIX packaging."
+      #       exit 0
+      #     }
+      #     ./scripts/build_windows_store_msix.ps1
+      #     "MSIX_BUILT=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Package Microsoft Store MSIX
+        id: package-msix
         shell: pwsh
         env:
           MSSTORE_IDENTITY_NAME: ${{ secrets.MSSTORE_IDENTITY_NAME }}
@@ -82,10 +123,36 @@ jobs:
         run: |
           if ([string]::IsNullOrWhiteSpace($env:MSSTORE_IDENTITY_NAME) -or [string]::IsNullOrWhiteSpace($env:MSSTORE_PUBLISHER)) {
             Write-Host "::warning ::MSSTORE_IDENTITY_NAME / MSSTORE_PUBLISHER secrets not set. Skipping Microsoft Store MSIX packaging."
+            "msix_built=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
             exit 0
           }
           ./scripts/build_windows_store_msix.ps1
           "MSIX_BUILT=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "msix_built=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Verify Microsoft Store MSIX Contents
+        if: env.MSIX_BUILT == 'true'
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $msix = Get-ChildItem -Path "dist/*-msstore.msix" | Select-Object -First 1
+          if (-not $msix) {
+            throw "No MSIX file found in dist/*-msstore.msix"
+          }
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($msix.FullName)
+          try {
+            $entries = $zip.Entries | ForEach-Object { $_.FullName.ToLowerInvariant() }
+            # Gene - Nov, 25, 2026: Also verify bundled native Rust transfer_engine.dll inside the Store MSIX.
+            # foreach ($req in @("files_utility.exe", "flutter_windows.dll", "appxmanifest.xml")) {
+            foreach ($req in @("files_utility.exe", "flutter_windows.dll", "transfer_engine.dll", "appxmanifest.xml")) {
+              if (-not ($entries -contains $req)) {
+                throw "Store MSIX $($msix.Name) is missing required entry: $req"
+              }
+            }
+            Write-Host "Verified Store MSIX ($($msix.Name)) contains all required entries."
+          } finally {
+            $zip.Dispose()
+          }
 
       - name: Upload Microsoft Store MSIX Artifact
         if: env.MSIX_BUILT == 'true'
@@ -108,6 +175,12 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      # Gene - Nov, 25, 2026: Setup Rust toolchain with arm64 + x64 macOS targets for universal DMG build.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Install Dependencies
         run: flutter pub get
@@ -195,6 +268,10 @@ jobs:
           channel: stable
           cache: true
 
+      # Gene - Nov, 25, 2026: Setup Rust toolchain for Linux release packaging.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       # The Ubuntu runner ships no GTK development headers, unlike the Windows
       # and macOS images which come with their native toolchains preinstalled.
       - name: Install Linux Build Dependencies
@@ -272,3 +349,104 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
+
+  # Gene - Nov, 24, 2026: Automated Microsoft Store MSIX publishing via Microsoft Store Developer CLI (msstore).
+  # Runs on v* tag pushes and manual workflow_dispatch runs with publish_to_store=true once an MSIX is built.
+  # Keeps publish-release decoupled so GitHub Releases succeed independently of Store submission.
+  publish-windows-store:
+    name: Publish to Microsoft Store
+    needs: [build-windows-store]
+    if: needs.build-windows-store.outputs.msix_built == 'true' && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_to_store))
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check Microsoft Store Publishing Secrets
+        id: check-secrets
+        shell: pwsh
+        env:
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          STORE_SELLER_ID: ${{ secrets.STORE_SELLER_ID }}
+          AZURE_AD_CLIENT_ID: ${{ secrets.AZURE_AD_CLIENT_ID }}
+          AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
+          STORE_PRODUCT_ID: ${{ secrets.STORE_PRODUCT_ID }}
+        run: |
+          $required = [ordered]@{
+            AZURE_AD_TENANT_ID     = $env:AZURE_AD_TENANT_ID
+            STORE_SELLER_ID        = $env:STORE_SELLER_ID
+            AZURE_AD_CLIENT_ID     = $env:AZURE_AD_CLIENT_ID
+            AZURE_AD_CLIENT_SECRET = $env:AZURE_AD_CLIENT_SECRET
+            STORE_PRODUCT_ID       = $env:STORE_PRODUCT_ID
+          }
+          $missing = @($required.GetEnumerator() | Where-Object { [string]::IsNullOrWhiteSpace($_.Value) } | ForEach-Object { $_.Key })
+          if ($missing.Count -eq $required.Count) {
+            Write-Output "::warning::Microsoft Store publishing secrets are not configured ($($missing -join ', ')). Skipping automated Store submission; download the 'windows-store-msix' artifact for manual Partner Center upload."
+            "configured=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
+          }
+          if ($missing.Count -gt 0) {
+            Write-Output "::error::Incomplete Microsoft Store publishing secrets configuration. Missing: $($missing -join ', ')"
+            exit 1
+          }
+          "configured=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Download Microsoft Store MSIX Artifact
+        if: steps.check-secrets.outputs.configured == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-store-msix
+          path: msix_artifact
+
+      - name: Setup Microsoft Store Developer CLI
+        if: steps.check-secrets.outputs.configured == 'true'
+        uses: microsoft/microsoft-store-apppublisher@v1.4
+
+      - name: Configure Microsoft Store CLI Credentials
+        if: steps.check-secrets.outputs.configured == 'true'
+        shell: pwsh
+        env:
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          STORE_SELLER_ID: ${{ secrets.STORE_SELLER_ID }}
+          AZURE_AD_CLIENT_ID: ${{ secrets.AZURE_AD_CLIENT_ID }}
+          AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
+        run: |
+          msstore settings --enableTelemetry false
+          msstore reconfigure `
+            --tenantId "$env:AZURE_AD_TENANT_ID" `
+            --sellerId "$env:STORE_SELLER_ID" `
+            --clientId "$env:AZURE_AD_CLIENT_ID" `
+            --clientSecret "$env:AZURE_AD_CLIENT_SECRET"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Output "::error::msstore reconfigure failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+
+      - name: Publish MSIX to Microsoft Store
+        if: steps.check-secrets.outputs.configured == 'true'
+        shell: pwsh
+        env:
+          STORE_PRODUCT_ID: ${{ secrets.STORE_PRODUCT_ID }}
+          STORE_DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.store_draft }}
+        run: |
+          $msixFiles = @(Get-ChildItem -Path "msix_artifact" -Filter "*-msstore.msix" -Recurse)
+          if ($msixFiles.Count -ne 1) {
+            Write-Output "::error::Expected exactly 1 *-msstore.msix file in msix_artifact, found $($msixFiles.Count)."
+            exit 1
+          }
+          $msixFile = $msixFiles[0]
+          $publishArgs = @(
+            'publish', $msixFile.FullName,
+            '--appId', $env:STORE_PRODUCT_ID,
+            '--uploadTimeout', '600'
+          )
+          if ($env:STORE_DRAFT -eq 'true') {
+            Write-Host "==> Uploading $($msixFile.Name) to Microsoft Store as DRAFT (--noCommit)..."
+            $publishArgs += '--noCommit'
+          } else {
+            Write-Host "==> Uploading and committing $($msixFile.Name) to Microsoft Store..."
+          }
+          & msstore @publishArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Output "::error::msstore publish failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }

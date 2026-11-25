@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.2.3] - 2026-11-24
+<!-- Gene - Nov, 24, 2026: Added v1.2.4 changelog entry covering FTP scheduling enhancements, Store publishing automation, and CI/test fixes -->
+## [1.2.4] - 2026-11-24
+
+### Added
+- **Per-Source FTP Scheduling, Date Filters & Run Selected**: Added per-source weekly/monthly scheduling, per-source date filter overrides, monthly completion tracking/reset, and a **Run Selected** picker for targeted FTP uploads.
+- **Global Weekly Presets & Monthly FTP Schedule**: Added quick weekly schedule presets (Weekdays, Weekends, Sat Only, Sun Only) and once-a-month global FTP scheduling.
+- **Automated Microsoft Store MSIX Publishing**: Added automated `msstore` CLI publishing and MSIX content verification in `.github/workflows/release.yml` (with manual `publish_to_store`/`store_draft` `workflow_dispatch` inputs) and documentation in `RELEASING.md`.
 
 ### Fixed
 - **FTP Settings Cross-Profile Save Guard**: Prevented in-flight `FtpFilesProvider._writeSettings()` writes from leaking settings across profiles or after provider disposal.
-- **Windows Installer Version Parsing & Test Stability**: Anchored the `pubspec.yaml` version regex in `scripts/build_windows_installer.ps1` to ignore commented lines, and updated FTP provider tests to match run logs by `runId` and isolate overnight schedule test profiles on Windows.
+- **Deterministic FTP Scan Ordering**: Sorted discovered subdirectories and scanned files alphabetically so upload ordering is consistent across Linux, macOS, and Windows filesystems.
+- **Windows Installer Version Parsing & Test Stability**: Anchored the `pubspec.yaml` version regex in `scripts/build_windows_installer.ps1` to ignore commented lines, and hardened FTP provider and path-clearing tests for cross-platform CI stability.
 
 <!-- Gene - Nov, 24, 2026: Added v1.2.2 changelog entry for FTP start/end run-time window and Microsoft Store release pipeline polish -->
 ## [1.2.2] - 2026-11-24

@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
+// Gene - Nov, 25, 2026: Replaced Dart isolate worker and Dart symlink helper with native Rust transfer_engine.
+// import 'dart:isolate';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -10,76 +11,78 @@ import 'package:path/path.dart' as p;
 import '../services/file_logger.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
-import '../services/path_safety.dart';
+// import '../services/path_safety.dart';
+import '../services/rust_transfer_engine.dart';
 import '../models/run_record.dart';
 import '../services/global_db_service.dart';
 
-class _TransferControl {
-  final bool pause;
-  final bool resume;
-  final bool stop;
-  _TransferControl({
-    this.pause = false,
-    this.resume = false,
-    this.stop = false,
-  });
-}
-
-class _TransferParams {
-  final String sourcePath;
-  final String destPath;
-  final bool enableAgeFilter;
-  final String ageFilterUnit;
-  final int ageFilterValue;
-  final bool enableDateRange;
-  final int fromEpochMs;
-  final int toEpochMs;
-  final bool excludeSubfolders;
-  final String? lastScannedDir;
-  final SendPort mainSendPort;
-  final int initialFilesMoved;
-  final int initialErrors;
-  final int logInterval;
-
-  _TransferParams({
-    required this.sourcePath,
-    required this.destPath,
-    required this.enableAgeFilter,
-    required this.ageFilterUnit,
-    required this.ageFilterValue,
-    required this.enableDateRange,
-    required this.fromEpochMs,
-    required this.toEpochMs,
-    required this.excludeSubfolders,
-    this.lastScannedDir,
-    required this.mainSendPort,
-    this.initialFilesMoved = 0,
-    this.initialErrors = 0,
-    required this.logInterval,
-  });
-}
-
-class _TransferProgress {
-  final int filesMoved;
-  final int errors;
-  final List<String> logs;
-  final String? currentStatus;
-  final bool isDone;
-  final String? criticalError;
-  final String? saveScannedDir;
-  final SendPort? workerSendPort;
-
-  _TransferProgress({
-    this.filesMoved = 0,
-    this.errors = 0,
-    this.logs = const [],
-    this.currentStatus,
-    this.isDone = false,
-    this.criticalError,
-    this.saveScannedDir,
-    this.workerSendPort,
-  });
-}
+// Gene - Nov, 25, 2026: Replaced Dart isolate control/params/progress structs with native Rust transfer_engine.
+// class _TransferControl {
+//   final bool pause;
+//   final bool resume;
+//   final bool stop;
+//   _TransferControl({
+//     this.pause = false,
+//     this.resume = false,
+//     this.stop = false,
+//   });
+// }
+//
+// class _TransferParams {
+//   final String sourcePath;
+//   final String destPath;
+//   final bool enableAgeFilter;
+//   final String ageFilterUnit;
+//   final int ageFilterValue;
+//   final bool enableDateRange;
+//   final int fromEpochMs;
+//   final int toEpochMs;
+//   final bool excludeSubfolders;
+//   final String? lastScannedDir;
+//   final SendPort mainSendPort;
+//   final int initialFilesMoved;
+//   final int initialErrors;
+//   final int logInterval;
+//
+//   _TransferParams({
+//     required this.sourcePath,
+//     required this.destPath,
+//     required this.enableAgeFilter,
+//     required this.ageFilterUnit,
+//     required this.ageFilterValue,
+//     required this.enableDateRange,
+//     required this.fromEpochMs,
+//     required this.toEpochMs,
+//     required this.excludeSubfolders,
+//     this.lastScannedDir,
+//     required this.mainSendPort,
+//     this.initialFilesMoved = 0,
+//     this.initialErrors = 0,
+//     required this.logInterval,
+//   });
+// }
+//
+// class _TransferProgress {
+//   final int filesMoved;
+//   final int errors;
+//   final List<String> logs;
+//   final String? currentStatus;
+//   final bool isDone;
+//   final String? criticalError;
+//   final String? saveScannedDir;
+//   final SendPort? workerSendPort;
+//
+//   _TransferProgress({
+//     this.filesMoved = 0,
+//     this.errors = 0,
+//     this.logs = const [],
+//     this.currentStatus,
+//     this.isDone = false,
+//     this.criticalError,
+//     this.saveScannedDir,
+//     this.workerSendPort,
+//   });
+// }
 
 class TransferFilesProvider with ChangeNotifier {
   final Logger _log = Logger('TransferFilesProvider');
@@ -127,6 +130,9 @@ class TransferFilesProvider with ChangeNotifier {
   // Stats
   int filesMoved = 0;
   int errors = 0;
+  // Gene - Nov, 25, 2026: Track live scanned files and directories count from the Rust transfer engine.
+  int filesScanned = 0;
+  int dirsScanned = 0;
   int _sessionStartFilesMoved = 0;
   int _sessionStartErrors = 0;
 
@@ -154,7 +160,8 @@ class TransferFilesProvider with ChangeNotifier {
 
   bool _stopRequested = false;
   Timer? _refreshTimer;
-  Timer? _isolateKillTimer;
+  // Gene - Nov, 25, 2026: Replaced Dart isolate handle/ports with RustTransferJob and polling timer.
+  // Timer? _isolateKillTimer;
 
   // Pause/Schedule State
   bool isPaused = false;
@@ -163,8 +170,11 @@ class TransferFilesProvider with ChangeNotifier {
   Completer<void>? _pauseCompleter;
 
   // Isolate state
-  Isolate? _workerIsolate;
-  SendPort? _workerControlPort;
+  // Isolate? _workerIsolate;
+  // SendPort? _workerControlPort;
+  RustTransferJob? _rustJob;
+  Timer? _pollTimer;
+  Timer? _stopFallbackTimer;
 
   TransferFilesProvider() {
     _loadSettings();
@@ -184,8 +194,13 @@ class TransferFilesProvider with ChangeNotifier {
     _refreshTimer?.cancel();
     _scheduleTimer?.cancel();
     _completionRescheduleTimer?.cancel();
-    _isolateKillTimer?.cancel();
-    _workerIsolate?.kill(priority: Isolate.immediate);
+    // Gene - Nov, 25, 2026: Dispose native Rust transfer job and poll/stop timers instead of Dart isolate.
+    // _isolateKillTimer?.cancel();
+    // _workerIsolate?.kill(priority: Isolate.immediate);
+    _pollTimer?.cancel();
+    _stopFallbackTimer?.cancel();
+    _rustJob?.dispose();
+    _rustJob = null;
     super.dispose();
   }
 
@@ -357,15 +372,36 @@ class TransferFilesProvider with ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> clearProgress() async {
+  // Gene - Nov, 25, 2026: Allow _finishRun to clear only the saved resume checkpoint without wiping completed run counters.
+  // Future<void> clearProgress() async {
+  //   lastScannedDir = null;
+  //   filesMoved = 0;
+  //   errors = 0;
+  //   // Gene - Nov, 25, 2026: Reset scanned counters when clearing progress.
+  //   filesScanned = 0;
+  //   dirsScanned = 0;
+  //   try {
+  //     final file = File(_progressFilePath);
+  //     if (await file.exists()) await file.delete();
+  //   } catch (_) {}
+  //   _addLog('✓ Progress cleared.');
+  //   notifyListeners();
+  // }
+  Future<void> clearProgress({bool resetCounters = true}) async {
     lastScannedDir = null;
-    filesMoved = 0;
-    errors = 0;
+    if (resetCounters) {
+      filesMoved = 0;
+      errors = 0;
+      filesScanned = 0;
+      dirsScanned = 0;
+    }
     try {
       final file = File(_progressFilePath);
       if (await file.exists()) await file.delete();
     } catch (_) {}
-    _addLog('✓ Progress cleared.');
+    if (resetCounters) {
+      _addLog('✓ Progress cleared.');
+    }
     notifyListeners();
   }
 
@@ -580,9 +616,13 @@ class TransferFilesProvider with ChangeNotifier {
     if (inWindow && isPaused) {
       // Resume
       isPaused = false;
-      currentStatus = '⏳ Processing...';
+      // Gene - Nov, 25, 2026: Resume native Rust transfer engine and show scanned file counter.
+      // currentStatus = '⏳ Processing...';
+      // _addLog('⏳ Time window reached. Resuming transfer...');
+      // _workerControlPort?.send(_TransferControl(resume: true));
+      currentStatus = '⏳ Scanning (${_numFmt.format(filesScanned)} files)...';
       _addLog('⏳ Time window reached. Resuming transfer...');
-      _workerControlPort?.send(_TransferControl(resume: true));
+      _rustJob?.resume();
       notifyListeners();
       if (_pauseCompleter != null && !_pauseCompleter!.isCompleted) {
         _pauseCompleter!.complete();
@@ -593,7 +633,9 @@ class TransferFilesProvider with ChangeNotifier {
       _pauseCompleter = Completer<void>();
       currentStatus = '⏸ Waiting for time window...';
       _addLog('⏸ Outside allowed time window. Paused until next run window.');
-      _workerControlPort?.send(_TransferControl(pause: true));
+      // Gene - Nov, 25, 2026: Pause native Rust transfer engine.
+      // _workerControlPort?.send(_TransferControl(pause: true));
+      _rustJob?.pause();
       notifyListeners();
     }
   }
@@ -640,7 +682,9 @@ class TransferFilesProvider with ChangeNotifier {
     _scheduleTimer = null;
     _completionRescheduleTimer?.cancel();
     _completionRescheduleTimer = null;
-    _isolateKillTimer?.cancel();
+    // Gene - Nov, 25, 2026: Stop native Rust transfer job with fallback cleanup timer.
+    // _isolateKillTimer?.cancel();
+    _stopFallbackTimer?.cancel();
 
     _saveProgress(lastScannedDir, filesMoved, errors);
 
@@ -648,20 +692,36 @@ class TransferFilesProvider with ChangeNotifier {
       _pauseCompleter!.complete();
     }
 
-    // If the worker isolate is already gone (e.g. transfer completed and is
+    // If the worker is already gone (e.g. transfer completed and is
     // in the scheduled-pause / "next run" state), clean up immediately.
-    if (_workerIsolate == null) {
+    // if (_workerIsolate == null) {
+    //   _cleanupAfterStop();
+    //   return;
+    // }
+    //
+    // _workerControlPort?.send(_TransferControl(stop: true));
+    //
+    // // Cancellable fallback kill if isolate is completely stuck
+    // _isolateKillTimer = Timer(const Duration(seconds: 2), () {
+    //   if (_workerIsolate != null) {
+    //     _workerIsolate?.kill(priority: Isolate.immediate);
+    //     _workerIsolate = null;
+    //     _cleanupAfterStop();
+    //   }
+    // });
+    if (_rustJob == null) {
       _cleanupAfterStop();
       return;
     }
 
-    _workerControlPort?.send(_TransferControl(stop: true));
+    _rustJob?.stop();
 
-    // Cancellable fallback kill if isolate is completely stuck
-    _isolateKillTimer = Timer(const Duration(seconds: 2), () {
-      if (_workerIsolate != null) {
-        _workerIsolate?.kill(priority: Isolate.immediate);
-        _workerIsolate = null;
+    _stopFallbackTimer = Timer(const Duration(seconds: 2), () {
+      if (_rustJob != null) {
+        _pollTimer?.cancel();
+        _pollTimer = null;
+        _rustJob?.dispose();
+        _rustJob = null;
         _cleanupAfterStop();
       }
     });
@@ -689,8 +749,11 @@ class TransferFilesProvider with ChangeNotifier {
     // Re-entrancy protection
     if (isProcessing) return;
 
-    _isolateKillTimer?.cancel();
-    _isolateKillTimer = null;
+    // Gene - Nov, 25, 2026: Cancel Rust stop fallback timer instead of isolate kill timer.
+    // _isolateKillTimer?.cancel();
+    // _isolateKillTimer = null;
+    _stopFallbackTimer?.cancel();
+    _stopFallbackTimer = null;
 
     if (sourcePath == null || destPath == null) {
       _addLog('✗ Error: Source or Destination not selected.');
@@ -733,13 +796,17 @@ class TransferFilesProvider with ChangeNotifier {
       filesMoved = 0;
       errors = 0;
     }
+    // Gene - Nov, 25, 2026: Reset scanned counters and initialize status with live file scan counter.
+    filesScanned = 0;
+    dirsScanned = 0;
     _sessionStartFilesMoved = filesMoved;
     _sessionStartErrors = errors;
 
     isProcessing = true;
     _stopRequested = false;
     isPaused = false;
-    currentStatus = '⏳ Starting transfer...';
+    // currentStatus = '⏳ Starting transfer...';
+    currentStatus = '⏳ Scanning (0 files)...';
     notifyListeners();
 
     _addLog('⏳ Starting transfer...');
@@ -815,80 +882,218 @@ class TransferFilesProvider with ChangeNotifier {
         return;
       }
 
-      final receivePort = ReceivePort();
+      // Gene - Nov, 25, 2026: Run file transfer on the native Rust transfer_engine instead of a Dart isolate.
+      // final receivePort = ReceivePort();
+      //
+      // _workerIsolate = await Isolate.spawn(
+      //   _isolateWorker,
+      //   _TransferParams(
+      //     sourcePath: sourcePath!,
+      //     destPath: destPath!,
+      //     enableAgeFilter: enableAgeFilter,
+      //     ageFilterUnit: ageFilterUnit,
+      //     ageFilterValue: ageFilterValue,
+      //     enableDateRange: enableDateRange,
+      //     fromEpochMs: fromDate.millisecondsSinceEpoch,
+      //     toEpochMs: toDate.millisecondsSinceEpoch,
+      //     excludeSubfolders: excludeSubfolders,
+      //     lastScannedDir: lastScannedDir,
+      //     mainSendPort: receivePort.sendPort,
+      //     initialFilesMoved: filesMoved,
+      //     initialErrors: errors,
+      //     logInterval: logInterval,
+      //   ),
+      // );
+      //
+      // receivePort.listen((message) { ... });
+      final int fromInclusiveEpochMs = DateTime(
+        fromDate.year,
+        fromDate.month,
+        fromDate.day,
+      ).millisecondsSinceEpoch;
+      final int toExclusiveEpochMs = DateTime(
+        toDate.year,
+        toDate.month,
+        toDate.day + 1,
+      ).millisecondsSinceEpoch;
 
-      _workerIsolate = await Isolate.spawn(
-        _isolateWorker,
-        _TransferParams(
-          sourcePath: sourcePath!,
-          destPath: destPath!,
-          enableAgeFilter: enableAgeFilter,
-          ageFilterUnit: ageFilterUnit,
-          ageFilterValue: ageFilterValue,
-          enableDateRange: enableDateRange,
-          fromEpochMs: fromDate.millisecondsSinceEpoch,
-          toEpochMs: toDate.millisecondsSinceEpoch,
-          excludeSubfolders: excludeSubfolders,
-          lastScannedDir: lastScannedDir,
-          mainSendPort: receivePort.sendPort,
-          initialFilesMoved: filesMoved,
-          initialErrors: errors,
-          logInterval: logInterval,
-        ),
+      int ageThresholdEpochMs = 0;
+      if (enableAgeFilter) {
+        final now = DateTime.now();
+        final DateTime ageThreshold;
+        if (ageFilterUnit == 'Days') {
+          ageThreshold = now.subtract(Duration(days: ageFilterValue));
+        } else if (ageFilterUnit == 'Months') {
+          ageThreshold = DateTime(
+            now.year,
+            now.month - ageFilterValue,
+            now.day,
+          );
+        } else {
+          ageThreshold = DateTime(
+            now.year - ageFilterValue,
+            now.month,
+            now.day,
+          );
+        }
+        ageThresholdEpochMs = ageThreshold.millisecondsSinceEpoch;
+      }
+
+      _rustJob?.dispose();
+      _rustJob = RustTransferJob.start(
+        sourcePath: sourcePath!,
+        destPath: destPath!,
+        lastScannedDir: lastScannedDir,
+        enableAgeFilter: enableAgeFilter,
+        ageThresholdEpochMs: ageThresholdEpochMs,
+        enableDateRange: enableDateRange,
+        fromInclusiveEpochMs: fromInclusiveEpochMs,
+        toExclusiveEpochMs: toExclusiveEpochMs,
+        excludeSubfolders: excludeSubfolders,
+        initialFilesMoved: filesMoved,
+        initialErrors: errors,
+        logInterval: logInterval,
       );
 
-      receivePort.listen((message) {
-        if (message is _TransferProgress) {
-          if (message.workerSendPort != null) {
-            _workerControlPort = message.workerSendPort;
-            if (isPaused) {
-              _workerControlPort?.send(_TransferControl(pause: true));
-            }
-            return;
-          }
+      if (isPaused) {
+        _rustJob?.pause();
+      }
 
-          filesMoved = message.filesMoved;
-          errors = message.errors;
-
-          if (message.currentStatus != null) {
-            currentStatus = message.currentStatus!;
-          }
-
-          if (message.saveScannedDir != null) {
-            _saveProgress(message.saveScannedDir!, filesMoved, errors);
-          }
-
-          for (final log in message.logs) {
-            _addLog(log);
-            if (log.startsWith('✗')) {
-              _fileLogger.error('Transfer', log);
-            }
-          }
-
-          if (message.criticalError != null) {
-            _addLog('✗ Critical Error: ${message.criticalError}');
-            _fileLogger.error(
-              'Transfer',
-              'Critical Error: ${message.criticalError}',
-            );
-          }
-
-          if (message.isDone) {
-            receivePort.close();
-            _workerIsolate = null;
-            _workerControlPort = null;
-            if (!_stopRequested) {
-              _finishRun(wasStopped: false);
-            } else {
-              _cleanupAfterStop();
-            }
-          }
-        }
+      _pollTimer?.cancel();
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+        _pollRustJob();
       });
     } catch (e, stack) {
       _addLog('✗ Critical Error: $e');
       _log.severe('Critical error during transfer', e, stack);
       await _fileLogger.error('Transfer', 'Critical Error: $e\n$stack');
+      _finishRun(wasStopped: false);
+    }
+  }
+
+  // Gene - Nov, 25, 2026: Poll native Rust transfer_engine for live scan/move progress, logs, and completion.
+  void _pollRustJob() {
+    final job = _rustJob;
+    if (job == null || job.isDisposed) return;
+
+    try {
+      final snap = job.poll();
+      filesScanned = snap.filesScanned;
+      dirsScanned = snap.dirsScanned;
+      filesMoved = snap.filesMoved;
+      errors = snap.errors;
+
+      if (!isPaused && !_stopRequested) {
+        if (snap.phase == 1) {
+          currentStatus = snap.currentDirName.isEmpty
+              ? '⏳ Scanning (${_numFmt.format(filesScanned)} files)...'
+              : '⏳ Scanning (${_numFmt.format(filesScanned)} files): ${snap.currentDirName}';
+        } else if (snap.phase == 2) {
+          currentStatus =
+              '⏳ Moving (${_numFmt.format(filesMoved)} moved, ${_numFmt.format(filesScanned)} scanned): ${snap.currentDirName}';
+        } else if (snap.phase == 3) {
+          currentStatus = '⛔ Stopping...';
+        }
+      }
+
+      if (snap.saveScannedDir != null) {
+        _saveProgress(snap.saveScannedDir!, filesMoved, errors);
+      }
+
+      for (final rawLog in snap.logs) {
+        if (rawLog.startsWith('__MOVED__|')) {
+          final firstSep = rawLog.indexOf('|', 10);
+          final secondSep = firstSep == -1
+              ? -1
+              : rawLog.indexOf('|', firstSep + 1);
+          if (firstSep != -1 && secondSep != -1) {
+            final movedStr = rawLog.substring(10, firstSep);
+            final msStr = rawLog.substring(firstSep + 1, secondSep);
+            final fileName = rawLog.substring(secondSep + 1);
+            final epochMs = int.tryParse(msStr);
+            if (enableDateRange && epochMs != null) {
+              final dt = DateTime.fromMillisecondsSinceEpoch(epochMs);
+              final yearStr = DateFormat('yyyy').format(dt);
+              final monthStr = DateFormat('MMM').format(dt);
+              _addLog(
+                '✓ Moved $logInterval files (total: $movedStr) – latest [$monthStr-$yearStr]: $fileName',
+              );
+            } else {
+              _addLog(
+                '✓ Moved $logInterval files (total: $movedStr) – latest: $fileName',
+              );
+            }
+          }
+        } else {
+          _addLog(rawLog);
+          if (rawLog.startsWith('✗')) {
+            _fileLogger.error('Transfer', rawLog);
+          }
+        }
+      }
+
+      if (snap.criticalError != null) {
+        _addLog('✗ Critical Error: ${snap.criticalError}');
+        _fileLogger.error('Transfer', 'Critical Error: ${snap.criticalError}');
+      }
+
+      if (snap.isDone) {
+        _pollTimer?.cancel();
+        _pollTimer = null;
+        _stopFallbackTimer?.cancel();
+        _stopFallbackTimer = null;
+        job.dispose();
+        _rustJob = null;
+
+        if (!_stopRequested && filesMoved == _sessionStartFilesMoved) {
+          _addLog('ℹ No files were transferred.');
+          if (enableDateRange) {
+            final fmt = DateFormat('dd/MM/yyyy');
+            _addLog(
+              '  ℹ Date filter is active: ${fmt.format(fromDate)} – ${fmt.format(toDate)}',
+            );
+            _addLog(
+              '  ℹ Check that files have modification dates within this range.',
+            );
+          }
+          if (enableAgeFilter) {
+            _addLog(
+              '  ℹ Age filter is active. Check that files are older than the configured threshold.',
+            );
+          }
+          if (excludeSubfolders) {
+            _addLog(
+              '  ℹ "Source folder only" is enabled — only files directly in the source folder were checked.',
+            );
+            _addLog(
+              '  ℹ If your files are in subfolders, uncheck this option in Advanced Settings.',
+            );
+          } else {
+            _addLog(
+              '  ℹ All subfolders were scanned. Verify the source path contains the expected files.',
+            );
+          }
+        }
+
+        if (!_stopRequested) {
+          _finishRun(wasStopped: false);
+        } else {
+          _cleanupAfterStop();
+        }
+        return;
+      }
+
+      notifyListeners();
+    } catch (e, stack) {
+      _pollTimer?.cancel();
+      _pollTimer = null;
+      _stopFallbackTimer?.cancel();
+      _stopFallbackTimer = null;
+      _rustJob?.dispose();
+      _rustJob = null;
+      _addLog('✗ Critical Error: $e');
+      _log.severe('Critical error polling Rust transfer engine', e, stack);
+      _fileLogger.error('Transfer', 'Critical Error: $e\n$stack');
       _finishRun(wasStopped: false);
     }
   }
@@ -953,7 +1158,9 @@ class TransferFilesProvider with ChangeNotifier {
       _completionRescheduleTimer?.cancel();
       _completionRescheduleTimer = null;
       if (!wasStopped) {
-        await clearProgress();
+        // Gene - Nov, 25, 2026: Keep completed run counters visible after finishing while clearing checkpoint file.
+        // await clearProgress();
+        await clearProgress(resetCounters: false);
       }
     }
     notifyListeners();
@@ -999,373 +1206,357 @@ class TransferFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  static Future<void> _isolateWorker(_TransferParams params) async {
-    final workerReceivePort = ReceivePort();
-    params.mainSendPort.send(
-      _TransferProgress(workerSendPort: workerReceivePort.sendPort),
-    );
-
-    bool isPaused = false;
-    bool stopRequested = false;
-    Completer<void>? pauseCompleter;
-
-    Future<bool> awaitIfPaused() async {
-      if (isPaused && pauseCompleter != null && !pauseCompleter!.isCompleted) {
-        await pauseCompleter!.future;
-      }
-      return !stopRequested;
-    }
-
-    int filesMoved = params.initialFilesMoved;
-    int errors = params.initialErrors;
-    List<String> logBatch = [];
-    int scanCount = 0;
-    final Set<String> createdDirs = {};
-
-    int filesSinceLastSave = 0;
-    const int saveProgressInterval = 20;
-
-    void flushProgress(
-      String? status, {
-      bool force = false,
-      String? scannedDir,
-    }) {
-      if (force ||
-          status != null ||
-          logBatch.isNotEmpty ||
-          scanCount % 10 == 0 ||
-          scannedDir != null) {
-        params.mainSendPort.send(
-          _TransferProgress(
-            filesMoved: filesMoved,
-            errors: errors,
-            logs: List.from(logBatch),
-            currentStatus: status,
-            saveScannedDir: scannedDir,
-          ),
-        );
-        logBatch.clear();
-      }
-    }
-
-    workerReceivePort.listen((message) {
-      if (message is _TransferControl) {
-        if (message.stop) {
-          stopRequested = true;
-          flushProgress('⛔ Stopping...', force: true);
-          if (pauseCompleter != null && !pauseCompleter!.isCompleted) {
-            pauseCompleter!.complete();
-          }
-        } else if (message.pause) {
-          isPaused = true;
-          pauseCompleter = Completer<void>();
-        } else if (message.resume) {
-          isPaused = false;
-          if (pauseCompleter != null && !pauseCompleter!.isCompleted) {
-            pauseCompleter!.complete();
-          }
-        }
-      }
-    });
-
-    Future<void> moveFile(
-      File file,
-      String year,
-      String month, {
-      DateTime? modified,
-    }) async {
-      try {
-        String relativePath = p.relative(
-          file.parent.path,
-          from: params.sourcePath,
-        );
-        String destDir = p.join(params.destPath, relativePath);
-        String destFilePath = p.join(destDir, p.basename(file.path));
-
-        if (!createdDirs.contains(destDir)) {
-          await Directory(destDir).create(recursive: true);
-          createdDirs.add(destDir);
-        }
-
-        // Never move a file onto one that already exists. A move overwrites
-        // the destination and then deletes the source, so the file that was
-        // already there is gone with no copy left anywhere. Flag the clash
-        // and leave both files untouched for the user to resolve.
-        if (await File(destFilePath).exists()) {
-          logBatch.add(
-            '⚠ Skipped ${p.basename(file.path)}: a file with that name already exists at the destination',
-          );
-          errors++;
-          return;
-        }
-
-        // Try fast atomic rename first
-        try {
-          await file.rename(destFilePath);
-        } on FileSystemException {
-          // Fallback for moves across drives/network shares: copy to a
-          // temporary name first, verify the size, then swap into place —
-          // an interrupted copy must never leave a partial file at the
-          // final destination, and the source is only deleted after the
-          // copy is verified.
-          final tempPath = '$destFilePath.part';
-          try {
-            await file.copy(tempPath);
-            final srcLen = await file.length();
-            final dstLen = await File(tempPath).length();
-            if (srcLen != dstLen) {
-              throw FileSystemException(
-                'Incomplete copy ($dstLen of $srcLen bytes)',
-                tempPath,
-              );
-            }
-            if (modified != null) {
-              // Keep the original modified date so age/date filters still
-              // see the right timestamps after the file lands on the NAS.
-              try {
-                await File(tempPath).setLastModified(modified);
-              } catch (_) {}
-            }
-            await File(tempPath).rename(destFilePath);
-            try {
-              await file.delete();
-            } catch (delErr) {
-              logBatch.add(
-                '⚠ Copied to destination, but could not delete source: ${file.path} ($delErr)',
-              );
-            }
-          } catch (copyErr) {
-            try {
-              await File(tempPath).delete();
-            } catch (_) {}
-            rethrow;
-          }
-        }
-
-        filesMoved++;
-        if (filesMoved % params.logInterval == 0) {
-          if (year.isNotEmpty) {
-            logBatch.add(
-              '✓ Moved ${params.logInterval} files (total: $filesMoved) – latest [$month-$year]: ${p.basename(file.path)}',
-            );
-          } else {
-            logBatch.add(
-              '✓ Moved ${params.logInterval} files (total: $filesMoved) – latest: ${p.basename(file.path)}',
-            );
-          }
-          flushProgress('⏳ Moving files ($filesMoved moved)...', force: true);
-        }
-      } catch (e) {
-        logBatch.add('✗ Failed to move ${file.path}: $e');
-        errors++;
-      }
-    }
-
-    // Pre-compute date filter boundaries
-    late final DateTime from;
-    late final DateTime to;
-    if (params.enableDateRange) {
-      final fd = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
-      final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
-      from = DateTime(fd.year, fd.month, fd.day);
-      to = DateTime(td.year, td.month, td.day);
-    }
-
-    late final DateTime ageThreshold;
-    if (params.enableAgeFilter) {
-      final now = DateTime.now();
-      if (params.ageFilterUnit == 'Days') {
-        ageThreshold = now.subtract(Duration(days: params.ageFilterValue));
-      } else if (params.ageFilterUnit == 'Months') {
-        ageThreshold = DateTime(
-          now.year,
-          now.month - params.ageFilterValue,
-          now.day,
-        );
-      } else {
-        ageThreshold = DateTime(
-          now.year - params.ageFilterValue,
-          now.month,
-          now.day,
-        );
-      }
-    }
-
-    Future<void> checkAndMoveFile(File file) async {
-      try {
-        FileStat stats = await file.stat();
-        DateTime modified = stats.modified;
-
-        if (params.enableAgeFilter) {
-          if (modified.isAfter(ageThreshold)) return;
-        }
-
-        if (params.enableDateRange) {
-          final fileDate = DateTime(
-            modified.year,
-            modified.month,
-            modified.day,
-          );
-          if (fileDate.isBefore(from) || fileDate.isAfter(to)) {
-            return;
-          }
-
-          String yearStr = DateFormat('yyyy').format(modified);
-          String monthStr = DateFormat('MMM').format(modified);
-          await moveFile(file, yearStr, monthStr, modified: modified);
-        } else {
-          await moveFile(file, '', '', modified: modified);
-        }
-      } catch (e) {
-        logBatch.add('✗ Error accessing ${file.path}: $e');
-        errors++;
-      }
-    }
-
-    Future<void> processDirectoryTree(
-      Directory currentDir, {
-      required bool recursive,
-    }) async {
-      bool skippingDirs = params.lastScannedDir != null;
-      final Set<String> visitedDirs = {};
-
-      // To process BFS, we'll use a queue of directories to process
-      List<Directory> dirsToProcess = [currentDir];
-
-      while (dirsToProcess.isNotEmpty) {
-        if (stopRequested) return;
-        if (!(await awaitIfPaused())) return;
-
-        Directory dir = dirsToProcess.removeAt(0);
-        String dirName = p.basename(dir.path);
-
-        // Skip destination directory and any subdirectories inside it
-        if (p.equals(dir.path, params.destPath) ||
-            p.isWithin(params.destPath, dir.path)) {
-          logBatch.add('ℹ Skipping destination folder: $dirName');
-          flushProgress(null);
-          continue;
-        }
-
-        String canonicalPath;
-        try {
-          canonicalPath = await dir.resolveSymbolicLinks();
-        } catch (_) {
-          canonicalPath = p.canonicalize(dir.path);
-        }
-
-        if (visitedDirs.contains(canonicalPath)) {
-          continue; // Avoid cyclic symlink loops
-        }
-        visitedDirs.add(canonicalPath);
-
-        if (skippingDirs && params.lastScannedDir != null) {
-          if (p.equals(dir.path, params.lastScannedDir!)) {
-            skippingDirs = false;
-          }
-        }
-
-        scanCount++;
-        filesSinceLastSave++;
-
-        if (filesSinceLastSave >= saveProgressInterval) {
-          filesSinceLastSave = 0;
-          flushProgress('⏳ Scanning: $dirName', scannedDir: dir.path);
-        } else {
-          flushProgress('⏳ Scanning: $dirName');
-        }
-
-        try {
-          List<FileSystemEntity> entities = await dir
-              .list(recursive: false, followLinks: false)
-              .toList();
-          // Sort for consistent processing order
-          entities.sort(
-            (a, b) => p.basename(a.path).compareTo(p.basename(b.path)),
-          );
-
-          for (var entity in entities) {
-            if (stopRequested) return;
-            if (!(await awaitIfPaused())) return;
-
-            if (entity is File) {
-              await checkAndMoveFile(entity);
-            } else if (entity is Directory && recursive) {
-              dirsToProcess.add(entity);
-            } else if (entity is Link) {
-              try {
-                if (!await resolvesWithinRoot(params.sourcePath, entity.path)) {
-                  logBatch.add(
-                    'ℹ Skipped link pointing outside the source: ${p.basename(entity.path)}',
-                  );
-                  continue;
-                }
-                final targetType = await FileSystemEntity.type(entity.path);
-                if (targetType == FileSystemEntityType.directory && recursive) {
-                  dirsToProcess.add(Directory(entity.path));
-                } else if (targetType == FileSystemEntityType.file) {
-                  await checkAndMoveFile(File(entity.path));
-                }
-              } catch (_) {}
-            }
-          }
-        } catch (e) {
-          logBatch.add('✗ Error reading directory ${dir.path}: $e');
-        }
-      }
-    }
-
-    try {
-      await processDirectoryTree(
-        Directory(params.sourcePath),
-        recursive: !params.excludeSubfolders,
-      );
-
-      // Helpful diagnostics when no files were transferred
-      if (filesMoved == params.initialFilesMoved) {
-        logBatch.add('ℹ No files were transferred.');
-        if (params.enableDateRange) {
-          final fd = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
-          final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
-          logBatch.add(
-            '  ℹ Date filter is active: ${DateFormat('dd/MM/yyyy').format(fd)} – ${DateFormat('dd/MM/yyyy').format(td)}',
-          );
-          logBatch.add(
-            '  ℹ Check that files have modification dates within this range.',
-          );
-        }
-        if (params.enableAgeFilter) {
-          logBatch.add(
-            '  ℹ Age filter is active. Check that files are older than the configured threshold.',
-          );
-        }
-        if (params.excludeSubfolders) {
-          logBatch.add(
-            '  ℹ "Source folder only" is enabled — only files directly in the source folder were checked.',
-          );
-          logBatch.add(
-            '  ℹ If your files are in subfolders, uncheck this option in Advanced Settings.',
-          );
-        } else {
-          logBatch.add(
-            '  ℹ All subfolders were scanned. Verify the source path contains the expected files.',
-          );
-        }
-      }
-
-      flushProgress('DONE', force: true);
-      params.mainSendPort.send(
-        _TransferProgress(isDone: true, filesMoved: filesMoved, errors: errors),
-      );
-    } catch (e) {
-      params.mainSendPort.send(
-        _TransferProgress(
-          criticalError: e.toString(),
-          isDone: true,
-          filesMoved: filesMoved,
-          errors: errors,
-        ),
-      );
-    }
-  }
+  // Gene - Nov, 25, 2026: Replaced Dart isolate worker with native Rust transfer_engine.
+  // static Future<void> _isolateWorker(_TransferParams params) async {
+  //   final workerReceivePort = ReceivePort();
+  //   params.mainSendPort.send(
+  //     _TransferProgress(workerSendPort: workerReceivePort.sendPort),
+  //   );
+  //
+  //   bool isPaused = false;
+  //   bool stopRequested = false;
+  //   Completer<void>? pauseCompleter;
+  //
+  //   Future<bool> awaitIfPaused() async {
+  //     if (isPaused && pauseCompleter != null && !pauseCompleter!.isCompleted) {
+  //       await pauseCompleter!.future;
+  //     }
+  //     return !stopRequested;
+  //   }
+  //
+  //   int filesMoved = params.initialFilesMoved;
+  //   int errors = params.initialErrors;
+  //   List<String> logBatch = [];
+  //   int scanCount = 0;
+  //   final Set<String> createdDirs = {};
+  //
+  //   int filesSinceLastSave = 0;
+  //   const int saveProgressInterval = 20;
+  //
+  //   void flushProgress(
+  //     String? status, {
+  //     bool force = false,
+  //     String? scannedDir,
+  //   }) {
+  //     if (force ||
+  //         status != null ||
+  //         logBatch.isNotEmpty ||
+  //         scanCount % 10 == 0 ||
+  //         scannedDir != null) {
+  //       params.mainSendPort.send(
+  //         _TransferProgress(
+  //           filesMoved: filesMoved,
+  //           errors: errors,
+  //           logs: List.from(logBatch),
+  //           currentStatus: status,
+  //           saveScannedDir: scannedDir,
+  //         ),
+  //       );
+  //       logBatch.clear();
+  //     }
+  //   }
+  //
+  //   workerReceivePort.listen((message) {
+  //     if (message is _TransferControl) {
+  //       if (message.stop) {
+  //         stopRequested = true;
+  //         flushProgress('⛔ Stopping...', force: true);
+  //         if (pauseCompleter != null && !pauseCompleter!.isCompleted) {
+  //           pauseCompleter!.complete();
+  //         }
+  //       } else if (message.pause) {
+  //         isPaused = true;
+  //         pauseCompleter = Completer<void>();
+  //       } else if (message.resume) {
+  //         isPaused = false;
+  //         if (pauseCompleter != null && !pauseCompleter!.isCompleted) {
+  //           pauseCompleter!.complete();
+  //         }
+  //       }
+  //     }
+  //   });
+  //
+  //   Future<void> moveFile(
+  //     File file,
+  //     String year,
+  //     String month, {
+  //     DateTime? modified,
+  //   }) async {
+  //     try {
+  //       String relativePath = p.relative(
+  //         file.parent.path,
+  //         from: params.sourcePath,
+  //       );
+  //       String destDir = p.join(params.destPath, relativePath);
+  //       String destFilePath = p.join(destDir, p.basename(file.path));
+  //
+  //       if (!createdDirs.contains(destDir)) {
+  //         await Directory(destDir).create(recursive: true);
+  //         createdDirs.add(destDir);
+  //       }
+  //
+  //       if (await File(destFilePath).exists()) {
+  //         logBatch.add(
+  //           '⚠ Skipped ${p.basename(file.path)}: a file with that name already exists at the destination',
+  //         );
+  //         errors++;
+  //         return;
+  //       }
+  //
+  //       try {
+  //         await file.rename(destFilePath);
+  //       } on FileSystemException {
+  //         final tempPath = '$destFilePath.part';
+  //         try {
+  //           await file.copy(tempPath);
+  //           final srcLen = await file.length();
+  //           final dstLen = await File(tempPath).length();
+  //           if (srcLen != dstLen) {
+  //             throw FileSystemException(
+  //               'Incomplete copy ($dstLen of $srcLen bytes)',
+  //               tempPath,
+  //             );
+  //           }
+  //           if (modified != null) {
+  //             try {
+  //               await File(tempPath).setLastModified(modified);
+  //             } catch (_) {}
+  //           }
+  //           await File(tempPath).rename(destFilePath);
+  //           try {
+  //             await file.delete();
+  //           } catch (delErr) {
+  //             logBatch.add(
+  //               '⚠ Copied to destination, but could not delete source: ${file.path} ($delErr)',
+  //             );
+  //           }
+  //         } catch (copyErr) {
+  //           try {
+  //             await File(tempPath).delete();
+  //           } catch (_) {}
+  //           rethrow;
+  //         }
+  //       }
+  //
+  //       filesMoved++;
+  //       if (filesMoved % params.logInterval == 0) {
+  //         if (year.isNotEmpty) {
+  //           logBatch.add(
+  //             '✓ Moved ${params.logInterval} files (total: $filesMoved) – latest [$month-$year]: ${p.basename(file.path)}',
+  //           );
+  //         } else {
+  //           logBatch.add(
+  //             '✓ Moved ${params.logInterval} files (total: $filesMoved) – latest: ${p.basename(file.path)}',
+  //           );
+  //         }
+  //         flushProgress('⏳ Moving files ($filesMoved moved)...', force: true);
+  //       }
+  //     } catch (e) {
+  //       logBatch.add('✗ Failed to move ${file.path}: $e');
+  //       errors++;
+  //     }
+  //   }
+  //
+  //   late final DateTime from;
+  //   late final DateTime to;
+  //   if (params.enableDateRange) {
+  //     final fd = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
+  //     final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
+  //     from = DateTime(fd.year, fd.month, fd.day);
+  //     to = DateTime(td.year, td.month, td.day);
+  //   }
+  //
+  //   late final DateTime ageThreshold;
+  //   if (params.enableAgeFilter) {
+  //     final now = DateTime.now();
+  //     if (params.ageFilterUnit == 'Days') {
+  //       ageThreshold = now.subtract(Duration(days: params.ageFilterValue));
+  //     } else if (params.ageFilterUnit == 'Months') {
+  //       ageThreshold = DateTime(
+  //         now.year,
+  //         now.month - params.ageFilterValue,
+  //         now.day,
+  //       );
+  //     } else {
+  //       ageThreshold = DateTime(
+  //         now.year - params.ageFilterValue,
+  //         now.month,
+  //         now.day,
+  //       );
+  //     }
+  //   }
+  //
+  //   Future<void> checkAndMoveFile(File file) async {
+  //     try {
+  //       FileStat stats = await file.stat();
+  //       DateTime modified = stats.modified;
+  //
+  //       if (params.enableAgeFilter) {
+  //         if (modified.isAfter(ageThreshold)) return;
+  //       }
+  //
+  //       if (params.enableDateRange) {
+  //         final fileDate = DateTime(
+  //           modified.year,
+  //           modified.month,
+  //           modified.day,
+  //         );
+  //         if (fileDate.isBefore(from) || fileDate.isAfter(to)) {
+  //           return;
+  //         }
+  //
+  //         String yearStr = DateFormat('yyyy').format(modified);
+  //         String monthStr = DateFormat('MMM').format(modified);
+  //         await moveFile(file, yearStr, monthStr, modified: modified);
+  //       } else {
+  //         await moveFile(file, '', '', modified: modified);
+  //       }
+  //     } catch (e) {
+  //       logBatch.add('✗ Error accessing ${file.path}: $e');
+  //       errors++;
+  //     }
+  //   }
+  //
+  //   Future<void> processDirectoryTree(
+  //     Directory currentDir, {
+  //     required bool recursive,
+  //   }) async {
+  //     bool skippingDirs = params.lastScannedDir != null;
+  //     final Set<String> visitedDirs = {};
+  //
+  //     List<Directory> dirsToProcess = [currentDir];
+  //
+  //     while (dirsToProcess.isNotEmpty) {
+  //       if (stopRequested) return;
+  //       if (!(await awaitIfPaused())) return;
+  //
+  //       Directory dir = dirsToProcess.removeAt(0);
+  //       String dirName = p.basename(dir.path);
+  //
+  //       if (p.equals(dir.path, params.destPath) ||
+  //           p.isWithin(params.destPath, dir.path)) {
+  //         logBatch.add('ℹ Skipping destination folder: $dirName');
+  //         flushProgress(null);
+  //         continue;
+  //       }
+  //
+  //       String canonicalPath;
+  //       try {
+  //         canonicalPath = await dir.resolveSymbolicLinks();
+  //       } catch (_) {
+  //         canonicalPath = p.canonicalize(dir.path);
+  //       }
+  //
+  //       if (visitedDirs.contains(canonicalPath)) {
+  //         continue;
+  //       }
+  //       visitedDirs.add(canonicalPath);
+  //
+  //       if (skippingDirs && params.lastScannedDir != null) {
+  //         if (p.equals(dir.path, params.lastScannedDir!)) {
+  //           skippingDirs = false;
+  //         }
+  //       }
+  //
+  //       scanCount++;
+  //       filesSinceLastSave++;
+  //
+  //       if (filesSinceLastSave >= saveProgressInterval) {
+  //         filesSinceLastSave = 0;
+  //         flushProgress('⏳ Scanning: $dirName', scannedDir: dir.path);
+  //       } else {
+  //         flushProgress('⏳ Scanning: $dirName');
+  //       }
+  //
+  //       try {
+  //         List<FileSystemEntity> entities = await dir
+  //             .list(recursive: false, followLinks: false)
+  //             .toList();
+  //         entities.sort(
+  //           (a, b) => p.basename(a.path).compareTo(p.basename(b.path)),
+  //         );
+  //
+  //         for (var entity in entities) {
+  //           if (stopRequested) return;
+  //           if (!(await awaitIfPaused())) return;
+  //
+  //           if (entity is File) {
+  //             await checkAndMoveFile(entity);
+  //           } else if (entity is Directory && recursive) {
+  //             dirsToProcess.add(entity);
+  //           } else if (entity is Link) {
+  //             try {
+  //               if (!await resolvesWithinRoot(params.sourcePath, entity.path)) {
+  //                 logBatch.add(
+  //                   'ℹ Skipped link pointing outside the source: ${p.basename(entity.path)}',
+  //                 );
+  //                 continue;
+  //               }
+  //               final targetType = await FileSystemEntity.type(entity.path);
+  //               if (targetType == FileSystemEntityType.directory && recursive) {
+  //                 dirsToProcess.add(Directory(entity.path));
+  //               } else if (targetType == FileSystemEntityType.file) {
+  //                 await checkAndMoveFile(File(entity.path));
+  //               }
+  //             } catch (_) {}
+  //           }
+  //         }
+  //       } catch (e) {
+  //         logBatch.add('✗ Error reading directory ${dir.path}: $e');
+  //       }
+  //     }
+  //   }
+  //
+  //   try {
+  //     await processDirectoryTree(
+  //       Directory(params.sourcePath),
+  //       recursive: !params.excludeSubfolders,
+  //     );
+  //
+  //     if (filesMoved == params.initialFilesMoved) {
+  //       logBatch.add('ℹ No files were transferred.');
+  //       if (params.enableDateRange) {
+  //         final fd = DateTime.fromMillisecondsSinceEpoch(params.fromEpochMs);
+  //         final td = DateTime.fromMillisecondsSinceEpoch(params.toEpochMs);
+  //         logBatch.add(
+  //           '  ℹ Date filter is active: ${DateFormat('dd/MM/yyyy').format(fd)} – ${DateFormat('dd/MM/yyyy').format(td)}',
+  //         );
+  //         logBatch.add(
+  //           '  ℹ Check that files have modification dates within this range.',
+  //         );
+  //       }
+  //       if (params.enableAgeFilter) {
+  //         logBatch.add(
+  //           '  ℹ Age filter is active. Check that files are older than the configured threshold.',
+  //         );
+  //       }
+  //       if (params.excludeSubfolders) {
+  //         logBatch.add(
+  //           '  ℹ "Source folder only" is enabled — only files directly in the source folder were checked.',
+  //         );
+  //         logBatch.add(
+  //           '  ℹ If your files are in subfolders, uncheck this option in Advanced Settings.',
+  //         );
+  //       } else {
+  //         logBatch.add(
+  //           '  ℹ All subfolders were scanned. Verify the source path contains the expected files.',
+  //         );
+  //       }
+  //     }
+  //
+  //     flushProgress('DONE', force: true);
+  //     params.mainSendPort.send(
+  //       _TransferProgress(isDone: true, filesMoved: filesMoved, errors: errors),
+  //     );
+  //   } catch (e) {
+  //     params.mainSendPort.send(
+  //       _TransferProgress(
+  //         criticalError: e.toString(),
+  //         isDone: true,
+  //         filesMoved: filesMoved,
+  //         errors: errors,
+  //       ),
+  //     );
+  //   }
+  // }
 }

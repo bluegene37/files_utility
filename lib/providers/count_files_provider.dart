@@ -1,47 +1,50 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:isolate';
+// Gene - Nov, 25, 2026: Replaced Dart isolate worker with native Rust count_engine.
+// import 'dart:isolate';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
-import 'package:path/path.dart' as p;
+// import 'package:path/path.dart' as p;
 import '../services/file_logger.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
-import '../services/path_safety.dart';
+// import '../services/path_safety.dart';
+import '../services/rust_file_engines.dart';
 import '../models/run_record.dart';
 
-class _CountProgress {
-  final int files;
-  final int folders;
-  final int errors;
-  final List<String> logs;
-  final String? currentScanPath;
-  final String? errorLog;
-  final bool isDone;
-
-  _CountProgress({
-    this.files = 0,
-    this.folders = 0,
-    this.errors = 0,
-    this.logs = const [],
-    this.currentScanPath,
-    this.errorLog,
-    this.isDone = false,
-  });
-}
-
-class _CountParams {
-  final String targetPath;
-  final int logInterval;
-  final SendPort sendPort;
-
-  _CountParams({
-    required this.targetPath,
-    required this.logInterval,
-    required this.sendPort,
-  });
-}
+// Gene - Nov, 25, 2026: Commented out Dart isolate DTOs after migrating to Rust count_engine.
+// class _CountProgress {
+//   final int files;
+//   final int folders;
+//   final int errors;
+//   final List<String> logs;
+//   final String? currentScanPath;
+//   final String? errorLog;
+//   final bool isDone;
+//
+//   _CountProgress({
+//     this.files = 0,
+//     this.folders = 0,
+//     this.errors = 0,
+//     this.logs = const [],
+//     this.currentScanPath,
+//     this.errorLog,
+//     this.isDone = false,
+//   });
+// }
+//
+// class _CountParams {
+//   final String targetPath;
+//   final int logInterval;
+//   final SendPort sendPort;
+//
+//   _CountParams({
+//     required this.targetPath,
+//     required this.logInterval,
+//     required this.sendPort,
+//   });
+// }
 
 class CountFilesProvider with ChangeNotifier {
   final FileLogger _fileLogger = FileLogger();
@@ -57,8 +60,11 @@ class CountFilesProvider with ChangeNotifier {
   int logInterval = 100;
   bool _stopRequested = false;
   Timer? _refreshTimer;
-  Isolate? _workerIsolate;
-  ReceivePort? _receivePort;
+  // Gene - Nov, 25, 2026: Track native RustCountJob and poll timer instead of Dart isolate.
+  // Isolate? _workerIsolate;
+  // ReceivePort? _receivePort;
+  RustCountJob? _rustJob;
+  Timer? _pollTimer;
 
   CountFilesProvider() {
     _loadSettings();
@@ -73,15 +79,24 @@ class CountFilesProvider with ChangeNotifier {
   void dispose() {
     LocalDbService().removeListener(_onProfileChanged);
     _refreshTimer?.cancel();
-    _stopIsolate();
+    // _stopIsolate();
+    _stopRustJob();
     super.dispose();
   }
 
-  void _stopIsolate() {
-    _workerIsolate?.kill(priority: Isolate.immediate);
-    _workerIsolate = null;
-    _receivePort?.close();
-    _receivePort = null;
+  // Gene - Nov, 25, 2026: Stop and dispose native RustCountJob cleanly.
+  // void _stopIsolate() {
+  //   _workerIsolate?.kill(priority: Isolate.immediate);
+  //   _workerIsolate = null;
+  //   _receivePort?.close();
+  //   _receivePort = null;
+  // }
+  void _stopRustJob() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _rustJob?.stop();
+    _rustJob?.dispose();
+    _rustJob = null;
   }
 
   void _addLog(String message) {
@@ -137,7 +152,9 @@ class CountFilesProvider with ChangeNotifier {
     if (!isCounting) return;
     _stopRequested = true;
     currentStatus = '⛔ Stopping...';
-    _stopIsolate();
+    // Gene - Nov, 25, 2026: Stop native RustCountJob instead of Dart isolate.
+    // _stopIsolate();
+    _stopRustJob();
     _finishRun(wasStopped: true);
     notifyListeners();
   }
@@ -191,7 +208,9 @@ class CountFilesProvider with ChangeNotifier {
     totalFiles = 0;
     totalFolders = 0;
     errors = 0;
-    currentStatus = '⏳ Counting...';
+    // Gene - Nov, 25, 2026: Initialize Count status with live scanning file counter.
+    // currentStatus = '⏳ Counting...';
+    currentStatus = '⏳ Scanning (0 files)...';
     notifyListeners();
 
     _addLog('⏳ Starting file count...');
@@ -213,50 +232,108 @@ class CountFilesProvider with ChangeNotifier {
         return;
       }
 
-      _receivePort?.close();
-      _receivePort = ReceivePort();
-
-      _workerIsolate = await Isolate.spawn(
-        _isolateWorker,
-        _CountParams(
-          targetPath: targetPath!,
-          logInterval: logInterval,
-          sendPort: _receivePort!.sendPort,
-        ),
+      // Gene - Nov, 25, 2026: Run directory counting on native Rust count_engine instead of Dart isolate.
+      // _receivePort?.close();
+      // _receivePort = ReceivePort();
+      //
+      // _workerIsolate = await Isolate.spawn(
+      //   _isolateWorker,
+      //   _CountParams(
+      //     targetPath: targetPath!,
+      //     logInterval: logInterval,
+      //     sendPort: _receivePort!.sendPort,
+      //   ),
+      // );
+      //
+      // _receivePort!.listen((message) {
+      //   if (message is _CountProgress) {
+      //     totalFiles = message.files;
+      //     totalFolders = message.folders;
+      //     errors = message.errors;
+      //
+      //     if (message.currentScanPath != null) {
+      //       currentStatus =
+      //           '⏳ Scanning: ${p.basename(message.currentScanPath!)}';
+      //     }
+      //
+      //     for (final log in message.logs) {
+      //       _addLog(log);
+      //     }
+      //
+      //     if (message.errorLog != null) {
+      //       _addLog('✗ ${message.errorLog}');
+      //       _fileLogger.error('Count', message.errorLog!);
+      //     }
+      //
+      //     if (message.isDone) {
+      //       _stopIsolate();
+      //       if (!_stopRequested) {
+      //         _finishRun(wasStopped: false);
+      //       }
+      //     }
+      //   }
+      // });
+      _stopRustJob();
+      _rustJob = RustCountJob.start(
+        targetPath: targetPath!,
+        logInterval: logInterval,
       );
-
-      _receivePort!.listen((message) {
-        if (message is _CountProgress) {
-          totalFiles = message.files;
-          totalFolders = message.folders;
-          errors = message.errors;
-
-          if (message.currentScanPath != null) {
-            currentStatus =
-                '⏳ Scanning: ${p.basename(message.currentScanPath!)}';
-          }
-
-          for (final log in message.logs) {
-            _addLog(log);
-          }
-
-          if (message.errorLog != null) {
-            _addLog('✗ ${message.errorLog}');
-            _fileLogger.error('Count', message.errorLog!);
-          }
-
-          if (message.isDone) {
-            _stopIsolate();
-            if (!_stopRequested) {
-              _finishRun(wasStopped: false);
-            }
-          }
-        }
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+        _pollRustJob();
       });
     } catch (e) {
       _addLog('✗ Critical Error: $e');
       await _fileLogger.error('Count', 'Critical Error: $e');
-      _stopIsolate();
+      // _stopIsolate();
+      _stopRustJob();
+      _finishRun(wasStopped: false);
+    }
+  }
+
+  // Gene - Nov, 25, 2026: Poll native Rust count_engine for live file/folder counts, logs, and completion.
+  void _pollRustJob() {
+    final job = _rustJob;
+    if (job == null || job.isDisposed) return;
+
+    try {
+      final snap = job.poll();
+      totalFiles = snap.files;
+      totalFolders = snap.folders;
+      errors = snap.errors;
+
+      if (!snap.isDone && !_stopRequested) {
+        currentStatus = snap.currentDirName.isEmpty
+            ? '⏳ Scanning (${_numFmt.format(totalFiles)} files)...'
+            : '⏳ Scanning (${_numFmt.format(totalFiles)} files): ${snap.currentDirName}';
+      }
+
+      for (final log in snap.logs) {
+        _addLog(log);
+      }
+
+      for (final err in snap.errorLogs) {
+        _addLog('✗ $err');
+        _fileLogger.error('Count', err);
+      }
+
+      if (snap.criticalError != null) {
+        _addLog('✗ Critical Error: ${snap.criticalError}');
+        _fileLogger.error('Count', 'Critical Error: ${snap.criticalError}');
+      }
+
+      if (snap.isDone) {
+        _stopRustJob();
+        if (!_stopRequested) {
+          _finishRun(wasStopped: false);
+        }
+        return;
+      }
+
+      notifyListeners();
+    } catch (e) {
+      _stopRustJob();
+      _addLog('✗ Critical Error: $e');
+      _fileLogger.error('Count', 'Critical Error: $e');
       _finishRun(wasStopped: false);
     }
   }
@@ -318,114 +395,115 @@ class CountFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  static Future<void> _isolateWorker(_CountParams params) async {
-    int files = 0;
-    int folders = 0;
-    int errors = 0;
-    List<String> logBatch = [];
-    final Set<String> visitedPaths = {};
-
-    void sendProgress(String? currentScanPath, {bool force = false}) {
-      if (force ||
-          logBatch.isNotEmpty ||
-          files % 100 == 0 ||
-          folders % 10 == 0) {
-        params.sendPort.send(
-          _CountProgress(
-            files: files,
-            folders: folders,
-            errors: errors,
-            logs: List.from(logBatch),
-            currentScanPath: currentScanPath,
-          ),
-        );
-        logBatch.clear();
-      }
-    }
-
-    Future<void> countDir(Directory dir) async {
-      String canonicalPath;
-      try {
-        canonicalPath = await dir.resolveSymbolicLinks();
-      } catch (_) {
-        canonicalPath = p.canonicalize(dir.path);
-      }
-
-      if (visitedPaths.contains(canonicalPath)) {
-        return; // Prevent cyclic symlink recursion loops
-      }
-      visitedPaths.add(canonicalPath);
-
-      try {
-        await for (final entity in dir.list(
-          recursive: false,
-          followLinks: false,
-        )) {
-          if (entity is File) {
-            files++;
-            if (params.logInterval == 1) {
-              logBatch.add('✓ Counted: ${p.basename(entity.path)}');
-            } else if (files % params.logInterval == 0) {
-              logBatch.add(
-                '✓ Counted ${params.logInterval} files (total: $files) – latest: ${p.basename(entity.path)}',
-              );
-            }
-            sendProgress(entity.path);
-          } else if (entity is Directory) {
-            folders++;
-            sendProgress(entity.path);
-            await countDir(entity);
-          } else if (entity is Link) {
-            try {
-              if (!await resolvesWithinRoot(params.targetPath, entity.path)) {
-                continue;
-              }
-              final targetType = await FileSystemEntity.type(entity.path);
-              if (targetType == FileSystemEntityType.directory) {
-                folders++;
-                sendProgress(entity.path);
-                await countDir(Directory(entity.path));
-              } else if (targetType == FileSystemEntityType.file) {
-                files++;
-                sendProgress(entity.path);
-              }
-            } catch (_) {}
-          }
-        }
-      } catch (e) {
-        errors++;
-        params.sendPort.send(
-          _CountProgress(
-            files: files,
-            folders: folders,
-            errors: errors,
-            errorLog: 'Error accessing: ${dir.path} — $e',
-          ),
-        );
-      }
-    }
-
-    try {
-      await countDir(Directory(params.targetPath));
-      sendProgress(null, force: true);
-      params.sendPort.send(
-        _CountProgress(
-          files: files,
-          folders: folders,
-          errors: errors,
-          isDone: true,
-        ),
-      );
-    } catch (e) {
-      params.sendPort.send(
-        _CountProgress(
-          errorLog: 'Critical Error: $e',
-          isDone: true,
-          files: files,
-          folders: folders,
-          errors: errors,
-        ),
-      );
-    }
-  }
+  // Gene - Nov, 25, 2026: Commented out Dart isolate worker after migrating Count to Rust count_engine.
+  // static Future<void> _isolateWorker(_CountParams params) async {
+  //   int files = 0;
+  //   int folders = 0;
+  //   int errors = 0;
+  //   List<String> logBatch = [];
+  //   final Set<String> visitedPaths = {};
+  //
+  //   void sendProgress(String? currentScanPath, {bool force = false}) {
+  //     if (force ||
+  //         logBatch.isNotEmpty ||
+  //         files % 100 == 0 ||
+  //         folders % 10 == 0) {
+  //       params.sendPort.send(
+  //         _CountProgress(
+  //           files: files,
+  //           folders: folders,
+  //           errors: errors,
+  //           logs: List.from(logBatch),
+  //           currentScanPath: currentScanPath,
+  //         ),
+  //       );
+  //       logBatch.clear();
+  //     }
+  //   }
+  //
+  //   Future<void> countDir(Directory dir) async {
+  //     String canonicalPath;
+  //     try {
+  //       canonicalPath = await dir.resolveSymbolicLinks();
+  //     } catch (_) {
+  //       canonicalPath = p.canonicalize(dir.path);
+  //     }
+  //
+  //     if (visitedPaths.contains(canonicalPath)) {
+  //       return;
+  //     }
+  //     visitedPaths.add(canonicalPath);
+  //
+  //     try {
+  //       await for (final entity in dir.list(
+  //         recursive: false,
+  //         followLinks: false,
+  //       )) {
+  //         if (entity is File) {
+  //           files++;
+  //           if (params.logInterval == 1) {
+  //             logBatch.add('✓ Counted: ${p.basename(entity.path)}');
+  //           } else if (files % params.logInterval == 0) {
+  //             logBatch.add(
+  //               '✓ Counted ${params.logInterval} files (total: $files) – latest: ${p.basename(entity.path)}',
+  //             );
+  //           }
+  //           sendProgress(entity.path);
+  //         } else if (entity is Directory) {
+  //           folders++;
+  //           sendProgress(entity.path);
+  //           await countDir(entity);
+  //         } else if (entity is Link) {
+  //           try {
+  //             if (!await resolvesWithinRoot(params.targetPath, entity.path)) {
+  //               continue;
+  //             }
+  //             final targetType = await FileSystemEntity.type(entity.path);
+  //             if (targetType == FileSystemEntityType.directory) {
+  //               folders++;
+  //               sendProgress(entity.path);
+  //               await countDir(Directory(entity.path));
+  //             } else if (targetType == FileSystemEntityType.file) {
+  //               files++;
+  //               sendProgress(entity.path);
+  //             }
+  //           } catch (_) {}
+  //         }
+  //       }
+  //     } catch (e) {
+  //       errors++;
+  //       params.sendPort.send(
+  //         _CountProgress(
+  //           files: files,
+  //           folders: folders,
+  //           errors: errors,
+  //           errorLog: 'Error accessing: ${dir.path} — $e',
+  //         ),
+  //       );
+  //     }
+  //   }
+  //
+  //   try {
+  //     await countDir(Directory(params.targetPath));
+  //     sendProgress(null, force: true);
+  //     params.sendPort.send(
+  //       _CountProgress(
+  //         files: files,
+  //         folders: folders,
+  //         errors: errors,
+  //         isDone: true,
+  //       ),
+  //     );
+  //   } catch (e) {
+  //     params.sendPort.send(
+  //       _CountProgress(
+  //         errorLog: 'Critical Error: $e',
+  //         isDone: true,
+  //         files: files,
+  //         folders: folders,
+  //         errors: errors,
+  //       ),
+  //     );
+  //   }
+  // }
 }

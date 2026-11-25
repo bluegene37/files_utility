@@ -249,6 +249,21 @@ Add the following secrets from **Partner Center → Product management → Produ
 
 When `MSSTORE_IDENTITY_NAME` and `MSSTORE_PUBLISHER` are set, tagged releases automatically build `dist/files_utility-<version>-msstore.msix` and upload it to the **GitHub Actions workflow artifact** (`windows-store-msix`) rather than the public GitHub Release (unsigned `--store` packages cannot be sideloaded directly by end users).
 
+<!-- Gene - Nov, 24, 2026: Document automated Microsoft Store publishing secrets, workflow_dispatch flags, and first-submission prerequisite -->
+#### GitHub Actions Secrets (Automated Store Publishing via `msstore`)
+To enable the `publish-windows-store` job in [`.github/workflows/release.yml`](.github/workflows/release.yml) (using `microsoft/microsoft-store-apppublisher@v1.4`), add the following secrets under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| :--- | :--- |
+| `AZURE_AD_TENANT_ID` | Microsoft Entra ID Directory (tenant) ID (`<YOUR_AZURE_AD_TENANT_ID>`) |
+| `AZURE_AD_CLIENT_ID` | Microsoft Entra ID Application (client) ID linked in Partner Center (`<YOUR_AZURE_AD_CLIENT_ID>`) |
+| `AZURE_AD_CLIENT_SECRET` | Client secret for the linked Entra ID app registration (`<YOUR_AZURE_AD_CLIENT_SECRET>`) |
+| `STORE_SELLER_ID` | Partner Center Seller ID (`<YOUR_STORE_SELLER_ID>`) |
+| `STORE_PRODUCT_ID` | App-specific 12-character Store ID from **Partner Center → Product management → Product identity → Store ID** (`<YOUR_STORE_PRODUCT_ID>`) |
+
+- **Automated & Manual Runs:** `publish-windows-store` runs automatically on `v*` tag pushes (uploading and committing the submission for Store certification), or on manual `workflow_dispatch` runs with `publish_to_store: true`. Set `store_draft: true` on `workflow_dispatch` to upload as a draft (`--noCommit`) without submitting for certification.
+- **First Submission Prerequisite:** Microsoft Partner Center requires the very first Store submission for an app to be created and submitted manually once in Partner Center before `msstore publish` can automate subsequent submissions.
+
 #### Local Microsoft Store MSIX Build (Windows)
 ```powershell
 $env:MSSTORE_IDENTITY_NAME = "<YOUR_MSSTORE_IDENTITY_NAME>"
@@ -292,8 +307,10 @@ dart run flutter_launcher_icons
 | :--- | :--- | :--- | :--- |
 | **Windows (`.exe`)** | **Unsigned by default — signing wired up, awaiting a certificate** | Microsoft Defender SmartScreen warns "Windows protected your PC / Unknown Publisher". Users click **More info** $\rightarrow$ **Run anyway**. | Add the two repository secrets below; `release.yml` then signs automatically via `signtool.exe`. |
 <!-- Gene - Nov, 23, 2026: Distinguish Microsoft Store MSIX signing from local sideloaded MSIX -->
+<!-- Gene - Nov, 24, 2026: Update Microsoft Store status row for automated msstore CI/CD publishing -->
 <!-- | **Windows (`.msix`)** | **Self-signed** | Requires installing the publisher certificate into the local `Trusted People` certificate store. | Acquire Microsoft Partner Center certificate or sign with organization CA. | -->
-| **Windows Microsoft Store (`.msix`)** | **Signed by Microsoft upon Store ingestion (`--store`)** | Trusted automatically by Windows when installed via Microsoft Store; no manual certificate purchase required. | Configure `MSSTORE_*` GitHub Secrets and upload the `windows-store-msix` CI artifact to Partner Center. |
+<!-- | **Windows Microsoft Store (`.msix`)** | **Signed by Microsoft upon Store ingestion (`--store`)** | Trusted automatically by Windows when installed via Microsoft Store; no manual certificate purchase required. | Configure `MSSTORE_*` GitHub Secrets and upload the `windows-store-msix` CI artifact to Partner Center. | -->
+| **Windows Microsoft Store (`.msix`)** | **Signed by Microsoft upon Store ingestion (`--store`) & Automated `msstore` CI/CD** | Trusted automatically by Windows when installed via Microsoft Store; no manual certificate purchase required. | Configure `MSSTORE_*`, `AZURE_AD_*`, and `STORE_*` GitHub Secrets for automated `msstore` submission (with `windows-store-msix` artifact download as manual fallback). |
 | **Windows (`.msix`, local sideload)** | **Self-signed / Test certificate** | Requires installing the test certificate into the local `Trusted People` certificate store. | Use Microsoft Store distribution or sign with a trusted organization CA certificate. |
 <!-- Gene - Oct, 07, 2026: Updated macOS signing status to Developer ID Application signed with notarization pipeline -->
 <!-- Previous implementation:

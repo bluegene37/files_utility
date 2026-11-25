@@ -10,7 +10,8 @@ import 'package:path/path.dart' as p;
 import '../models/ftp_upload_source.dart';
 import '../models/run_record.dart';
 import '../services/credential_obfuscator.dart';
-import '../services/file_creation_date.dart';
+// Gene - Nov, 25, 2026: Use native Rust FTP directory scanner (includes birthtime) instead of Dart stat loop.
+// import '../services/file_creation_date.dart';
 import '../services/file_logger.dart';
 // Gene - Nov, 23, 2026: Import config.ini / .env parser for FTP automation configuration imports.
 import '../services/ftp_ini_importer.dart';
@@ -18,6 +19,7 @@ import '../services/ftp_transfer_service.dart';
 import '../services/history_service.dart';
 import '../services/local_db_service.dart';
 import '../services/path_safety.dart';
+import '../services/rust_file_engines.dart';
 
 enum FtpDateMode {
   yesterday('Yesterday'),
@@ -49,6 +51,22 @@ enum FtpDateType {
     return FtpDateType.values.firstWhere(
       (t) => t.name == value,
       orElse: () => FtpDateType.creation,
+    );
+  }
+}
+
+// Gene - Nov, 24, 2026: Frequency options for global FTP scheduled runs (selected weekdays vs once a month).
+enum FtpScheduleFrequency {
+  weekly('Weekly (Selected Days)'),
+  monthly('Monthly (Once a Month)');
+
+  final String label;
+  const FtpScheduleFrequency(this.label);
+
+  static FtpScheduleFrequency fromStorage(String? value) {
+    return FtpScheduleFrequency.values.firstWhere(
+      (f) => f.name == value,
+      orElse: () => FtpScheduleFrequency.weekly,
     );
   }
 }
@@ -140,6 +158,9 @@ class FtpFilesProvider with ChangeNotifier {
     6: true,
     7: true,
   };
+  // Gene - Nov, 24, 2026: Add global schedule frequency (weekly vs monthly) and monthly day (0 = last day, 1-31).
+  FtpScheduleFrequency scheduleFrequency = FtpScheduleFrequency.weekly;
+  int scheduleMonthlyDay = 1;
   String onCompletionAction = 'repeat'; // 'repeat' or 'stop'
 
   // Runtime state
@@ -178,6 +199,7 @@ class FtpFilesProvider with ChangeNotifier {
   bool _saveInFlight = false;
   bool _savePending = false;
   Completer<void>? _saveIdleCompleter;
+  // Gene - Nov, 24, 2026: Track loaded profile ID so in-flight settings writes abort if profile switches or provider disposes.
   String? _loadedProfileId;
 
   FtpFilesProvider({
@@ -197,6 +219,10 @@ class FtpFilesProvider with ChangeNotifier {
     }
   }
 
+  // Gene - Nov, 24, 2026: Clear pending saves on profile switch before reloading settings.
+  // void _onProfileChanged() {
+  //   reloadSettings();
+  // }
   void _onProfileChanged() {
     _savePending = false;
     reloadSettings();
@@ -209,6 +235,16 @@ class FtpFilesProvider with ChangeNotifier {
     }
   }
 
+  // Gene - Nov, 24, 2026: Clear pending saves on dispose so in-flight writes cannot continue after disposal.
+  // @override
+  // void dispose() {
+  //   _disposed = true;
+  //   LocalDbService().removeListener(_onProfileChanged);
+  //   _scheduleTimer?.cancel();
+  //   _scheduleTimer = null;
+  //   unawaited(_activeClient?.disconnect());
+  //   super.dispose();
+  // }
   @override
   void dispose() {
     _disposed = true;
@@ -239,7 +275,67 @@ class FtpFilesProvider with ChangeNotifier {
     return sourcePath != null && sourcePath!.trim().isNotEmpty;
   }
 
+  // Gene - Nov, 24, 2026: Track any valid source (even disabled) for Run Selected and schedulable sources for Schedule arming.
+  bool get hasAnyValidSources {
+    if (useMultipleSources) {
+      return uploadSources.any((s) => s.isValid);
+    }
+    return sourcePath != null && sourcePath!.trim().isNotEmpty;
+  }
+
+  bool get hasSchedulableSources {
+    if (useMultipleSources) {
+      return uploadSources.any(
+        (s) =>
+            s.enabled &&
+            s.isValid &&
+            s.scheduleMode != FtpSourceScheduleMode.manualOnly,
+      );
+    }
+    return hasValidSources;
+  }
+
   bool get hasCheckedScheduleDays => runDays.values.any((checked) => checked);
+
+  // Gene - Nov, 24, 2026: Support weekly or monthly global schedule targeting and concise cadence summary.
+  bool get hasValidScheduleTarget =>
+      scheduleFrequency == FtpScheduleFrequency.monthly ||
+      hasCheckedScheduleDays;
+
+  String get scheduleCadenceSummary {
+    if (scheduleFrequency == FtpScheduleFrequency.monthly) {
+      return scheduleMonthlyDay <= 0
+          ? 'Monthly (Last day)'
+          : 'Monthly (Day $scheduleMonthlyDay)';
+    }
+    const dayNames = {
+      1: 'Mon',
+      2: 'Tue',
+      3: 'Wed',
+      4: 'Thu',
+      5: 'Fri',
+      6: 'Sat',
+      7: 'Sun',
+    };
+    final selected = [
+      for (int d = 1; d <= 7; d++)
+        if (runDays[d] == true) d,
+    ];
+    if (selected.isEmpty) return 'No days';
+    if (selected.length == 7) return 'Daily';
+    if (selected.length == 5 &&
+        selected[0] == 1 &&
+        selected[1] == 2 &&
+        selected[2] == 3 &&
+        selected[3] == 4 &&
+        selected[4] == 5) {
+      return 'Weekdays';
+    }
+    if (selected.length == 2 && selected[0] == 6 && selected[1] == 7) {
+      return 'Weekends';
+    }
+    return selected.map((d) => dayNames[d]!).join(', ');
+  }
 
   // Gene - Nov, 24, 2026: Helpers for checking whether a run end-time cutoff is active and formatting 24h times.
   bool get hasEndTimeLimit =>
@@ -254,13 +350,39 @@ class FtpFilesProvider with ChangeNotifier {
       hasValidConnection &&
       hasValidSources;
 
+  //   bool get canArmSchedule =>
+  //       !isProcessing &&
+  //       !isTestingConnection &&
+  //       enableSchedule &&
+  //       hasValidConnection &&
+  //       hasValidSources &&
+  //       hasCheckedScheduleDays;
+  //   // Gene - Nov, 24, 2026: Require at least one schedulable (non-Manual-Only) source to arm schedule and expose canRunSelected.
+  //   bool get canArmSchedule =>
+  //       !isProcessing &&
+  //       !isTestingConnection &&
+  //       enableSchedule &&
+  //       hasValidConnection &&
+  //       hasSchedulableSources &&
+  //       hasCheckedScheduleDays;
+  // Gene - Nov, 24, 2026: Allow arming schedule when global frequency is monthly or at least one weekday is checked.
   bool get canArmSchedule =>
       !isProcessing &&
       !isTestingConnection &&
       enableSchedule &&
       hasValidConnection &&
-      hasValidSources &&
-      hasCheckedScheduleDays;
+      hasSchedulableSources &&
+      hasValidScheduleTarget;
+
+  bool get canRunSelected =>
+      !isUploading &&
+      !isTestingConnection &&
+      hasValidConnection &&
+      useMultipleSources &&
+      hasAnyValidSources;
+
+  // Gene - Nov, 24, 2026: Expose injected clock for deterministic UI monthly status badges and tests.
+  DateTime get currentNow => _nowProvider();
 
   FtpConnectionConfig get connectionConfig => FtpConnectionConfig(
     host: host.trim(),
@@ -274,12 +396,86 @@ class FtpFilesProvider with ChangeNotifier {
 
   // --- Pure Static Helpers (Testable) ---
 
-  /// Returns the earliest future DateTime matching [runTime] on a checked [runDays] weekday.
+  //   /// Returns the earliest future DateTime matching [runTime] on a checked [runDays] weekday.
+  //   static DateTime? computeNextScheduledRun({
+  //     required DateTime now,
+  //     required TimeOfDay runTime,
+  //     required Map<int, bool> runDays,
+  //   }) {
+  //     final hasAnyDay = runDays.values.any((checked) => checked);
+  //     if (!hasAnyDay) return null;
+  //
+  //     for (int offset = 0; offset <= 7; offset++) {
+  //       final candidateDay = DateTime(
+  //         now.year,
+  //         now.month,
+  //         now.day,
+  //       ).add(Duration(days: offset));
+  //       if (runDays[candidateDay.weekday] != true) continue;
+  //
+  //       final candidate = DateTime(
+  //         candidateDay.year,
+  //         candidateDay.month,
+  //         candidateDay.day,
+  //         runTime.hour,
+  //         runTime.minute,
+  //       );
+  //       if (candidate.isAfter(now)) {
+  //         return candidate;
+  //       }
+  //     }
+  //     return null;
+  //   }
+  // Gene - Nov, 24, 2026: Support weekly (checked weekdays) and monthly (day 1-31 or 0=last day) next-run calculation.
+  static int _resolveMonthlyTargetDay(int year, int month, int monthlyDay) {
+    final lastDay = FtpUploadSource.daysInMonth(year, month);
+    return (monthlyDay <= 0 || monthlyDay > lastDay) ? lastDay : monthlyDay;
+  }
+
+  static bool _matchesScheduleDay(
+    DateTime day, {
+    required FtpScheduleFrequency frequency,
+    required Map<int, bool> runDays,
+    required int monthlyDay,
+  }) {
+    if (frequency == FtpScheduleFrequency.monthly) {
+      return day.day ==
+          _resolveMonthlyTargetDay(day.year, day.month, monthlyDay);
+    }
+    return runDays[day.weekday] == true;
+  }
+
+  /// Returns the earliest future DateTime matching [runTime] under [frequency]
+  /// (either a checked [runDays] weekday or [monthlyDay] of month, where 0 = last day).
   static DateTime? computeNextScheduledRun({
     required DateTime now,
     required TimeOfDay runTime,
     required Map<int, bool> runDays,
+    FtpScheduleFrequency frequency = FtpScheduleFrequency.weekly,
+    int monthlyDay = 1,
   }) {
+    if (frequency == FtpScheduleFrequency.monthly) {
+      for (int monthOffset = 0; monthOffset <= 2; monthOffset++) {
+        final monthStart = DateTime(now.year, now.month + monthOffset, 1);
+        final targetDay = _resolveMonthlyTargetDay(
+          monthStart.year,
+          monthStart.month,
+          monthlyDay,
+        );
+        final candidate = DateTime(
+          monthStart.year,
+          monthStart.month,
+          targetDay,
+          runTime.hour,
+          runTime.minute,
+        );
+        if (candidate.isAfter(now)) {
+          return candidate;
+        }
+      }
+      return null;
+    }
+
     final hasAnyDay = runDays.values.any((checked) => checked);
     if (!hasAnyDay) return null;
 
@@ -336,6 +532,60 @@ class FtpFilesProvider with ChangeNotifier {
     );
   }
 
+  //   /// Returns the currently active `(start, end)` scheduled window containing [now],
+  //   /// checking both today and yesterday (for overnight windows), or `null` when
+  //   /// outside the window or when [runTime] == [runEndTime] (single trigger point).
+  //   static ({DateTime start, DateTime end})? computeActiveWindow({
+  //     required DateTime now,
+  //     required TimeOfDay runTime,
+  //     required TimeOfDay runEndTime,
+  //     required Map<int, bool> runDays,
+  //   }) {
+  //     final startMin = runTime.hour * 60 + runTime.minute;
+  //     final endMin = runEndTime.hour * 60 + runEndTime.minute;
+  //     if (startMin == endMin) return null;
+  //
+  //     final todayStart = DateTime(
+  //       now.year,
+  //       now.month,
+  //       now.day,
+  //       runTime.hour,
+  //       runTime.minute,
+  //     );
+  //     if (runDays[todayStart.weekday] == true) {
+  //       final todayEnd = computeWindowEnd(
+  //         windowStart: todayStart,
+  //         runTime: runTime,
+  //         runEndTime: runEndTime,
+  //       )!;
+  //       if (!now.isBefore(todayStart) && now.isBefore(todayEnd)) {
+  //         return (start: todayStart, end: todayEnd);
+  //       }
+  //     }
+  //
+  //     if (endMin < startMin) {
+  //       final prevStart = DateTime(
+  //         now.year,
+  //         now.month,
+  //         now.day - 1,
+  //         runTime.hour,
+  //         runTime.minute,
+  //       );
+  //       if (runDays[prevStart.weekday] == true) {
+  //         final prevEnd = computeWindowEnd(
+  //           windowStart: prevStart,
+  //           runTime: runTime,
+  //           runEndTime: runEndTime,
+  //         )!;
+  //         if (!now.isBefore(prevStart) && now.isBefore(prevEnd)) {
+  //           return (start: prevStart, end: prevEnd);
+  //         }
+  //       }
+  //     }
+  //
+  //     return null;
+  //   }
+  // Gene - Nov, 24, 2026: Support weekly and monthly day matching in computeActiveWindow (including overnight month-end crossovers).
   /// Returns the currently active `(start, end)` scheduled window containing [now],
   /// checking both today and yesterday (for overnight windows), or `null` when
   /// outside the window or when [runTime] == [runEndTime] (single trigger point).
@@ -344,6 +594,8 @@ class FtpFilesProvider with ChangeNotifier {
     required TimeOfDay runTime,
     required TimeOfDay runEndTime,
     required Map<int, bool> runDays,
+    FtpScheduleFrequency frequency = FtpScheduleFrequency.weekly,
+    int monthlyDay = 1,
   }) {
     final startMin = runTime.hour * 60 + runTime.minute;
     final endMin = runEndTime.hour * 60 + runEndTime.minute;
@@ -356,7 +608,12 @@ class FtpFilesProvider with ChangeNotifier {
       runTime.hour,
       runTime.minute,
     );
-    if (runDays[todayStart.weekday] == true) {
+    if (_matchesScheduleDay(
+      todayStart,
+      frequency: frequency,
+      runDays: runDays,
+      monthlyDay: monthlyDay,
+    )) {
       final todayEnd = computeWindowEnd(
         windowStart: todayStart,
         runTime: runTime,
@@ -375,7 +632,12 @@ class FtpFilesProvider with ChangeNotifier {
         runTime.hour,
         runTime.minute,
       );
-      if (runDays[prevStart.weekday] == true) {
+      if (_matchesScheduleDay(
+        prevStart,
+        frequency: frequency,
+        runDays: runDays,
+        monthlyDay: monthlyDay,
+      )) {
         final prevEnd = computeWindowEnd(
           windowStart: prevStart,
           runTime: runTime,
@@ -430,6 +692,58 @@ class FtpFilesProvider with ChangeNotifier {
         return !target.isBefore(from) && !target.isAfter(to);
       case FtpDateMode.allFiles:
         return true;
+    }
+  }
+
+  // Gene - Nov, 24, 2026: Per-source date filter evaluation supporting Use Global fallback and independent overrides.
+  static bool matchesSourceDateFilter({
+    required DateTime fileDate,
+    required FtpUploadSource source,
+    required FtpDateMode globalDateMode,
+    required DateTime referenceNow,
+    required int globalDaysAgo,
+    required DateTime globalSpecificDate,
+    required DateTime globalFromDate,
+    required DateTime globalToDate,
+  }) {
+    if (source.dateFilterMode == FtpSourceDateFilterMode.useGlobal) {
+      return matchesDateFilter(
+        fileDate: fileDate,
+        dateMode: globalDateMode,
+        referenceNow: referenceNow,
+        daysAgo: globalDaysAgo,
+        specificDate: globalSpecificDate,
+        fromDate: globalFromDate,
+        toDate: globalToDate,
+      );
+    }
+
+    if (source.dateFilterMode == FtpSourceDateFilterMode.allFiles) {
+      return true;
+    }
+
+    final target = DateTime(fileDate.year, fileDate.month, fileDate.day);
+    final refDay = DateTime(
+      referenceNow.year,
+      referenceNow.month,
+      referenceNow.day,
+    );
+
+    switch (source.dateFilterMode) {
+      case FtpSourceDateFilterMode.useGlobal:
+      case FtpSourceDateFilterMode.allFiles:
+        return true;
+      case FtpSourceDateFilterMode.today:
+        return target == refDay;
+      case FtpSourceDateFilterMode.yesterday:
+        return target == refDay.subtract(const Duration(days: 1));
+      case FtpSourceDateFilterMode.daysAgo:
+        final d = source.dateFilterDays.clamp(0, 3650);
+        return target == refDay.subtract(Duration(days: d));
+      case FtpSourceDateFilterMode.lastNDays:
+        final n = source.dateFilterDays.clamp(1, 3650);
+        final start = refDay.subtract(Duration(days: n - 1));
+        return !target.isBefore(start) && !target.isAfter(refDay);
     }
   }
 
@@ -515,6 +829,7 @@ class FtpFilesProvider with ChangeNotifier {
   Future<void> _loadSettings() async {
     final db = LocalDbService();
     final profileId = db.currentProfileId;
+    // Gene - Nov, 24, 2026: Record loaded profile ID for cross-profile write guards.
     _loadedProfileId = profileId;
 
     host = db.getString('ftp_host') ?? '';
@@ -614,6 +929,15 @@ class FtpFilesProvider with ChangeNotifier {
       runDays[day] = db.getBool('ftp_runDay_$day') ?? true;
     }
 
+    // Gene - Nov, 24, 2026: Load global schedule frequency and monthly day (defaults to weekly / day 1).
+    scheduleFrequency = FtpScheduleFrequency.fromStorage(
+      db.getString('ftp_scheduleFrequency'),
+    );
+    scheduleMonthlyDay = (db.getInt('ftp_scheduleMonthlyDay') ?? 1).clamp(
+      0,
+      31,
+    );
+
     onCompletionAction = db.getString('ftp_onCompletionAction') ?? 'repeat';
 
     settingsVersion++;
@@ -625,6 +949,8 @@ class FtpFilesProvider with ChangeNotifier {
   }
 
   Future<void> _saveSettings() {
+    // if (!_persistSettings) return Future.value();
+    // Gene - Nov, 24, 2026: Skip scheduling settings saves after provider disposal.
     if (!_persistSettings || _disposed) return Future.value();
     _savePending = true;
     _saveIdleCompleter ??= Completer<void>();
@@ -679,6 +1005,81 @@ class FtpFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Gene - Nov, 24, 2026: Guard each sequential SQLite write against profile switching or provider disposal.
+  // Future<void> _writeSettings() async {
+  //   final db = LocalDbService();
+  //   final profileId = db.currentProfileId;
+  //   if (db.currentProfileId != profileId) return;
+  //
+  //   await db.setOrRemoveString('ftp_host', _nullIfEmpty(host));
+  //   await db.setString('ftp_protocol', protocol.storageKey);
+  //   await db.setInt('ftp_port', port);
+  //   await db.setOrRemoveString('ftp_username', _nullIfEmpty(username));
+  //
+  //   if (password.isEmpty) {
+  //     await db.setOrRemoveString('ftp_password', null);
+  //   } else {
+  //     await db.setString(
+  //       'ftp_password',
+  //       CredentialObfuscator.encode(password, profileId: profileId),
+  //     );
+  //   }
+  //
+  //   await db.setString('ftp_transferMode', transferMode.storageKey);
+  //   await db.setInt('ftp_timeoutSeconds', timeoutSeconds);
+  //
+  //   await db.setBool('ftp_useMultipleSources', useMultipleSources);
+  //   await db.setOrRemoveString('ftp_sourcePath', sourcePath);
+  //   await db.setOrRemoveString('ftp_subfolders', _nullIfEmpty(subfolders));
+  //   await db.setOrRemoveString(
+  //     'ftp_remoteDirectory',
+  //     _nullIfEmpty(remoteDirectory),
+  //   );
+  //   await db.setString(
+  //     'ftp_uploadSources',
+  //     jsonEncode(uploadSources.map((s) => s.toJson()).toList()),
+  //   );
+  //
+  //   await db.setString('ftp_dateMode', dateMode.name);
+  //   await db.setInt('ftp_daysAgo', daysAgo);
+  //   await db.setString('ftp_dateType', dateType.name);
+  //
+  //   await db.setInt('ftp_specificDate_year', specificDate.year);
+  //   await db.setInt('ftp_specificDate_month', specificDate.month);
+  //   await db.setInt('ftp_specificDate_day', specificDate.day);
+  //
+  //   await db.setInt('ftp_fromDate_year', fromDate.year);
+  //   await db.setInt('ftp_fromDate_month', fromDate.month);
+  //   await db.setInt('ftp_fromDate_day', fromDate.day);
+  //
+  //   await db.setInt('ftp_toDate_year', toDate.year);
+  //   await db.setInt('ftp_toDate_month', toDate.month);
+  //   await db.setInt('ftp_toDate_day', toDate.day);
+  //
+  //   await db.setBool('ftp_includeSubfolders', includeSubfolders);
+  //   await db.setBool('ftp_skipIfExists', skipIfExists);
+  //   await db.setBool('ftp_verifySizeAfterUpload', verifySizeAfterUpload);
+  //   await db.setBool('ftp_dryRun', dryRun);
+  //   await db.setInt('ftp_retryCount', retryCount);
+  //   await db.setInt('ftp_retryDelaySeconds', retryDelaySeconds);
+  //   await db.setInt('ftp_logInterval', logInterval);
+  //   // Gene - Nov, 23, 2026: Persist FTP log retention days.
+  //   await db.setInt('ftp_logKeepDays', logKeepDays);
+  //
+  //   await db.setBool('ftp_enableSchedule', enableSchedule);
+  //   await db.setInt('ftp_runHour', runTime.hour);
+  //   await db.setInt('ftp_runMinute', runTime.minute);
+  //   // Gene - Nov, 24, 2026: Persist schedule window end time.
+  //   await db.setInt('ftp_runEndHour', runEndTime.hour);
+  //   await db.setInt('ftp_runEndMinute', runEndTime.minute);
+  //   for (int day = 1; day <= 7; day++) {
+  //     await db.setBool('ftp_runDay_$day', runDays[day] ?? true);
+  //   }
+  //   // Gene - Nov, 24, 2026: Persist global schedule frequency and monthly day.
+  //   await db.setString('ftp_scheduleFrequency', scheduleFrequency.name);
+  //   await db.setInt('ftp_scheduleMonthlyDay', scheduleMonthlyDay);
+  //   await db.setString('ftp_onCompletionAction', onCompletionAction);
+  // }
   Future<void> _writeSettings() async {
     final db = LocalDbService();
     final expectedProfileId = _loadedProfileId ?? db.currentProfileId;
@@ -741,6 +1142,9 @@ class FtpFilesProvider with ChangeNotifier {
       () => db.setInt('ftp_runEndMinute', runEndTime.minute),
       for (int day = 1; day <= 7; day++)
         () => db.setBool('ftp_runDay_$day', runDays[day] ?? true),
+      // Gene - Nov, 24, 2026: Persist global schedule frequency and monthly day.
+      () => db.setString('ftp_scheduleFrequency', scheduleFrequency.name),
+      () => db.setInt('ftp_scheduleMonthlyDay', scheduleMonthlyDay),
       () => db.setString('ftp_onCompletionAction', onCompletionAction),
     ];
 
@@ -918,6 +1322,78 @@ class FtpFilesProvider with ChangeNotifier {
   void setSourceEnabledAt(int index, bool enabled) {
     if (index < 0 || index >= uploadSources.length) return;
     uploadSources[index] = uploadSources[index].copyWith(enabled: enabled);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  // Gene - Nov, 24, 2026: Per-source schedule cadence, date filter override, and monthly completion reset setters.
+  void setSourceScheduleModeAt(int index, FtpSourceScheduleMode mode) {
+    if (index < 0 || index >= uploadSources.length) return;
+    uploadSources[index] = uploadSources[index].copyWith(scheduleMode: mode);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSourceWeeklyDayAt(int index, int day, bool selected) {
+    if (index < 0 || index >= uploadSources.length) return;
+    if (day < 1 || day > 7) return;
+    final updatedDays = uploadSources[index].weeklyDays
+        .where((d) => d >= 1 && d <= 7)
+        .toSet();
+    if (selected) {
+      updatedDays.add(day);
+    } else {
+      updatedDays.remove(day);
+    }
+    final sorted = updatedDays.toList()..sort();
+    uploadSources[index] = uploadSources[index].copyWith(weeklyDays: sorted);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSourceMonthlyDayAt(int index, int day) {
+    if (index < 0 || index >= uploadSources.length) return;
+    uploadSources[index] = uploadSources[index].copyWith(
+      monthlyDay: day.clamp(0, 31),
+    );
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSourceDateFilterModeAt(int index, FtpSourceDateFilterMode mode) {
+    if (index < 0 || index >= uploadSources.length) return;
+    final current = uploadSources[index];
+    final adjustedDays =
+        (mode == FtpSourceDateFilterMode.lastNDays &&
+            current.dateFilterDays < 1)
+        ? 1
+        : current.dateFilterDays;
+    uploadSources[index] = current.copyWith(
+      dateFilterMode: mode,
+      dateFilterDays: adjustedDays,
+    );
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSourceDateFilterDaysAt(int index, int days) {
+    if (index < 0 || index >= uploadSources.length) return;
+    final current = uploadSources[index];
+    final minDays = current.dateFilterMode == FtpSourceDateFilterMode.lastNDays
+        ? 1
+        : 0;
+    uploadSources[index] = current.copyWith(
+      dateFilterDays: days.clamp(minDays, 3650),
+    );
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void resetSourceMonthlyCompletionAt(int index) {
+    if (index < 0 || index >= uploadSources.length) return;
+    final src = uploadSources[index];
+    uploadSources[index] = src.copyWith(clearMonthlyCompletion: true);
+    _addLog('🔄 Reset monthly schedule state for "${src.displayName}".');
     _saveSettings();
     notifyListeners();
   }
@@ -1156,12 +1632,22 @@ class FtpFilesProvider with ChangeNotifier {
         'transferMode': transferMode.storageKey,
         'timeoutSeconds': timeoutSeconds,
       },
+      //       'sources': {
+      //         'useMultipleSources': useMultipleSources,
+      //         'sourcePath': sourcePath,
+      //         'subfolders': subfolders,
+      //         'remoteDirectory': remoteDirectory,
+      //         'uploadSources': uploadSources.map((s) => s.toJson()).toList(),
+      //       },
+      // Gene - Nov, 24, 2026: Exclude runtime monthly completion state from exported FTP settings JSON.
       'sources': {
         'useMultipleSources': useMultipleSources,
         'sourcePath': sourcePath,
         'subfolders': subfolders,
         'remoteDirectory': remoteDirectory,
-        'uploadSources': uploadSources.map((s) => s.toJson()).toList(),
+        'uploadSources': uploadSources
+            .map((s) => s.toJson(includeRuntimeState: false))
+            .toList(),
       },
       'filters': {
         'dateMode': dateMode.name,
@@ -1188,26 +1674,50 @@ class FtpFilesProvider with ChangeNotifier {
       //         'runDays': {for (int d = 1; d <= 7; d++) '$d': runDays[d] ?? true},
       //         'onCompletionAction': onCompletionAction,
       //       },
-      // Gene - Nov, 24, 2026: Export schedule runEndHour and runEndMinute in FTP settings JSON.
+      //       // Gene - Nov, 24, 2026: Export schedule runEndHour and runEndMinute in FTP settings JSON.
+      //       'schedule': {
+      //         'enableSchedule': enableSchedule,
+      //         'runHour': runTime.hour,
+      //         'runMinute': runTime.minute,
+      //         'runEndHour': runEndTime.hour,
+      //         'runEndMinute': runEndTime.minute,
+      //         'runDays': {for (int d = 1; d <= 7; d++) '$d': runDays[d] ?? true},
+      //         'onCompletionAction': onCompletionAction,
+      //       },
+      // Gene - Nov, 24, 2026: Export global schedule frequency and monthlyDay in FTP settings JSON.
       'schedule': {
         'enableSchedule': enableSchedule,
         'runHour': runTime.hour,
         'runMinute': runTime.minute,
         'runEndHour': runEndTime.hour,
         'runEndMinute': runEndTime.minute,
+        'frequency': scheduleFrequency.name,
+        'monthlyDay': scheduleMonthlyDay,
         'runDays': {for (int d = 1; d <= 7; d++) '$d': runDays[d] ?? true},
         'onCompletionAction': onCompletionAction,
       },
     };
   }
 
+  //   Map<String, dynamic> exportUploadSourcesJson({DateTime? now}) {
+  //     return {
+  //       'app': 'Files Utility',
+  //       'type': 'ftp_sources',
+  //       'schemaVersion': 1,
+  //       'exportedAt': (now ?? _nowProvider()).toIso8601String(),
+  //       'uploadSources': uploadSources.map((s) => s.toJson()).toList(),
+  //     };
+  //   }
+  // Gene - Nov, 24, 2026: Exclude runtime monthly completion state from exported upload sources JSON.
   Map<String, dynamic> exportUploadSourcesJson({DateTime? now}) {
     return {
       'app': 'Files Utility',
       'type': 'ftp_sources',
       'schemaVersion': 1,
       'exportedAt': (now ?? _nowProvider()).toIso8601String(),
-      'uploadSources': uploadSources.map((s) => s.toJson()).toList(),
+      'uploadSources': uploadSources
+          .map((s) => s.toJson(includeRuntimeState: false))
+          .toList(),
     };
   }
 
@@ -1219,12 +1729,35 @@ class FtpFilesProvider with ChangeNotifier {
         '  ',
       ).convert(exportUploadSourcesJson(now: now));
 
+  //   List<FtpUploadSource> _parseUploadSourcesList(dynamic rawList) {
+  //     if (rawList is! List) return const [];
+  //     final parsed = <FtpUploadSource>[];
+  //     for (final entry in rawList) {
+  //       if (entry is! Map) continue;
+  //       final src = FtpUploadSource.fromJson(Map<String, dynamic>.from(entry));
+  //       parsed.add(
+  //         FtpUploadSource(
+  //           name: src.name.trim(),
+  //           localPath: _sanitizePath(src.localPath),
+  //           subfolders: src.subfolders.trim(),
+  //           ftpDest: src.ftpDest.trim(),
+  //           runOrder: src.runOrder.clamp(1, 20),
+  //           enabled: src.enabled,
+  //         ),
+  //       );
+  //     }
+  //     return parsed;
+  //   }
+  // Gene - Nov, 24, 2026: Preserve per-source schedule and date filter overrides on JSON import while stripping runtime completion fields.
   List<FtpUploadSource> _parseUploadSourcesList(dynamic rawList) {
     if (rawList is! List) return const [];
     final parsed = <FtpUploadSource>[];
     for (final entry in rawList) {
       if (entry is! Map) continue;
       final src = FtpUploadSource.fromJson(Map<String, dynamic>.from(entry));
+      final minDays = src.dateFilterMode == FtpSourceDateFilterMode.lastNDays
+          ? 1
+          : 0;
       parsed.add(
         FtpUploadSource(
           name: src.name.trim(),
@@ -1233,6 +1766,11 @@ class FtpFilesProvider with ChangeNotifier {
           ftpDest: src.ftpDest.trim(),
           runOrder: src.runOrder.clamp(1, 20),
           enabled: src.enabled,
+          scheduleMode: src.scheduleMode,
+          weeklyDays: List<int>.from(src.weeklyDays),
+          monthlyDay: src.monthlyDay.clamp(0, 31),
+          dateFilterMode: src.dateFilterMode,
+          dateFilterDays: src.dateFilterDays.clamp(minDays, 3650),
         ),
       );
     }
@@ -1479,7 +2017,45 @@ class FtpFilesProvider with ChangeNotifier {
     //         onCompletionAction = action as String;
     //       }
     //     }
-    // Gene - Nov, 24, 2026: Import schedule runEndHour/runEndMinute with legacy start-only fallback.
+    //     // Gene - Nov, 24, 2026: Import schedule runEndHour/runEndMinute with legacy start-only fallback.
+    //     if (schedule != null) {
+    //       if (schedule.containsKey('enableSchedule')) {
+    //         enableSchedule = schedule['enableSchedule'] as bool? ?? enableSchedule;
+    //       }
+    //       final runHour = (schedule['runHour'] as num?)?.toInt();
+    //       final runMinute = (schedule['runMinute'] as num?)?.toInt();
+    //       if (runHour != null && runMinute != null) {
+    //         runTime = TimeOfDay(
+    //           hour: runHour.clamp(0, 23),
+    //           minute: runMinute.clamp(0, 59),
+    //         );
+    //       }
+    //       final runEndHour = (schedule['runEndHour'] as num?)?.toInt();
+    //       final runEndMinute = (schedule['runEndMinute'] as num?)?.toInt();
+    //       if (runEndHour != null && runEndMinute != null) {
+    //         runEndTime = TimeOfDay(
+    //           hour: runEndHour.clamp(0, 23),
+    //           minute: runEndMinute.clamp(0, 59),
+    //         );
+    //       } else if (runHour != null && runMinute != null) {
+    //         // Legacy JSON export with only start time: preserve no-cutoff behavior.
+    //         runEndTime = runTime;
+    //       }
+    //       if (schedule['runDays'] is Map) {
+    //         final rawDays = Map<String, dynamic>.from(schedule['runDays'] as Map);
+    //         for (int day = 1; day <= 7; day++) {
+    //           final val = rawDays['$day'];
+    //           if (val is bool) {
+    //             runDays[day] = val;
+    //           }
+    //         }
+    //       }
+    //       final action = schedule['onCompletionAction'];
+    //       if (action == 'repeat' || action == 'stop') {
+    //         onCompletionAction = action as String;
+    //       }
+    //     }
+    // Gene - Nov, 24, 2026: Import global schedule frequency and monthlyDay (falling back to weekly for legacy JSON).
     if (schedule != null) {
       if (schedule.containsKey('enableSchedule')) {
         enableSchedule = schedule['enableSchedule'] as bool? ?? enableSchedule;
@@ -1502,6 +2078,14 @@ class FtpFilesProvider with ChangeNotifier {
       } else if (runHour != null && runMinute != null) {
         // Legacy JSON export with only start time: preserve no-cutoff behavior.
         runEndTime = runTime;
+      }
+      final rawFrequency = schedule['frequency'];
+      scheduleFrequency = rawFrequency is String
+          ? FtpScheduleFrequency.fromStorage(rawFrequency)
+          : FtpScheduleFrequency.weekly;
+      final rawMonthlyDay = (schedule['monthlyDay'] as num?)?.toInt();
+      if (rawMonthlyDay != null) {
+        scheduleMonthlyDay = rawMonthlyDay.clamp(0, 31);
       }
       if (schedule['runDays'] is Map) {
         final rawDays = Map<String, dynamic>.from(schedule['runDays'] as Map);
@@ -1694,18 +2278,87 @@ class FtpFilesProvider with ChangeNotifier {
     }
   }
 
+  //   void setRunDay(int day, bool value) {
+  //     runDays[day] = value;
+  //     _saveSettings();
+  //     if (isScheduleArmed && !isUploading) {
+  //       if (!hasCheckedScheduleDays) {
+  //         _scheduleTimer?.cancel();
+  //         _scheduleTimer = null;
+  //         isScheduleArmed = false;
+  //         nextScheduledRun = null;
+  //         currentStatus = 'Idle';
+  //         _addLog('⚠️ Schedule disarmed because no run days remain selected.');
+  //       } else {
+  //         _recomputeArmedNextRun();
+  //         return;
+  //       }
+  //     }
+  //     notifyListeners();
+  //   }
+  // Gene - Nov, 24, 2026: Support weekly/monthly frequency, monthly day, and quick day presets with clean armed-state updates.
+  void _disarmBecauseInvalidTarget(String reason) {
+    _scheduleTimer?.cancel();
+    _scheduleTimer = null;
+    isScheduleArmed = false;
+    nextScheduledRun = null;
+    currentStatus = 'Idle';
+    _addLog('⚠️ Schedule disarmed: $reason');
+  }
+
   void setRunDay(int day, bool value) {
     runDays[day] = value;
     _saveSettings();
+    if (isScheduleArmed && !isUploading && !hasValidScheduleTarget) {
+      _disarmBecauseInvalidTarget('no run days remain selected.');
+      notifyListeners();
+      return;
+    }
+    if (isScheduleArmed &&
+        !isUploading &&
+        scheduleFrequency == FtpScheduleFrequency.weekly) {
+      _recomputeArmedNextRun();
+      return;
+    }
+    notifyListeners();
+  }
+
+  void setScheduleFrequency(FtpScheduleFrequency frequency) {
+    if (scheduleFrequency == frequency) return;
+    scheduleFrequency = frequency;
+    _saveSettings();
     if (isScheduleArmed && !isUploading) {
-      if (!hasCheckedScheduleDays) {
-        _scheduleTimer?.cancel();
-        _scheduleTimer = null;
-        isScheduleArmed = false;
-        nextScheduledRun = null;
-        currentStatus = 'Idle';
-        _addLog('⚠️ Schedule disarmed because no run days remain selected.');
+      if (!hasValidScheduleTarget) {
+        _disarmBecauseInvalidTarget('no run days remain selected.');
       } else {
+        _recomputeArmedNextRun();
+        return;
+      }
+    }
+    notifyListeners();
+  }
+
+  void setScheduleMonthlyDay(int day) {
+    scheduleMonthlyDay = day.clamp(0, 31);
+    _saveSettings();
+    if (isScheduleArmed &&
+        !isUploading &&
+        scheduleFrequency == FtpScheduleFrequency.monthly) {
+      _recomputeArmedNextRun();
+      return;
+    }
+    notifyListeners();
+  }
+
+  void setRunDaysPreset(Set<int> enabledDays) {
+    for (int d = 1; d <= 7; d++) {
+      runDays[d] = enabledDays.contains(d);
+    }
+    _saveSettings();
+    if (isScheduleArmed && !isUploading) {
+      if (!hasValidScheduleTarget) {
+        _disarmBecauseInvalidTarget('no run days remain selected.');
+      } else if (scheduleFrequency == FtpScheduleFrequency.weekly) {
         _recomputeArmedNextRun();
         return;
       }
@@ -1719,6 +2372,7 @@ class FtpFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  //   // Gene - Nov, 24, 2026: Include optional end-time window suffix in recomputed schedule status and log.
   //   void _recomputeArmedNextRun() {
   //     final next = computeNextScheduledRun(
   //       now: _nowProvider(),
@@ -1728,18 +2382,35 @@ class FtpFilesProvider with ChangeNotifier {
   //     nextScheduledRun = next;
   //     if (next != null) {
   //       final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
-  //       currentStatus = '⏰ Scheduled — Next run: $formatted';
-  //       _addLog('⏰ Schedule updated — next run at $formatted.');
+  //       final windowSuffix = hasEndTimeLimit
+  //           ? ' (until ${_formatTime24(runEndTime)})'
+  //           : '';
+  //       currentStatus = '⏰ Scheduled — Next run: $formatted$windowSuffix';
+  //       _addLog('⏰ Schedule updated — next run at $formatted$windowSuffix.');
   //     }
   //     notifyListeners();
   //   }
-  // Gene - Nov, 24, 2026: Include optional end-time window suffix in recomputed schedule status and log.
+  // Gene - Nov, 24, 2026: Route armed next-run and active-window helpers through global frequency & monthlyDay.
+  DateTime? _computeNextRunFrom(DateTime now) => computeNextScheduledRun(
+    now: now,
+    runTime: runTime,
+    runDays: runDays,
+    frequency: scheduleFrequency,
+    monthlyDay: scheduleMonthlyDay,
+  );
+
+  ({DateTime start, DateTime end})? _computeActiveWindowFrom(DateTime now) =>
+      computeActiveWindow(
+        now: now,
+        runTime: runTime,
+        runEndTime: runEndTime,
+        runDays: runDays,
+        frequency: scheduleFrequency,
+        monthlyDay: scheduleMonthlyDay,
+      );
+
   void _recomputeArmedNextRun() {
-    final next = computeNextScheduledRun(
-      now: _nowProvider(),
-      runTime: runTime,
-      runDays: runDays,
-    );
+    final next = _computeNextRunFrom(_nowProvider());
     nextScheduledRun = next;
     if (next != null) {
       final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
@@ -1906,13 +2577,16 @@ class FtpFilesProvider with ChangeNotifier {
   void startSchedule() {
     if (!canArmSchedule) return;
 
+    //     final now = _nowProvider();
+    //     final activeWindow = computeActiveWindow(
+    //       now: now,
+    //       runTime: runTime,
+    //       runEndTime: runEndTime,
+    //       runDays: runDays,
+    //     );
+    // Gene - Nov, 24, 2026: Evaluate active window using global scheduleFrequency and scheduleMonthlyDay.
     final now = _nowProvider();
-    final activeWindow = computeActiveWindow(
-      now: now,
-      runTime: runTime,
-      runEndTime: runEndTime,
-      runDays: runDays,
-    );
+    final activeWindow = _computeActiveWindowFrom(now);
     if (activeWindow != null) {
       _stopRequested = false;
       _windowExpired = false;
@@ -1936,11 +2610,13 @@ class FtpFilesProvider with ChangeNotifier {
       return;
     }
 
-    final next = computeNextScheduledRun(
-      now: now,
-      runTime: runTime,
-      runDays: runDays,
-    );
+    //     final next = computeNextScheduledRun(
+    //       now: now,
+    //       runTime: runTime,
+    //       runDays: runDays,
+    //     );
+    // Gene - Nov, 24, 2026: Compute next run using global scheduleFrequency and scheduleMonthlyDay.
+    final next = _computeNextRunFrom(now);
     if (next == null) {
       _addLog('⚠️ Select at least one weekday before starting the schedule.');
       notifyListeners();
@@ -1992,15 +2668,36 @@ class FtpFilesProvider with ChangeNotifier {
         _addLog('⏭ Missed scheduled window ($missedFmt – $endFmt).');
         nextScheduledRun = null;
 
+        //         if (onCompletionAction == 'repeat' &&
+        //             enableSchedule &&
+        //             hasCheckedScheduleDays) {
+        //           final activeNow = computeActiveWindow(
+        //             now: now,
+        //             runTime: runTime,
+        //             runEndTime: runEndTime,
+        //             runDays: runDays,
+        //           );
+        //           if (activeNow != null) {
+        //             _addLog(
+        //               '⏰ Inside current run window (${_formatTime24(runTime)} – ${_formatTime24(runEndTime)}). Starting upload...',
+        //             );
+        //             await _executeUploadPass(
+        //               isScheduledRun: true,
+        //               windowEnd: activeNow.end,
+        //             );
+        //             return;
+        //           }
+        //
+        //           final next = computeNextScheduledRun(
+        //             now: now,
+        //             runTime: runTime,
+        //             runDays: runDays,
+        //           );
+        // Gene - Nov, 24, 2026: Use hasValidScheduleTarget and global frequency/monthlyDay on missed-window reschedule.
         if (onCompletionAction == 'repeat' &&
             enableSchedule &&
-            hasCheckedScheduleDays) {
-          final activeNow = computeActiveWindow(
-            now: now,
-            runTime: runTime,
-            runEndTime: runEndTime,
-            runDays: runDays,
-          );
+            hasValidScheduleTarget) {
+          final activeNow = _computeActiveWindowFrom(now);
           if (activeNow != null) {
             _addLog(
               '⏰ Inside current run window (${_formatTime24(runTime)} – ${_formatTime24(runEndTime)}). Starting upload...',
@@ -2012,11 +2709,7 @@ class FtpFilesProvider with ChangeNotifier {
             return;
           }
 
-          final next = computeNextScheduledRun(
-            now: now,
-            runTime: runTime,
-            runDays: runDays,
-          );
+          final next = _computeNextRunFrom(now);
           nextScheduledRun = next;
           if (next != null) {
             final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
@@ -2060,6 +2753,19 @@ class FtpFilesProvider with ChangeNotifier {
     await _executeUploadPass(isScheduledRun: false);
   }
 
+  // Gene - Nov, 24, 2026: Run a one-off manual upload for explicitly selected multi-source indices.
+  Future<void> runSelectedSources(
+    Set<int> indices, {
+    bool markMonthlyCompleted = false,
+  }) async {
+    if (!canRunSelected || indices.isEmpty) return;
+    await _executeUploadPass(
+      isScheduledRun: false,
+      selectedSourceIndices: indices,
+      markMonthlyCompletedOnManual: markMonthlyCompleted,
+    );
+  }
+
   void stop() {
     if (!isProcessing) return;
     _stopRequested = true;
@@ -2083,6 +2789,7 @@ class FtpFilesProvider with ChangeNotifier {
 
   // --- Upload Engine ---
 
+  //   // Gene - Nov, 23, 2026: Skip disabled multi-source entries while preserving runOrder sorting.
   //   List<FtpUploadSource> _getOrderedSources() {
   //     if (!useMultipleSources) {
   //       return [
@@ -2096,7 +2803,7 @@ class FtpFilesProvider with ChangeNotifier {
   //       ];
   //     }
   //
-  //     final valid = uploadSources.where((s) => s.isValid).toList();
+  //     final valid = uploadSources.where((s) => s.enabled && s.isValid).toList();
   //     // Sort stably by runOrder while preserving insertion order for ties.
   //     final indexed = valid.asMap().entries.toList()
   //       ..sort((a, b) {
@@ -2105,28 +2812,59 @@ class FtpFilesProvider with ChangeNotifier {
   //       });
   //     return indexed.map((e) => e.value).toList();
   //   }
-  // Gene - Nov, 23, 2026: Skip disabled multi-source entries while preserving runOrder sorting.
-  List<FtpUploadSource> _getOrderedSources() {
+  // Gene - Nov, 24, 2026: Return stably sorted source entries paired with their list index and optional Run Selected filter.
+  List<({int index, FtpUploadSource source})> _getOrderedIndexedSources({
+    Set<int>? selectedIndices,
+  }) {
     if (!useMultipleSources) {
       return [
-        FtpUploadSource(
-          name: 'Default',
-          localPath: sourcePath,
-          subfolders: subfolders,
-          ftpDest: remoteDirectory,
-          runOrder: 1,
+        (
+          index: -1,
+          source: FtpUploadSource(
+            name: 'Default',
+            localPath: sourcePath,
+            subfolders: subfolders,
+            ftpDest: remoteDirectory,
+            runOrder: 1,
+          ),
         ),
       ];
     }
 
-    final valid = uploadSources.where((s) => s.enabled && s.isValid).toList();
+    final entries = <({int index, FtpUploadSource source})>[];
+    for (int i = 0; i < uploadSources.length; i++) {
+      final src = uploadSources[i];
+      if (!src.isValid) continue;
+      if (selectedIndices != null) {
+        if (!selectedIndices.contains(i)) continue;
+      } else {
+        if (!src.enabled) continue;
+      }
+      entries.add((index: i, source: src));
+    }
+
     // Sort stably by runOrder while preserving insertion order for ties.
-    final indexed = valid.asMap().entries.toList()
-      ..sort((a, b) {
-        final cmp = a.value.runOrder.compareTo(b.value.runOrder);
-        return cmp != 0 ? cmp : a.key.compareTo(b.key);
-      });
-    return indexed.map((e) => e.value).toList();
+    entries.sort((a, b) {
+      final cmp = a.source.runOrder.compareTo(b.source.runOrder);
+      return cmp != 0 ? cmp : a.index.compareTo(b.index);
+    });
+    return entries;
+  }
+
+  String _describeCadenceSkipReason(FtpUploadSource src, DateTime now) {
+    switch (src.scheduleMode) {
+      case FtpSourceScheduleMode.everyRun:
+        return 'due';
+      case FtpSourceScheduleMode.manualOnly:
+        return 'Manual Only';
+      case FtpSourceScheduleMode.weekly:
+        return 'scheduled for ${src.scheduleSummary}';
+      case FtpSourceScheduleMode.monthly:
+        if (src.isCompletedForMonth(now)) {
+          return 'already completed for ${FtpUploadSource.formatMonthKey(now)}';
+        }
+        return 'scheduled for Day ${src.resolveMonthlyTargetDay(now.year, now.month)}';
+    }
   }
 
   Future<List<_SubfolderWorkItem>> _buildWorkItems(
@@ -2232,6 +2970,8 @@ class FtpFilesProvider with ChangeNotifier {
       );
 
       try {
+        // Gene - Nov, 24, 2026: Sort discovered subdirectories deterministically across filesystems.
+        final childDirs = <String>[];
         await for (final entity in Directory(
           currentPath,
         ).list(recursive: false, followLinks: false)) {
@@ -2240,10 +2980,13 @@ class FtpFilesProvider with ChangeNotifier {
           if (_shouldAbortPass || _checkWindowExpiration()) break;
           if (entity is Directory) {
             if (await resolvesWithinRoot(rootPath, entity.path)) {
-              queue.add(entity.path);
+              // queue.add(entity.path);
+              childDirs.add(entity.path);
             }
           }
         }
+        childDirs.sort();
+        queue.addAll(childDirs);
       } catch (e) {
         final safeErr = CredentialObfuscator.redact(e.toString(), password);
         _addLog('⚠️ Unable to list directory $currentPath: $safeErr');
@@ -2328,37 +3071,188 @@ class FtpFilesProvider with ChangeNotifier {
   //     }
   //     return matched;
   //   }
-  // Gene - Nov, 23, 2026: Return per-subfolder checked counts alongside matched files for clearer audit logs.
+  //   // Gene - Nov, 23, 2026: Return per-subfolder checked counts alongside matched files for clearer audit logs.
+  //   Future<_SubfolderScanResult> _scanSubfolderFiles(
+  //     _SubfolderWorkItem item,
+  //     DateTime referenceNow,
+  //   ) async {
+  //     final candidateFiles = <File>[];
+  //     final statsByPath = <String, FileStat>{};
+  //
+  //     try {
+  //       await for (final entity in Directory(
+  //         item.localDir,
+  //       ).list(recursive: false, followLinks: false)) {
+  //         //         if (_stopRequested) break;
+  //         // Gene - Nov, 24, 2026: Abort file scan on stop or run-window expiration.
+  //         if (_shouldAbortPass || _checkWindowExpiration()) break;
+  //         if (entity is File) {
+  //           if (!await resolvesWithinRoot(item.rootPath, entity.path)) {
+  //             continue;
+  //           }
+  //           try {
+  //             final stats = await entity.stat();
+  //             if (stats.type == FileSystemEntityType.file) {
+  //               candidateFiles.add(entity);
+  //               statsByPath[entity.path] = stats;
+  //             }
+  //           } catch (e) {
+  //             errors++;
+  //             _addLog('⚠️ Failed to stat ${entity.path}: $e');
+  //           }
+  //         }
+  //       }
+  //     } catch (e) {
+  //       errors++;
+  //       final safeErr = CredentialObfuscator.redact(e.toString(), password);
+  //       _addLog('⚠️ Failed scanning ${item.localDir}: $safeErr');
+  //       await _fileLogger.error(
+  //         'FTP',
+  //         'Failed scanning ${item.localDir}: $safeErr',
+  //       );
+  //       return const _SubfolderScanResult(checkedCount: 0, matched: []);
+  //     }
+  //
+  //     if (candidateFiles.isEmpty) {
+  //       return const _SubfolderScanResult(checkedCount: 0, matched: []);
+  //     }
+  //
+  //     Map<String, DateTime> creationDates = const {};
+  //     if (dateType == FtpDateType.creation) {
+  //       creationDates = await getCreationDatesForFiles(
+  //         candidateFiles,
+  //         statsByPath,
+  //       );
+  //     }
+  //
+  //     int checkedInFolder = 0;
+  //     final matched = <_QueuedUploadFile>[];
+  //     for (final file in candidateFiles) {
+  //       //       if (_stopRequested) break;
+  //       // Gene - Nov, 24, 2026: Abort date-filter scan loop on stop or run-window expiration.
+  //       if (_shouldAbortPass || _checkWindowExpiration()) break;
+  //       final stats = statsByPath[file.path]!;
+  //       checkedInFolder++;
+  //       filesChecked++;
+  //       final fileDate = dateType == FtpDateType.creation
+  //           ? (creationDates[file.path] ?? stats.changed)
+  //           : stats.modified;
+  //
+  //       if (matchesDateFilter(
+  //         fileDate: fileDate,
+  //         dateMode: dateMode,
+  //         referenceNow: referenceNow,
+  //         daysAgo: daysAgo,
+  //         specificDate: specificDate,
+  //         fromDate: fromDate,
+  //         toDate: toDate,
+  //       )) {
+  //         matched.add(_QueuedUploadFile(file: file, size: stats.size));
+  //       }
+  //     }
+  //     return _SubfolderScanResult(
+  //       checkedCount: checkedInFolder,
+  //       matched: matched,
+  //     );
+  //   }
+  // Gene - Nov, 24, 2026: Apply per-source date filter overrides via matchesSourceDateFilter in _scanSubfolderFiles.
+  // Gene - Nov, 25, 2026: Use native Rust RustFtpScanner for fast local directory scanning and creation-date lookup.
+  // Future<_SubfolderScanResult> _scanSubfolderFiles(
+  //   _SubfolderWorkItem item,
+  //   DateTime referenceNow,
+  //   FtpUploadSource source,
+  // ) async {
+  //   final candidateFiles = <File>[];
+  //   final statsByPath = <String, FileStat>{};
+  //
+  //   try {
+  //     await for (final entity in Directory(
+  //       item.localDir,
+  //     ).list(recursive: false, followLinks: false)) {
+  //       if (_shouldAbortPass || _checkWindowExpiration()) break;
+  //       if (entity is File) {
+  //         if (!await resolvesWithinRoot(item.rootPath, entity.path)) {
+  //           continue;
+  //         }
+  //         try {
+  //           final stats = await entity.stat();
+  //           if (stats.type == FileSystemEntityType.file) {
+  //             candidateFiles.add(entity);
+  //             statsByPath[entity.path] = stats;
+  //           }
+  //         } catch (e) {
+  //           errors++;
+  //           _addLog('⚠️ Failed to stat ${entity.path}: $e');
+  //         }
+  //       }
+  //     }
+  //   } catch (e) {
+  //     errors++;
+  //     final safeErr = CredentialObfuscator.redact(e.toString(), password);
+  //     _addLog('⚠️ Failed scanning ${item.localDir}: $safeErr');
+  //     await _fileLogger.error(
+  //       'FTP',
+  //       'Failed scanning ${item.localDir}: $safeErr',
+  //     );
+  //     return const _SubfolderScanResult(checkedCount: 0, matched: []);
+  //   }
+  //
+  //   if (candidateFiles.isEmpty) {
+  //     return const _SubfolderScanResult(checkedCount: 0, matched: []);
+  //   }
+  //
+  //   candidateFiles.sort((a, b) => a.path.compareTo(b.path));
+  //
+  //   Map<String, DateTime> creationDates = const {};
+  //   if (dateType == FtpDateType.creation) {
+  //     creationDates = await getCreationDatesForFiles(
+  //       candidateFiles,
+  //       statsByPath,
+  //     );
+  //   }
+  //
+  //   int checkedInFolder = 0;
+  //   final matched = <_QueuedUploadFile>[];
+  //   for (final file in candidateFiles) {
+  //     if (_shouldAbortPass || _checkWindowExpiration()) break;
+  //     final stats = statsByPath[file.path]!;
+  //     checkedInFolder++;
+  //     filesChecked++;
+  //     final fileDate = dateType == FtpDateType.creation
+  //         ? (creationDates[file.path] ?? stats.changed)
+  //         : stats.modified;
+  //
+  //     if (matchesSourceDateFilter(
+  //       fileDate: fileDate,
+  //       source: source,
+  //       globalDateMode: dateMode,
+  //       referenceNow: referenceNow,
+  //       globalDaysAgo: daysAgo,
+  //       globalSpecificDate: specificDate,
+  //       globalFromDate: fromDate,
+  //       globalToDate: toDate,
+  //     )) {
+  //       matched.add(_QueuedUploadFile(file: file, size: stats.size));
+  //     }
+  //   }
+  //   return _SubfolderScanResult(
+  //     checkedCount: checkedInFolder,
+  //     matched: matched,
+  //   );
+  // }
   Future<_SubfolderScanResult> _scanSubfolderFiles(
     _SubfolderWorkItem item,
     DateTime referenceNow,
+    FtpUploadSource source,
   ) async {
-    final candidateFiles = <File>[];
-    final statsByPath = <String, FileStat>{};
-
+    late final RustFtpScanResult scanResult;
     try {
-      await for (final entity in Directory(
-        item.localDir,
-      ).list(recursive: false, followLinks: false)) {
-        //         if (_stopRequested) break;
-        // Gene - Nov, 24, 2026: Abort file scan on stop or run-window expiration.
-        if (_shouldAbortPass || _checkWindowExpiration()) break;
-        if (entity is File) {
-          if (!await resolvesWithinRoot(item.rootPath, entity.path)) {
-            continue;
-          }
-          try {
-            final stats = await entity.stat();
-            if (stats.type == FileSystemEntityType.file) {
-              candidateFiles.add(entity);
-              statsByPath[entity.path] = stats;
-            }
-          } catch (e) {
-            errors++;
-            _addLog('⚠️ Failed to stat ${entity.path}: $e');
-          }
-        }
-      }
+      scanResult = await RustFtpScanner.scanDirectoryAsync(
+        dirPath: item.localDir,
+        rootPath: item.rootPath,
+        includeCreationTime: dateType == FtpDateType.creation,
+        isCancelled: () => _shouldAbortPass || _checkWindowExpiration(),
+      );
     } catch (e) {
       errors++;
       final safeErr = CredentialObfuscator.redact(e.toString(), password);
@@ -2370,41 +3264,40 @@ class FtpFilesProvider with ChangeNotifier {
       return const _SubfolderScanResult(checkedCount: 0, matched: []);
     }
 
-    if (candidateFiles.isEmpty) {
-      return const _SubfolderScanResult(checkedCount: 0, matched: []);
+    for (final err in scanResult.errors) {
+      errors++;
+      final safeErr = CredentialObfuscator.redact(err, password);
+      _addLog('⚠️ $safeErr');
+      await _fileLogger.error('FTP', safeErr);
     }
 
-    Map<String, DateTime> creationDates = const {};
-    if (dateType == FtpDateType.creation) {
-      creationDates = await getCreationDatesForFiles(
-        candidateFiles,
-        statsByPath,
-      );
+    if (scanResult.files.isEmpty) {
+      return const _SubfolderScanResult(checkedCount: 0, matched: []);
     }
 
     int checkedInFolder = 0;
     final matched = <_QueuedUploadFile>[];
-    for (final file in candidateFiles) {
-      //       if (_stopRequested) break;
-      // Gene - Nov, 24, 2026: Abort date-filter scan loop on stop or run-window expiration.
+    for (final entry in scanResult.files) {
       if (_shouldAbortPass || _checkWindowExpiration()) break;
-      final stats = statsByPath[file.path]!;
       checkedInFolder++;
       filesChecked++;
       final fileDate = dateType == FtpDateType.creation
-          ? (creationDates[file.path] ?? stats.changed)
-          : stats.modified;
+          ? entry.created
+          : entry.modified;
 
-      if (matchesDateFilter(
+      if (matchesSourceDateFilter(
         fileDate: fileDate,
-        dateMode: dateMode,
+        source: source,
+        globalDateMode: dateMode,
         referenceNow: referenceNow,
-        daysAgo: daysAgo,
-        specificDate: specificDate,
-        fromDate: fromDate,
-        toDate: toDate,
+        globalDaysAgo: daysAgo,
+        globalSpecificDate: specificDate,
+        globalFromDate: fromDate,
+        globalToDate: toDate,
       )) {
-        matched.add(_QueuedUploadFile(file: file, size: stats.size));
+        matched.add(
+          _QueuedUploadFile(file: File(entry.path), size: entry.size),
+        );
       }
     }
     return _SubfolderScanResult(
@@ -2843,10 +3736,144 @@ class FtpFilesProvider with ChangeNotifier {
   //
   //     _stopRequested = false;
   //     isUploading = true;
-  // Gene - Nov, 24, 2026: Accept optional windowEnd for scheduled runs to enforce end-time cutoff.
+  //   // Gene - Nov, 24, 2026: Accept optional windowEnd for scheduled runs to enforce end-time cutoff.
+  //   Future<void> _executeUploadPass({
+  //     required bool isScheduledRun,
+  //     DateTime? windowEnd,
+  //   }) async {
+  //     if (isUploading) return;
+  //
+  //     _stopRequested = false;
+  //     _windowExpired = false;
+  //     _activeRunWindowEnd = isScheduledRun ? windowEnd : null;
+  //     isUploading = true;
+  //     filesUploaded = 0;
+  //     filesSkipped = 0;
+  //     filesChecked = 0;
+  //     errors = 0;
+  //     _clearActiveUploadProgress();
+  //
+  //     final startTime = _nowProvider();
+  //     final runRefNow = startTime;
+  //     final config = connectionConfig;
+  //     final sources = _getOrderedSources();
+  //
+  //     currentStatus = dryRun
+  //         ? '🧪 Dry run: scanning sources...'
+  //         : '⏳ Scanning sources...';
+  //
+  //     final sourceSummary = useMultipleSources
+  //         ? (sources.isEmpty
+  //               ? '0 active sources'
+  //               : '${sources.length} sources (${sources.first.displayName}...)')
+  //         : (sourcePath ?? '');
+  //     final endpointSummary = useMultipleSources
+  //         ? config.displayEndpoint()
+  //         : config.displayEndpoint(remoteDirectory);
+  //
+  //     await _fileLogger.logRunStart(
+  //       operation: 'FTP',
+  //       sourcePath: sourceSummary,
+  //       destPath: endpointSummary,
+  //     );
+  //
+  //     final prunedLogs = await _fileLogger.pruneOldLogs(
+  //       keepDays: logKeepDays,
+  //       operationPrefix: 'FTP',
+  //       now: startTime,
+  //     );
+  //     if (prunedLogs > 0) {
+  //       final pruneMsg =
+  //           '🧹 Pruned $prunedLogs old FTP log file(s) older than $logKeepDays day(s).';
+  //       _addLog(pruneMsg);
+  //       await _fileLogger.info('FTP', pruneMsg);
+  //     }
+  //
+  //     _addLog(
+  //       dryRun
+  //           ? '🧪 Starting DRY RUN -> $endpointSummary (Mode: ${dateMode.label}, Date: ${dateType.label})'
+  //           : '🚀 Starting FTP upload -> $endpointSummary (Mode: ${dateMode.label}, Date: ${dateType.label})',
+  //     );
+  //
+  //     final resolvedDateDesc = describeTargetDate(
+  //       dateMode: dateMode,
+  //       referenceNow: runRefNow,
+  //       daysAgo: daysAgo,
+  //       specificDate: specificDate,
+  //       fromDate: fromDate,
+  //       toDate: toDate,
+  //     );
+  //     final targetDateMsg =
+  //         '📅 Target date resolved to: $resolvedDateDesc (${dateType.label})';
+  //     _addLog(targetDateMsg);
+  //     await _fileLogger.info('FTP', targetDateMsg);
+  //
+  //     if (useMultipleSources) {
+  //       final disabledCount = uploadSources
+  //           .where((s) => !s.enabled && s.isValid)
+  //           .length;
+  //       if (disabledCount > 0) {
+  //         final skipSrcMsg =
+  //             '⏭ Skipping $disabledCount disabled upload source(s).';
+  //         _addLog(skipSrcMsg);
+  //         await _fileLogger.info('FTP', skipSrcMsg);
+  //       }
+  //     }
+  //     // Gene - Nov, 24, 2026: Log active scheduled run window bounds at start of pass.
+  //     if (isScheduledRun && _activeRunWindowEnd != null) {
+  //       final windowMsg =
+  //           '⏰ Active run window: ${_formatTime24(runTime)} – ${_formatTime24(runEndTime)} (stops at ${DateFormat('dd/MM/yyyy HH:mm').format(_activeRunWindowEnd!)})';
+  //       _addLog(windowMsg);
+  //       await _fileLogger.info('FTP', windowMsg);
+  //     }
+  //     notifyListeners();
+  //
+  //     bool hadFatalError = false;
+  //     int foldersProcessed = 0;
+  //     FtpClientAdapter? client;
+  //
+  //     try {
+  //       final needsConnection = !dryRun || skipIfExists;
+  //
+  //       for (final source in sources) {
+  //         //         if (_stopRequested) break;
+  //         // Gene - Nov, 24, 2026: Stop upload pass when user stops or scheduled run window ends.
+  //         if (_shouldAbortPass || _checkWindowExpiration()) break;
+  //
+  //         final subFilterLabel = source.parsedSubfolders.isEmpty
+  //             ? (includeSubfolders ? 'ALL (nested)' : 'Root only')
+  //             : source.parsedSubfolders.join(', ');
+  //         final destLabel = source.ftpDest.trim().isEmpty
+  //             ? '/'
+  //             : '/${joinRemotePath(source.ftpDest, '').replaceFirst(RegExp(r'^/'), '')}';
+  //         _addLog(
+  //           '─── Source: ${source.displayName} (${source.localPath}) [Subfolders: $subFilterLabel -> $destLabel] ───',
+  //         );
+  //         await _fileLogger.info(
+  //           'FTP',
+  //           'Source ${source.displayName} (${source.localPath}) | Subfolders: $subFilterLabel | Dest: $destLabel',
+  //         );
+  //
+  //         final workItems = await _buildWorkItems(source);
+  //
+  //         for (final workItem in workItems) {
+  //           //           if (_stopRequested) break;
+  //           // Gene - Nov, 24, 2026: Stop work-item loop on stop or run-window expiration.
+  //           if (_shouldAbortPass || _checkWindowExpiration()) break;
+  //           foldersProcessed++;
+  //           currentStatus = dryRun
+  //               ? '🧪 Scanning ${p.basename(workItem.localDir)}...'
+  //               : '⏳ Scanning ${p.basename(workItem.localDir)}...';
+  //           notifyListeners();
+  //
+  //           // Step A: Local scan of current subfolder.
+  //           final scanResult = await _scanSubfolderFiles(workItem, runRefNow);
+  // Gene - Nov, 24, 2026: Support per-source cadence filtering on scheduled runs, Run Selected manual picks, and per-source date overrides.
   Future<void> _executeUploadPass({
     required bool isScheduledRun,
     DateTime? windowEnd,
+    Set<int>? selectedSourceIndices,
+    bool markMonthlyCompletedOnManual = false,
   }) async {
     if (isUploading) return;
 
@@ -2863,16 +3890,36 @@ class FtpFilesProvider with ChangeNotifier {
     final startTime = _nowProvider();
     final runRefNow = startTime;
     final config = connectionConfig;
-    final sources = _getOrderedSources();
+    final orderedEntries = _getOrderedIndexedSources(
+      selectedIndices: selectedSourceIndices,
+    );
+    final cadenceSkipMessages = <String>[];
+    final List<({int index, FtpUploadSource source})> activeEntries;
+    if (useMultipleSources && isScheduledRun) {
+      activeEntries = [];
+      for (final entry in orderedEntries) {
+        final src = entry.source;
+        if (src.isDueForScheduledRun(runRefNow)) {
+          activeEntries.add(entry);
+        } else {
+          final reason = _describeCadenceSkipReason(src, runRefNow);
+          cadenceSkipMessages.add(
+            '⏭ Skipping source "${src.displayName}" ($reason).',
+          );
+        }
+      }
+    } else {
+      activeEntries = orderedEntries;
+    }
 
     currentStatus = dryRun
         ? '🧪 Dry run: scanning sources...'
         : '⏳ Scanning sources...';
 
     final sourceSummary = useMultipleSources
-        ? (sources.isEmpty
-              ? '0 active sources'
-              : '${sources.length} sources (${sources.first.displayName}...)')
+        ? (activeEntries.isEmpty
+              ? (isScheduledRun ? '0 due sources' : '0 active sources')
+              : '${activeEntries.length} ${selectedSourceIndices != null ? 'selected ' : ''}source${activeEntries.length == 1 ? '' : 's'} (${activeEntries.first.source.displayName}...)')
         : (sourcePath ?? '');
     final endpointSummary = useMultipleSources
         ? config.displayEndpoint()
@@ -2915,7 +3962,7 @@ class FtpFilesProvider with ChangeNotifier {
     _addLog(targetDateMsg);
     await _fileLogger.info('FTP', targetDateMsg);
 
-    if (useMultipleSources) {
+    if (useMultipleSources && selectedSourceIndices == null) {
       final disabledCount = uploadSources
           .where((s) => !s.enabled && s.isValid)
           .length;
@@ -2925,6 +3972,22 @@ class FtpFilesProvider with ChangeNotifier {
         _addLog(skipSrcMsg);
         await _fileLogger.info('FTP', skipSrcMsg);
       }
+    }
+    if (selectedSourceIndices != null && activeEntries.isNotEmpty) {
+      final names = activeEntries.map((e) => e.source.displayName).join(', ');
+      final selMsg =
+          '🎯 Selected upload: running ${activeEntries.length} source(s) ($names).';
+      _addLog(selMsg);
+      await _fileLogger.info('FTP', selMsg);
+    }
+    for (final skipMsg in cadenceSkipMessages) {
+      _addLog(skipMsg);
+      await _fileLogger.info('FTP', skipMsg);
+    }
+    if (useMultipleSources && isScheduledRun && activeEntries.isEmpty) {
+      const noDueMsg = 'ℹ️ No upload sources are due for this scheduled pass.';
+      _addLog(noDueMsg);
+      await _fileLogger.info('FTP', noDueMsg);
     }
     // Gene - Nov, 24, 2026: Log active scheduled run window bounds at start of pass.
     if (isScheduledRun && _activeRunWindowEnd != null) {
@@ -2942,10 +4005,12 @@ class FtpFilesProvider with ChangeNotifier {
     try {
       final needsConnection = !dryRun || skipIfExists;
 
-      for (final source in sources) {
-        //         if (_stopRequested) break;
-        // Gene - Nov, 24, 2026: Stop upload pass when user stops or scheduled run window ends.
+      for (final entry in activeEntries) {
         if (_shouldAbortPass || _checkWindowExpiration()) break;
+        final source = entry.source;
+        final sourceUploadedStart = filesUploaded;
+        final sourceSkippedStart = filesSkipped;
+        final sourceErrorsStart = errors;
 
         final subFilterLabel = source.parsedSubfolders.isEmpty
             ? (includeSubfolders ? 'ALL (nested)' : 'Root only')
@@ -2954,18 +4019,16 @@ class FtpFilesProvider with ChangeNotifier {
             ? '/'
             : '/${joinRemotePath(source.ftpDest, '').replaceFirst(RegExp(r'^/'), '')}';
         _addLog(
-          '─── Source: ${source.displayName} (${source.localPath}) [Subfolders: $subFilterLabel -> $destLabel] ───',
+          '─── Source: ${source.displayName} (${source.localPath}) [Schedule: ${source.scheduleSummary} | Filter: ${source.dateFilterSummary} | Subfolders: $subFilterLabel -> $destLabel] ───',
         );
         await _fileLogger.info(
           'FTP',
-          'Source ${source.displayName} (${source.localPath}) | Subfolders: $subFilterLabel | Dest: $destLabel',
+          'Source ${source.displayName} (${source.localPath}) | Schedule: ${source.scheduleSummary} | Filter: ${source.dateFilterSummary} | Subfolders: $subFilterLabel | Dest: $destLabel',
         );
 
         final workItems = await _buildWorkItems(source);
 
         for (final workItem in workItems) {
-          //           if (_stopRequested) break;
-          // Gene - Nov, 24, 2026: Stop work-item loop on stop or run-window expiration.
           if (_shouldAbortPass || _checkWindowExpiration()) break;
           foldersProcessed++;
           currentStatus = dryRun
@@ -2974,7 +4037,11 @@ class FtpFilesProvider with ChangeNotifier {
           notifyListeners();
 
           // Step A: Local scan of current subfolder.
-          final scanResult = await _scanSubfolderFiles(workItem, runRefNow);
+          final scanResult = await _scanSubfolderFiles(
+            workItem,
+            runRefNow,
+            source,
+          );
           //           if (_stopRequested) break;
           // Gene - Nov, 24, 2026: Stop before connecting or uploading if scan aborted by stop or window end.
           if (_shouldAbortPass || _checkWindowExpiration()) break;
@@ -3330,6 +4397,52 @@ class FtpFilesProvider with ChangeNotifier {
             }
           }
         }
+
+        // Gene - Nov, 24, 2026: Record monthly completion only after a clean, non-dry-run transfer with >=1 matched file.
+        if (useMultipleSources &&
+            entry.index >= 0 &&
+            entry.index < uploadSources.length &&
+            source.scheduleMode == FtpSourceScheduleMode.monthly) {
+          final sourceInterrupted =
+              _shouldAbortPass || _checkWindowExpiration();
+          final sourceUploaded = filesUploaded - sourceUploadedStart;
+          final sourceSkipped = filesSkipped - sourceSkippedStart;
+          final sourceErrors = errors - sourceErrorsStart;
+
+          if (dryRun) {
+            final dryMonthlyMsg =
+                '🧪 [DRY RUN] Monthly source "${source.displayName}" is due for ${FtpUploadSource.formatMonthKey(runRefNow)} (dry run will not mark completed).';
+            _addLog(dryMonthlyMsg);
+            await _fileLogger.info('FTP', dryMonthlyMsg);
+          } else if (isScheduledRun || markMonthlyCompletedOnManual) {
+            if (!sourceInterrupted &&
+                sourceErrors == 0 &&
+                (sourceUploaded + sourceSkipped) > 0) {
+              final monthKey = FtpUploadSource.formatMonthKey(runRefNow);
+              uploadSources[entry.index] = uploadSources[entry.index].copyWith(
+                lastCompletedMonth: monthKey,
+                lastCompletedAt: _nowProvider().toIso8601String(),
+              );
+              await _saveSettings();
+              final doneMsg =
+                  '✅ Monthly source "${source.displayName}" marked completed for $monthKey.';
+              _addLog(doneMsg);
+              await _fileLogger.info('FTP', doneMsg);
+            } else if (!sourceInterrupted &&
+                sourceErrors == 0 &&
+                (sourceUploaded + sourceSkipped) == 0) {
+              final emptyMonthlyMsg =
+                  'ℹ️ Monthly source "${source.displayName}" matched 0 files — will re-check on next scheduled pass.';
+              _addLog(emptyMonthlyMsg);
+              await _fileLogger.info('FTP', emptyMonthlyMsg);
+            } else {
+              final retryMonthlyMsg =
+                  '⏳ Monthly source "${source.displayName}" did not finish cleanly — will resume on next scheduled pass.';
+              _addLog(retryMonthlyMsg);
+              await _fileLogger.info('FTP', retryMonthlyMsg);
+            }
+          }
+        }
       }
     } catch (e, stack) {
       //       if (!_stopRequested) {
@@ -3522,17 +4635,103 @@ class FtpFilesProvider with ChangeNotifier {
           _addLog(
             '⛔ Run stopped. Uploaded: ${_numFmt.format(filesUploaded)}, Skipped: ${_numFmt.format(filesSkipped)}, Errors: ${_numFmt.format(errors)}.',
           );
+          //         } else if (stoppedByWindow) {
+          //           final endLabel = _formatTime24(runEndTime);
+          //           if (isScheduledRun &&
+          //               onCompletionAction == 'repeat' &&
+          //               enableSchedule &&
+          //               hasCheckedScheduleDays) {
+          //             final next = computeNextScheduledRun(
+          //               now: _nowProvider(),
+          //               runTime: runTime,
+          //               runDays: runDays,
+          //             );
+          //             nextScheduledRun = next;
+          //             if (next != null) {
+          //               final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+          //               currentStatus =
+          //                   '⏸ Window ended ($endLabel). Next run at $formatted';
+          //               _addLog(
+          //                 '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
+          //               );
+          //               _ensureScheduleTimerRunning();
+          //             } else {
+          //               isScheduleArmed = false;
+          //               _scheduleTimer?.cancel();
+          //               _scheduleTimer = null;
+          //               currentStatus = '⏰ Window ended ($endLabel)';
+          //               _addLog(
+          //                 '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+          //               );
+          //             }
+          //           } else {
+          //             isScheduleArmed = false;
+          //             nextScheduledRun = null;
+          //             _scheduleTimer?.cancel();
+          //             _scheduleTimer = null;
+          //             currentStatus = '⏰ Window ended ($endLabel)';
+          //             _addLog(
+          //               '⏰ Run window ended at $endLabel (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+          //             );
+          //           }
+          //         } else if (isScheduledRun) {
+          //           if (onCompletionAction == 'repeat' &&
+          //               enableSchedule &&
+          //               hasCheckedScheduleDays) {
+          //             final next = computeNextScheduledRun(
+          //               now: _nowProvider(),
+          //               runTime: runTime,
+          //               runDays: runDays,
+          //             );
+          //             nextScheduledRun = next;
+          //             if (next != null) {
+          //               final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
+          //               currentStatus = hasErrors
+          //                   ? '⚠️ Completed with $errors error(s). Next run at $formatted'
+          //                   : '🏁 Completed. Next run at $formatted';
+          //               _addLog(
+          //                 '🏁 ${dryRun ? "Dry run" : "Upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors). Next scheduled run: $formatted$windowSuffix.',
+          //               );
+          //               _ensureScheduleTimerRunning();
+          //             } else {
+          //               isScheduleArmed = false;
+          //               _scheduleTimer?.cancel();
+          //               _scheduleTimer = null;
+          //               currentStatus = hadFatalError
+          //                   ? '❌ Error'
+          //                   : (errors > 0
+          //                         ? '⚠️ Completed with $errors error(s)'
+          //                         : '✅ Completed');
+          //             }
+          //           } else {
+          //             isScheduleArmed = false;
+          //             nextScheduledRun = null;
+          //             _scheduleTimer?.cancel();
+          //             _scheduleTimer = null;
+          //             currentStatus = hadFatalError
+          //                 ? '❌ Error'
+          //                 : (errors > 0
+          //                       ? '⚠️ Completed with $errors error(s)'
+          //                       : '✅ Completed');
+          //             _addLog(
+          //               '✅ Scheduled ${dryRun ? "dry run" : "upload"} complete (Uploaded: $filesUploaded, Skipped: $filesSkipped, Errors: $errors).',
+          //             );
+          //           }
+          //         } else {
+          //           if (isScheduleArmed) {
+          //             final next = computeNextScheduledRun(
+          //               now: _nowProvider(),
+          //               runTime: runTime,
+          //               runDays: runDays,
+          //             );
+          // Gene - Nov, 24, 2026: Re-arm repeat runs using hasValidScheduleTarget and global frequency/monthlyDay.
         } else if (stoppedByWindow) {
           final endLabel = _formatTime24(runEndTime);
           if (isScheduledRun &&
               onCompletionAction == 'repeat' &&
               enableSchedule &&
-              hasCheckedScheduleDays) {
-            final next = computeNextScheduledRun(
-              now: _nowProvider(),
-              runTime: runTime,
-              runDays: runDays,
-            );
+              hasValidScheduleTarget) {
+            final next = _computeNextRunFrom(_nowProvider());
             nextScheduledRun = next;
             if (next != null) {
               final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
@@ -3564,12 +4763,8 @@ class FtpFilesProvider with ChangeNotifier {
         } else if (isScheduledRun) {
           if (onCompletionAction == 'repeat' &&
               enableSchedule &&
-              hasCheckedScheduleDays) {
-            final next = computeNextScheduledRun(
-              now: _nowProvider(),
-              runTime: runTime,
-              runDays: runDays,
-            );
+              hasValidScheduleTarget) {
+            final next = _computeNextRunFrom(_nowProvider());
             nextScheduledRun = next;
             if (next != null) {
               final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);
@@ -3606,11 +4801,7 @@ class FtpFilesProvider with ChangeNotifier {
           }
         } else {
           if (isScheduleArmed) {
-            final next = computeNextScheduledRun(
-              now: _nowProvider(),
-              runTime: runTime,
-              runDays: runDays,
-            );
+            final next = _computeNextRunFrom(_nowProvider());
             nextScheduledRun = next;
             if (next != null) {
               final formatted = DateFormat('dd/MM/yyyy HH:mm').format(next);

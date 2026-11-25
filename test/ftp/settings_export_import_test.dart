@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:files_utility/providers/copy_files_provider.dart';
+// Gene - Nov, 24, 2026: Import FtpUploadSource to assert per-source schedule/filter JSON export and import round-trips.
+import 'package:files_utility/models/ftp_upload_source.dart';
 import 'package:files_utility/providers/ftp_files_provider.dart';
 import 'package:files_utility/providers/history_provider.dart';
 import 'package:files_utility/providers/theme_provider.dart';
@@ -268,6 +270,143 @@ void main() {
           legacyProvider.runEndTime,
           const TimeOfDay(hour: 23, minute: 59),
         );
+      },
+    );
+
+    // Gene - Nov, 24, 2026: Verify per-source schedule/filter settings round-trip in JSON while omitting runtime monthly completion timestamps.
+    test(
+      'preserves per-source scheduleMode, weeklyDays, monthlyDay, and dateFilterMode in settings/sources JSON without leaking runtime completion',
+      () {
+        final donor = FtpFilesProvider(persistSettings: false);
+        addTearDown(donor.dispose);
+
+        donor
+          ..setHost('ftp.example.com')
+          ..setUseMultipleSources(true)
+          ..setSourceNameAt(0, 'Daily')
+          ..setSourcePathAt(0, '/tmp/daily')
+          ..setSourceScheduleModeAt(0, FtpSourceScheduleMode.weekly)
+          ..setSourceWeeklyDayAt(0, 7, false)
+          ..setSourceWeeklyDayAt(0, 1, true)
+          ..setSourceWeeklyDayAt(0, 5, true)
+          ..setSourceDateFilterModeAt(0, FtpSourceDateFilterMode.yesterday)
+          ..addUploadSource()
+          ..setSourceNameAt(1, 'Database')
+          ..setSourcePathAt(1, '/tmp/database')
+          ..setSourceFtpDestAt(1, 'DBBackups')
+          ..setSourceScheduleModeAt(1, FtpSourceScheduleMode.monthly)
+          ..setSourceMonthlyDayAt(1, 0)
+          ..setSourceDateFilterModeAt(1, FtpSourceDateFilterMode.lastNDays)
+          ..setSourceDateFilterDaysAt(1, 30);
+
+        donor.uploadSources[1] = donor.uploadSources[1].copyWith(
+          lastCompletedMonth: '2026-11',
+          lastCompletedAt: '2026-11-24T01:00:00.000',
+        );
+
+        final settingsJson = donor.exportSettingsJsonString(
+          now: DateTime(2026, 11, 24, 8, 0),
+        );
+        final sourcesJson = donor.exportUploadSourcesJsonString(
+          now: DateTime(2026, 11, 24, 8, 0),
+        );
+
+        expect(settingsJson, isNot(contains('lastCompletedMonth')));
+        expect(settingsJson, isNot(contains('lastCompletedAt')));
+        expect(sourcesJson, isNot(contains('lastCompletedMonth')));
+        expect(sourcesJson, isNot(contains('lastCompletedAt')));
+
+        final recipientA = FtpFilesProvider(persistSettings: false);
+        addTearDown(recipientA.dispose);
+        recipientA.importFromJsonString(settingsJson);
+
+        expect(recipientA.uploadSources, hasLength(2));
+        expect(
+          recipientA.uploadSources[0].scheduleMode,
+          FtpSourceScheduleMode.weekly,
+        );
+        expect(recipientA.uploadSources[0].weeklyDays, [1, 5]);
+        expect(
+          recipientA.uploadSources[0].dateFilterMode,
+          FtpSourceDateFilterMode.yesterday,
+        );
+        expect(
+          recipientA.uploadSources[1].scheduleMode,
+          FtpSourceScheduleMode.monthly,
+        );
+        expect(recipientA.uploadSources[1].monthlyDay, 0);
+        expect(
+          recipientA.uploadSources[1].dateFilterMode,
+          FtpSourceDateFilterMode.lastNDays,
+        );
+        expect(recipientA.uploadSources[1].dateFilterDays, 30);
+        expect(recipientA.uploadSources[1].lastCompletedMonth, isNull);
+        expect(recipientA.uploadSources[1].lastCompletedAt, isNull);
+
+        // Even if an imported JSON manually contains runtime completion fields, import strips them.
+        final recipientB = FtpFilesProvider(persistSettings: false);
+        addTearDown(recipientB.dispose);
+        final withRuntimePayload = jsonEncode({
+          'type': 'ftp_sources',
+          'uploadSources': [
+            {
+              'name': 'DB',
+              'localPath': '/tmp/db',
+              'scheduleMode': 'monthly',
+              'monthlyDay': 15,
+              'dateFilterMode': 'allFiles',
+              'lastCompletedMonth': '2026-11',
+              'lastCompletedAt': '2026-11-15T02:00:00.000',
+            },
+          ],
+        });
+        recipientB.importFromJsonString(withRuntimePayload);
+        expect(
+          recipientB.uploadSources[0].scheduleMode,
+          FtpSourceScheduleMode.monthly,
+        );
+        expect(recipientB.uploadSources[0].monthlyDay, 15);
+        expect(
+          recipientB.uploadSources[0].dateFilterMode,
+          FtpSourceDateFilterMode.allFiles,
+        );
+        expect(recipientB.uploadSources[0].lastCompletedMonth, isNull);
+        expect(recipientB.uploadSources[0].lastCompletedAt, isNull);
+      },
+    );
+
+    // Gene - Nov, 24, 2026: Verify global schedule frequency & monthlyDay round-trip and legacy weekly fallback in FTP settings JSON.
+    test(
+      'round-trips global schedule frequency and monthlyDay in settings JSON and resets legacy imports to weekly',
+      () {
+        final donor = FtpFilesProvider(persistSettings: false)
+          ..setEnableSchedule(true)
+          ..setScheduleFrequency(FtpScheduleFrequency.monthly)
+          ..setScheduleMonthlyDay(0);
+        addTearDown(donor.dispose);
+
+        final exported = donor.exportSettingsJsonString(
+          now: DateTime(2026, 11, 24, 10, 0),
+        );
+
+        final recipient = FtpFilesProvider(persistSettings: false);
+        addTearDown(recipient.dispose);
+        recipient.importFromJsonString(exported);
+        expect(recipient.scheduleFrequency, FtpScheduleFrequency.monthly);
+        expect(recipient.scheduleMonthlyDay, 0);
+
+        // Legacy JSON missing 'frequency' resets recipient back to weekly instead of leaking prior monthly state.
+        final legacyWeeklyJson = jsonEncode({
+          'type': 'ftp_settings',
+          'schedule': {
+            'enableSchedule': true,
+            'runHour': 4,
+            'runMinute': 0,
+            'runDays': {'6': true, '7': true},
+          },
+        });
+        recipient.importFromJsonString(legacyWeeklyJson);
+        expect(recipient.scheduleFrequency, FtpScheduleFrequency.weekly);
       },
     );
   });

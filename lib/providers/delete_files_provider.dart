@@ -1,50 +1,53 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:isolate';
+// Gene - Nov, 25, 2026: Replaced Dart isolate worker with native Rust delete_engine.
+// import 'dart:isolate';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:logging/logging.dart';
-import 'package:path/path.dart' as p;
+// import 'package:path/path.dart' as p;
 import '../services/file_logger.dart';
 import '../services/local_db_service.dart';
-import '../services/path_safety.dart';
+// import '../services/path_safety.dart';
+import '../services/rust_file_engines.dart';
 import '../services/history_service.dart';
 import '../models/run_record.dart';
 
-class _DeleteProgress {
-  final int deleted;
-  final int errors;
-  final List<String> logs;
-  final String? currentStatus;
-  final bool isDone;
-  final String? criticalError;
-
-  _DeleteProgress({
-    this.deleted = 0,
-    this.errors = 0,
-    this.logs = const [],
-    this.currentStatus,
-    this.isDone = false,
-    this.criticalError,
-  });
-}
-
-class _DeleteParams {
-  final String targetPath;
-  final int selectedYear;
-  final List<String> validMonths;
-  final int logInterval;
-  final SendPort sendPort;
-
-  _DeleteParams({
-    required this.targetPath,
-    required this.selectedYear,
-    required this.validMonths,
-    required this.logInterval,
-    required this.sendPort,
-  });
-}
+// Gene - Nov, 25, 2026: Commented out Dart isolate DTOs after migrating to Rust delete_engine.
+// class _DeleteProgress {
+//   final int deleted;
+//   final int errors;
+//   final List<String> logs;
+//   final String? currentStatus;
+//   final bool isDone;
+//   final String? criticalError;
+//
+//   _DeleteProgress({
+//     this.deleted = 0,
+//     this.errors = 0,
+//     this.logs = const [],
+//     this.currentStatus,
+//     this.isDone = false,
+//     this.criticalError,
+//   });
+// }
+//
+// class _DeleteParams {
+//   final String targetPath;
+//   final int selectedYear;
+//   final List<String> validMonths;
+//   final int logInterval;
+//   final SendPort sendPort;
+//
+//   _DeleteParams({
+//     required this.targetPath,
+//     required this.selectedYear,
+//     required this.validMonths,
+//     required this.logInterval,
+//     required this.sendPort,
+//   });
+// }
 
 class DeleteFilesProvider with ChangeNotifier {
   final Logger _log = Logger('DeleteFilesProvider');
@@ -57,10 +60,14 @@ class DeleteFilesProvider with ChangeNotifier {
   String currentStatus = 'Idle';
   int deletedCount = 0;
   int errorCount = 0;
+  // Gene - Nov, 25, 2026: Track live scanned file count from Rust delete_engine.
+  int filesScanned = 0;
   bool _stopRequested = false;
   Timer? _refreshTimer;
-  Isolate? _workerIsolate;
-  ReceivePort? _receivePort;
+  // Isolate? _workerIsolate;
+  // ReceivePort? _receivePort;
+  RustDeleteJob? _rustJob;
+  Timer? _pollTimer;
 
   int selectedYear = 2025;
   List<String> validMonths = ['Jan'];
@@ -103,15 +110,24 @@ class DeleteFilesProvider with ChangeNotifier {
   void dispose() {
     LocalDbService().removeListener(_onProfileChanged);
     _refreshTimer?.cancel();
-    _stopIsolate();
+    // Gene - Nov, 25, 2026: Dispose native RustDeleteJob cleanly.
+    // _stopIsolate();
+    _stopRustJob();
     super.dispose();
   }
 
-  void _stopIsolate() {
-    _workerIsolate?.kill(priority: Isolate.immediate);
-    _workerIsolate = null;
-    _receivePort?.close();
-    _receivePort = null;
+  // void _stopIsolate() {
+  //   _workerIsolate?.kill(priority: Isolate.immediate);
+  //   _workerIsolate = null;
+  //   _receivePort?.close();
+  //   _receivePort = null;
+  // }
+  void _stopRustJob() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _rustJob?.stop();
+    _rustJob?.dispose();
+    _rustJob = null;
   }
 
   Future<void> _loadSettings() async {
@@ -203,7 +219,9 @@ class DeleteFilesProvider with ChangeNotifier {
     if (!isProcessing) return;
     _stopRequested = true;
     currentStatus = '⛔ Stopping...';
-    _stopIsolate();
+    // Gene - Nov, 25, 2026: Stop native RustDeleteJob instead of Dart isolate.
+    // _stopIsolate();
+    _stopRustJob();
     _finishRun(wasStopped: true);
     notifyListeners();
   }
@@ -212,6 +230,8 @@ class DeleteFilesProvider with ChangeNotifier {
     logs.clear();
     deletedCount = 0;
     errorCount = 0;
+    // Gene - Nov, 25, 2026: Reset scanned counter when clearing logs.
+    filesScanned = 0;
     currentStatus = 'Idle';
     notifyListeners();
   }
@@ -250,7 +270,10 @@ class DeleteFilesProvider with ChangeNotifier {
     _stopRequested = false;
     deletedCount = 0;
     errorCount = 0;
-    currentStatus = '⏳ Starting deletion...';
+    // Gene - Nov, 25, 2026: Initialize Delete status with live scanning file counter.
+    filesScanned = 0;
+    // currentStatus = '⏳ Starting deletion...';
+    currentStatus = '⏳ Scanning (0 files)...';
     notifyListeners();
 
     _addLog('⏳ Starting deletion...');
@@ -280,57 +303,90 @@ class DeleteFilesProvider with ChangeNotifier {
         return;
       }
 
-      _receivePort?.close();
-      _receivePort = ReceivePort();
-
-      _workerIsolate = await Isolate.spawn(
-        _isolateWorker,
-        _DeleteParams(
-          targetPath: targetPath!,
-          selectedYear: selectedYear,
-          validMonths: validMonths,
-          logInterval: logInterval,
-          sendPort: _receivePort!.sendPort,
-        ),
+      // Gene - Nov, 25, 2026: Run deletion on native Rust delete_engine instead of Dart isolate.
+      // _receivePort?.close();
+      // _receivePort = ReceivePort();
+      //
+      // _workerIsolate = await Isolate.spawn(
+      //   _isolateWorker,
+      //   _DeleteParams(
+      //     targetPath: targetPath!,
+      //     selectedYear: selectedYear,
+      //     validMonths: validMonths,
+      //     logInterval: logInterval,
+      //     sendPort: _receivePort!.sendPort,
+      //   ),
+      // );
+      //
+      // _receivePort!.listen((message) { ... });
+      _stopRustJob();
+      _rustJob = RustDeleteJob.start(
+        targetPath: targetPath!,
+        selectedYear: selectedYear,
+        validMonths: validMonths,
+        logInterval: logInterval,
       );
-
-      _receivePort!.listen((message) {
-        if (message is _DeleteProgress) {
-          deletedCount = message.deleted;
-          errorCount = message.errors;
-
-          if (message.currentStatus != null) {
-            currentStatus = message.currentStatus!;
-          }
-
-          for (final log in message.logs) {
-            _addLog(log);
-            if (log.startsWith('✗')) {
-              _fileLogger.error('Delete', log);
-            }
-          }
-
-          if (message.criticalError != null) {
-            _addLog('✗ Critical Error: ${message.criticalError}');
-            _fileLogger.error(
-              'Delete',
-              'Critical Error: ${message.criticalError}',
-            );
-          }
-
-          if (message.isDone) {
-            _stopIsolate();
-            if (!_stopRequested) {
-              _finishRun(wasStopped: false);
-            }
-          }
-        }
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+        _pollRustJob();
       });
     } catch (e, stack) {
       _addLog('✗ Critical Error: $e');
       _log.severe('Critical error during deletion', e, stack);
       await _fileLogger.error('Delete', 'Critical Error: $e\n$stack');
-      _stopIsolate();
+      // _stopIsolate();
+      _stopRustJob();
+      _finishRun(wasStopped: false);
+    }
+  }
+
+  // Gene - Nov, 25, 2026: Poll native Rust delete_engine for live scan/delete progress and logs.
+  void _pollRustJob() {
+    final job = _rustJob;
+    if (job == null || job.isDisposed) return;
+
+    try {
+      final snap = job.poll();
+      filesScanned = snap.filesScanned;
+      deletedCount = snap.deleted;
+      errorCount = snap.errors;
+
+      if (!snap.isDone && !_stopRequested) {
+        currentStatus = snap.currentDirName.isEmpty
+            ? '⏳ Scanning (${_numFmt.format(filesScanned)} files)...'
+            : '⏳ Scanning (${_numFmt.format(filesScanned)} files): ${snap.currentDirName}';
+      }
+
+      for (final log in snap.logs) {
+        _addLog(log);
+        if (log.startsWith('✗')) {
+          _fileLogger.error('Delete', log);
+        }
+      }
+
+      for (final err in snap.errorLogs) {
+        _addLog(err);
+        _fileLogger.error('Delete', err);
+      }
+
+      if (snap.criticalError != null) {
+        _addLog('✗ Critical Error: ${snap.criticalError}');
+        _fileLogger.error('Delete', 'Critical Error: ${snap.criticalError}');
+      }
+
+      if (snap.isDone) {
+        _stopRustJob();
+        if (!_stopRequested) {
+          _finishRun(wasStopped: false);
+        }
+        return;
+      }
+
+      notifyListeners();
+    } catch (e, stack) {
+      _stopRustJob();
+      _addLog('✗ Critical Error: $e');
+      _log.severe('Critical error polling Rust delete engine', e, stack);
+      _fileLogger.error('Delete', 'Critical Error: $e\n$stack');
       _finishRun(wasStopped: false);
     }
   }
@@ -383,155 +439,156 @@ class DeleteFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  static Future<void> _isolateWorker(_DeleteParams params) async {
-    int deletedCount = 0;
-    int errorCount = 0;
-    List<String> logBatch = [];
-    int scanCount = 0;
-    final Set<String> visitedPaths = {};
-
-    void sendProgress(String? status, {bool force = false}) {
-      if (force ||
-          status != null ||
-          logBatch.isNotEmpty ||
-          scanCount % 10 == 0) {
-        params.sendPort.send(
-          _DeleteProgress(
-            deleted: deletedCount,
-            errors: errorCount,
-            logs: List.from(logBatch),
-            currentStatus: status,
-          ),
-        );
-        logBatch.clear();
-      }
-    }
-
-    Future<bool> isDirEmpty(Directory dir) async {
-      try {
-        return await dir.list().isEmpty;
-      } catch (e) {
-        return false;
-      }
-    }
-
-    Future<void> deleteFile(File file) async {
-      try {
-        await file.delete();
-        deletedCount++;
-        if (params.logInterval == 1) {
-          logBatch.add('✓ Deleted: ${p.basename(file.path)}');
-        } else if (deletedCount % params.logInterval == 0) {
-          logBatch.add(
-            '✓ Deleted ${params.logInterval} files (total: $deletedCount) – latest: ${p.basename(file.path)}',
-          );
-        }
-      } catch (e) {
-        logBatch.add('✗ Failed to delete ${p.basename(file.path)}: $e');
-        errorCount++;
-      }
-    }
-
-    Future<void> checkAndDeleteFile(File file) async {
-      try {
-        FileStat stats = await file.stat();
-        DateTime modified = stats.modified;
-
-        String yearStr = DateFormat('yyyy').format(modified);
-        String monthStr = DateFormat('MMM').format(modified);
-
-        if (int.parse(yearStr) <= params.selectedYear &&
-            params.validMonths.contains(monthStr)) {
-          await deleteFile(file);
-        }
-      } catch (e) {
-        logBatch.add('✗ Error checking ${p.basename(file.path)}: $e');
-        errorCount++;
-      }
-    }
-
-    Future<void> processDirectory(Directory dir) async {
-      String canonicalPath;
-      try {
-        canonicalPath = await dir.resolveSymbolicLinks();
-      } catch (_) {
-        canonicalPath = p.canonicalize(dir.path);
-      }
-
-      if (visitedPaths.contains(canonicalPath)) {
-        return; // Prevent cyclic symlink loops
-      }
-      visitedPaths.add(canonicalPath);
-
-      try {
-        await for (final entity in dir.list(
-          recursive: false,
-          followLinks: false,
-        )) {
-          scanCount++;
-          if (entity is File) {
-            await checkAndDeleteFile(entity);
-          } else if (entity is Directory) {
-            sendProgress('⏳ Scanning: ${p.basename(entity.path)}');
-            await processDirectory(entity);
-          } else if (entity is Link) {
-            try {
-              if (!await resolvesWithinRoot(params.targetPath, entity.path)) {
-                logBatch.add(
-                  'ℹ Skipped link pointing outside the target: ${p.basename(entity.path)}',
-                );
-                sendProgress(null);
-                continue;
-              }
-              final targetType = await FileSystemEntity.type(entity.path);
-              if (targetType == FileSystemEntityType.directory) {
-                sendProgress('⏳ Scanning: ${p.basename(entity.path)}');
-                await processDirectory(Directory(entity.path));
-              } else if (targetType == FileSystemEntityType.file) {
-                await checkAndDeleteFile(File(entity.path));
-              }
-            } catch (_) {}
-          }
-          sendProgress(null);
-        }
-
-        if (dir.path != params.targetPath) {
-          if (await isDirEmpty(dir)) {
-            try {
-              await dir.delete();
-              logBatch.add('✓ Deleted empty folder: ${p.basename(dir.path)}');
-            } catch (e) {
-              logBatch.add(
-                '✗ Failed to delete folder ${p.basename(dir.path)}: $e',
-              );
-            }
-          }
-        }
-      } catch (e) {
-        logBatch.add('✗ Error scanning directory: $e');
-        errorCount++;
-      }
-    }
-
-    try {
-      await processDirectory(Directory(params.targetPath));
-      sendProgress('DONE', force: true);
-      params.sendPort.send(
-        _DeleteProgress(
-          isDone: true,
-          deleted: deletedCount,
-          errors: errorCount,
-        ),
-      );
-    } catch (e) {
-      params.sendPort.send(
-        _DeleteProgress(
-          criticalError: e.toString(),
-          isDone: true,
-          deleted: deletedCount,
-          errors: errorCount,
-        ),
-      );
-    }
-  }
+  // Gene - Nov, 25, 2026: Commented out Dart isolate worker after migrating Delete to Rust delete_engine.
+  // static Future<void> _isolateWorker(_DeleteParams params) async {
+  //   int deletedCount = 0;
+  //   int errorCount = 0;
+  //   List<String> logBatch = [];
+  //   int scanCount = 0;
+  //   final Set<String> visitedPaths = {};
+  //
+  //   void sendProgress(String? status, {bool force = false}) {
+  //     if (force ||
+  //         status != null ||
+  //         logBatch.isNotEmpty ||
+  //         scanCount % 10 == 0) {
+  //       params.sendPort.send(
+  //         _DeleteProgress(
+  //           deleted: deletedCount,
+  //           errors: errorCount,
+  //           logs: List.from(logBatch),
+  //           currentStatus: status,
+  //         ),
+  //       );
+  //       logBatch.clear();
+  //     }
+  //   }
+  //
+  //   Future<bool> isDirEmpty(Directory dir) async {
+  //     try {
+  //       return await dir.list().isEmpty;
+  //     } catch (e) {
+  //       return false;
+  //     }
+  //   }
+  //
+  //   Future<void> deleteFile(File file) async {
+  //     try {
+  //       await file.delete();
+  //       deletedCount++;
+  //       if (params.logInterval == 1) {
+  //         logBatch.add('✓ Deleted: ${p.basename(file.path)}');
+  //       } else if (deletedCount % params.logInterval == 0) {
+  //         logBatch.add(
+  //           '✓ Deleted ${params.logInterval} files (total: $deletedCount) – latest: ${p.basename(file.path)}',
+  //         );
+  //       }
+  //     } catch (e) {
+  //       logBatch.add('✗ Failed to delete ${p.basename(file.path)}: $e');
+  //       errorCount++;
+  //     }
+  //   }
+  //
+  //   Future<void> checkAndDeleteFile(File file) async {
+  //     try {
+  //       FileStat stats = await file.stat();
+  //       DateTime modified = stats.modified;
+  //
+  //       String yearStr = DateFormat('yyyy').format(modified);
+  //       String monthStr = DateFormat('MMM').format(modified);
+  //
+  //       if (int.parse(yearStr) <= params.selectedYear &&
+  //           params.validMonths.contains(monthStr)) {
+  //         await deleteFile(file);
+  //       }
+  //     } catch (e) {
+  //       logBatch.add('✗ Error checking ${p.basename(file.path)}: $e');
+  //       errorCount++;
+  //     }
+  //   }
+  //
+  //   Future<void> processDirectory(Directory dir) async {
+  //     String canonicalPath;
+  //     try {
+  //       canonicalPath = await dir.resolveSymbolicLinks();
+  //     } catch (_) {
+  //       canonicalPath = p.canonicalize(dir.path);
+  //     }
+  //
+  //     if (visitedPaths.contains(canonicalPath)) {
+  //       return;
+  //     }
+  //     visitedPaths.add(canonicalPath);
+  //
+  //     try {
+  //       await for (final entity in dir.list(
+  //         recursive: false,
+  //         followLinks: false,
+  //       )) {
+  //         scanCount++;
+  //         if (entity is File) {
+  //           await checkAndDeleteFile(entity);
+  //         } else if (entity is Directory) {
+  //           sendProgress('⏳ Scanning: ${p.basename(entity.path)}');
+  //           await processDirectory(entity);
+  //         } else if (entity is Link) {
+  //           try {
+  //             if (!await resolvesWithinRoot(params.targetPath, entity.path)) {
+  //               logBatch.add(
+  //                 'ℹ Skipped link pointing outside the target: ${p.basename(entity.path)}',
+  //               );
+  //               sendProgress(null);
+  //               continue;
+  //             }
+  //             final targetType = await FileSystemEntity.type(entity.path);
+  //             if (targetType == FileSystemEntityType.directory) {
+  //               sendProgress('⏳ Scanning: ${p.basename(entity.path)}');
+  //               await processDirectory(Directory(entity.path));
+  //             } else if (targetType == FileSystemEntityType.file) {
+  //               await checkAndDeleteFile(File(entity.path));
+  //             }
+  //           } catch (_) {}
+  //         }
+  //         sendProgress(null);
+  //       }
+  //
+  //       if (dir.path != params.targetPath) {
+  //         if (await isDirEmpty(dir)) {
+  //           try {
+  //             await dir.delete();
+  //             logBatch.add('✓ Deleted empty folder: ${p.basename(dir.path)}');
+  //           } catch (e) {
+  //             logBatch.add(
+  //               '✗ Failed to delete folder ${p.basename(dir.path)}: $e',
+  //             );
+  //           }
+  //         }
+  //       }
+  //     } catch (e) {
+  //       logBatch.add('✗ Error scanning directory: $e');
+  //       errorCount++;
+  //     }
+  //   }
+  //
+  //   try {
+  //     await processDirectory(Directory(params.targetPath));
+  //     sendProgress('DONE', force: true);
+  //     params.sendPort.send(
+  //       _DeleteProgress(
+  //         isDone: true,
+  //         deleted: deletedCount,
+  //         errors: errorCount,
+  //       ),
+  //     );
+  //   } catch (e) {
+  //     params.sendPort.send(
+  //       _DeleteProgress(
+  //         criticalError: e.toString(),
+  //         isDone: true,
+  //         deleted: deletedCount,
+  //         errors: errorCount,
+  //       ),
+  //     );
+  //   }
+  // }
 }

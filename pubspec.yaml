@@ -9,11 +9,12 @@ publish_to: "none"
 # and the release workflow runs it before packaging.
 # Gene - Nov, 22, 2026: Bump version to 1.2.0+4 for FTP Upload, transfer filter presets, Neumorphism UI, and opaque macOS title bar fix
 # Gene - Nov, 23, 2026: Bump version to 1.2.1+5 for Microsoft Store MSIX release
-# Gene - Nov, 24, 2026: Bump version to 1.2.3+7 for FTP cross-profile save fix and Windows packaging/test stability
+# Gene - Nov, 24, 2026: Bump version to 1.2.2+6 for FTP Start/End run-time window and Microsoft Store MSIX release
+# Gene - Nov, 24, 2026: Bump version to 1.2.4+8 for FTP scheduling enhancements, CI/test stability fixes, and automated Microsoft Store publishing
 # version: "1.2.2+6"
 # version: "1.2.1+5"
 # version: "1.2.0+4"
-version: "1.2.3+7"
+version: "1.2.4+8"
 # version: "1.1.2+3"
 environment:
   sdk: "^3.10.8"
@@ -34,6 +35,10 @@ dependencies:
   sqflite_common_ffi: ^2.4.2
   # Gene - Nov, 21, 2026: Add ftpconnect for native FTP/FTPS/FTPES/SFTP uploads
   ftpconnect: ^3.0.0
+  # Gene - Nov, 25, 2026: Add Dart build hooks, code_assets, and ffi for the native Rust transfer engine.
+  hooks: ^2.2.0
+  code_assets: ^2.2.0
+  ffi: ^2.2.0
 
 dev_dependencies:
   flutter_test:
@@ -69,11 +74,12 @@ msix_config:
   # Keep in sync with version: above (four segments).
   # Gene - Nov, 22, 2026: Sync msix_version with 1.2.0 release
   # Gene - Nov, 23, 2026: Sync msix_version with 1.2.1 release and switch logo_path to 1024x1024 PNG for Store tile scaling
-  # Gene - Nov, 24, 2026: Sync msix_version with 1.2.3 release
+  # Gene - Nov, 24, 2026: Sync msix_version with 1.2.2 release
+  # Gene - Nov, 24, 2026: Sync msix_version with 1.2.4 release
   # msix_version: "1.2.2.0"
   # msix_version: "1.2.1.0"
   # msix_version: "1.2.0.0"
-  msix_version: "1.2.3.0"
+  msix_version: "1.2.4.0"
   # msix_version: "1.1.2.0"
   # logo_path: "windows/runner/resources/app_icon.ico"
   logo_path: "assets/icon/app_icon.png"

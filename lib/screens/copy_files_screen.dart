@@ -600,19 +600,38 @@ class CopyFilesScreen extends StatelessWidget {
                                       ),
                                     ),
                                   ),
+                                // Gene - Nov, 25, 2026: Widen status container and wrap in Tooltip so live scanning counter and folder name remain visible.
+                                // ConstrainedBox(
+                                //   constraints: const BoxConstraints(
+                                //     maxWidth: 240,
+                                //   ),
+                                //   child: Text(
+                                //     provider.currentStatus,
+                                //     style: TextStyle(
+                                //       fontWeight: FontWeight.w600,
+                                //       color: context.textPrimary,
+                                //       fontSize: 13,
+                                //     ),
+                                //     maxLines: 1,
+                                //     overflow: TextOverflow.ellipsis,
+                                //   ),
+                                // ),
                                 ConstrainedBox(
                                   constraints: const BoxConstraints(
-                                    maxWidth: 240,
+                                    maxWidth: 360,
                                   ),
-                                  child: Text(
-                                    provider.currentStatus,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: context.textPrimary,
-                                      fontSize: 13,
+                                  child: Tooltip(
+                                    message: provider.currentStatus,
+                                    child: Text(
+                                      provider.currentStatus,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: context.textPrimary,
+                                        fontSize: 13,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ],
