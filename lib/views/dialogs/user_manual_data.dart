@@ -260,6 +260,16 @@ class UserManualData {
           'Fast inventory auditing, size tallying, and directory tree inspection',
       icon: Icons.analytics_rounded,
       badge: 'Audit',
+      // keywords: [
+      //   'count',
+      //   'audit',
+      //   'inventory',
+      //   'file count',
+      //   'folder count',
+      //   'speed',
+      //   'interval',
+      // ],
+      // Gene - Nov, 26, 2026: Added file-type filtering keywords and documentation section for Count Files.
       keywords: [
         'count',
         'audit',
@@ -268,6 +278,11 @@ class UserManualData {
         'folder count',
         'speed',
         'interval',
+        'filter',
+        'categories',
+        'images',
+        'documents',
+        'exclude',
       ],
       sections: [
         ManualSection(
@@ -275,6 +290,19 @@ class UserManualData {
           description:
               'The Count Files module performs asynchronous non-blocking traversal of complex file trees with millions of files. It provides precise metrics on total file count, total folders, error counts, and elapsed scan duration.',
           tags: ['audit', 'inventory', 'traversal'],
+        ),
+        ManualSection(
+          title: 'File Type Filtering & Exclusions',
+          description:
+              'Use the Count checkboxes (All, Images, Documents, Videos, Audio, Archives, and Others) to control which file types are tallied and which are excluded. Your selection is saved per profile.',
+          steps: [
+            'Keep All checked to count every file in the directory tree.',
+            'Uncheck All or toggle individual categories such as Images or Documents only to focus on specific file types.',
+            'Watch the Excluded badge and live summary line to verify how many files matched vs. were skipped.',
+          ],
+          tip:
+              'Hover over any category checkbox to see the exact file extensions included in that group.',
+          tags: ['filter', 'categories', 'exclude'],
         ),
         ManualSection(
           title: 'Logging Interval Optimization',

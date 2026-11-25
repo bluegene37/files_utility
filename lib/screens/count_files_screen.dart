@@ -62,6 +62,9 @@ class CountFilesScreen extends StatelessWidget {
                                   ? null
                                   : provider.setTargetPath,
                             ),
+                            const SizedBox(height: 10),
+                            // Gene - Nov, 26, 2026: Added file-type filter checkboxes (All, Images, Documents, Videos, Audio, Archives, Others) and live inclusion/exclusion summary.
+                            _buildFileTypeFilterSection(context, provider),
                             const SizedBox(height: 8),
                             Row(
                               children: [
@@ -170,8 +173,16 @@ class CountFilesScreen extends StatelessWidget {
                       Row(
                         children: [
                           if (!provider.isCounting) ...[
+                            // ElevatedButton.icon(
+                            //   onPressed: provider.targetPath != null
+                            //       ? provider.startCounting
+                            //       : null,
+                            //   icon: const Icon(Icons.analytics_rounded),
+                            //   label: const Text('Count Files'),
+                            // ),
+                            // Gene - Nov, 26, 2026: Require both targetPath and at least one selected category before counting.
                             ElevatedButton.icon(
-                              onPressed: provider.targetPath != null
+                              onPressed: provider.canStartCounting
                                   ? provider.startCounting
                                   : null,
                               icon: const Icon(Icons.analytics_rounded),
@@ -298,6 +309,17 @@ class CountFilesScreen extends StatelessWidget {
                             color: context.successColor,
                             icon: Icons.insert_drive_file,
                           ),
+                          // Gene - Nov, 26, 2026: Show live Excluded count badge whenever any category is unchecked or files are excluded.
+                          if (!provider.allCategoriesSelected ||
+                              provider.excludedFiles > 0) ...[
+                            const SizedBox(width: 8),
+                            StatBadge(
+                              title: 'Excluded',
+                              value: provider.excludedFiles.toString(),
+                              color: context.warningColor,
+                              icon: Icons.filter_alt_off_rounded,
+                            ),
+                          ],
                           const SizedBox(width: 8),
                           StatBadge(
                             title: 'Folders',
@@ -368,6 +390,150 @@ class CountFilesScreen extends StatelessWidget {
           const SizedBox(width: 4),
           const ThemeToggleButton(),
         ],
+      ),
+    );
+  }
+
+  // Gene - Nov, 26, 2026: Built compact file-type filter checkboxes (All + categories) and live summary line.
+  Widget _buildFileTypeFilterSection(
+    BuildContext context,
+    CountFilesProvider provider,
+  ) {
+    final bool? allValue = provider.allCategoriesSelected
+        ? true
+        : (provider.hasAnyCategorySelected ? null : false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 12,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              'Count:',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: context.textSecondary,
+              ),
+            ),
+            _buildFilterCheckbox(
+              context,
+              checkboxKey: const Key('count_filter_all'),
+              label: 'All',
+              tooltip: 'Include or exclude all file types',
+              value: allValue,
+              tristate: true,
+              enabled: !provider.isCounting,
+              onChanged: () => provider.toggleAllCategories(),
+            ),
+            Container(width: 1, height: 18, color: context.border),
+            for (final category in CountFileCategory.values)
+              _buildFilterCheckbox(
+                context,
+                checkboxKey: Key('count_filter_${category.id}'),
+                label: category.label,
+                tooltip: '${category.label}: ${category.extensionsHint}',
+                value: provider.isCategorySelected(category),
+                enabled: !provider.isCounting,
+                onChanged: () => provider.toggleCategory(category),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (provider.allCategoriesSelected)
+          Text(
+            'Counting all file types (nothing excluded)',
+            style: TextStyle(
+              fontSize: 11,
+              color: context.textMuted,
+              fontStyle: FontStyle.italic,
+            ),
+          )
+        else if (!provider.hasAnyCategorySelected)
+          Text(
+            'Select at least one file type to count',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: context.warningColor,
+            ),
+          )
+        else
+          Tooltip(
+            message:
+                'Counting: ${provider.filterSummary}  •  Excluding: ${provider.excludedSummary}',
+            child: Text.rich(
+              TextSpan(
+                style: const TextStyle(fontSize: 11),
+                children: [
+                  TextSpan(
+                    text: 'Counting: ${provider.filterSummary}',
+                    style: TextStyle(
+                      color: context.successColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text: '  •  Excluding: ${provider.excludedSummary}',
+                    style: TextStyle(color: context.textMuted),
+                  ),
+                ],
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFilterCheckbox(
+    BuildContext context, {
+    required Key checkboxKey,
+    required String label,
+    required String tooltip,
+    required bool? value,
+    bool tristate = false,
+    required bool enabled,
+    required VoidCallback onChanged,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: enabled ? onChanged : null,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: Checkbox(
+                  key: checkboxKey,
+                  value: value,
+                  tristate: tristate,
+                  onChanged: enabled ? (_) => onChanged() : null,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: enabled ? context.textPrimary : context.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

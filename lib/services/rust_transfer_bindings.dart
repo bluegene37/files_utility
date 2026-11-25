@@ -155,11 +155,21 @@ external Pointer<Utf8> copyEnginePoll(Pointer<Void> job);
 )
 external void copyEngineDestroy(Pointer<Void> job);
 
+// final class CountConfigC extends Struct {
+//   external Pointer<Utf8> targetPath;
+//
+//   @Uint64()
+//   external int logInterval;
+// }
+// Gene - Nov, 26, 2026: Add includeMask bitmask field to CountConfigC for file-type category filtering.
 final class CountConfigC extends Struct {
   external Pointer<Utf8> targetPath;
 
   @Uint64()
   external int logInterval;
+
+  @Uint32()
+  external int includeMask;
 }
 
 @Native<Pointer<Void> Function(Pointer<CountConfigC>)>(

@@ -46,6 +46,61 @@ import '../models/run_record.dart';
 //   });
 // }
 
+// Gene - Nov, 26, 2026: Added CountFileCategory enum with bitmask values matching native Rust count_engine.
+enum CountFileCategory {
+  images(
+    id: 'images',
+    label: 'Images',
+    mask: 1 << 0,
+    extensionsHint:
+        '.jpg, .jpeg, .png, .gif, .webp, .svg, .heic, .tif, .bmp, .raw, .psd, ...',
+  ),
+  documents(
+    id: 'documents',
+    label: 'Documents',
+    mask: 1 << 1,
+    extensionsHint:
+        '.pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx, .txt, .csv, .rtf, .md, ...',
+  ),
+  videos(
+    id: 'videos',
+    label: 'Videos',
+    mask: 1 << 2,
+    extensionsHint:
+        '.mp4, .mov, .avi, .mkv, .wmv, .webm, .m4v, .mpg, .mpeg, ...',
+  ),
+  audio(
+    id: 'audio',
+    label: 'Audio',
+    mask: 1 << 3,
+    extensionsHint: '.mp3, .wav, .flac, .aac, .ogg, .m4a, .wma, .opus, .aiff, ...',
+  ),
+  archives(
+    id: 'archives',
+    label: 'Archives',
+    mask: 1 << 4,
+    extensionsHint: '.zip, .rar, .7z, .tar, .gz, .bz2, .xz, .iso, .dmg, ...',
+  ),
+  others(
+    id: 'others',
+    label: 'Others',
+    mask: 1 << 5,
+    extensionsHint: 'All other extensions & files without an extension',
+  );
+
+  final String id;
+  final String label;
+  final int mask;
+  final String extensionsHint;
+
+  const CountFileCategory({
+    required this.id,
+    required this.label,
+    required this.mask,
+    required this.extensionsHint,
+  });
+}
+
 class CountFilesProvider with ChangeNotifier {
   final FileLogger _fileLogger = FileLogger();
   final NumberFormat _numFmt = NumberFormat('#,##0');
@@ -55,6 +110,11 @@ class CountFilesProvider with ChangeNotifier {
   List<String> logs = [];
   String currentStatus = 'Idle';
   int totalFiles = 0;
+  // Gene - Nov, 26, 2026: Track excluded file count and selected file-type filter categories.
+  int excludedFiles = 0;
+  Set<CountFileCategory> selectedCategories = Set<CountFileCategory>.from(
+    CountFileCategory.values,
+  );
   int totalFolders = 0;
   int errors = 0;
   int logInterval = 100;
@@ -110,6 +170,18 @@ class CountFilesProvider with ChangeNotifier {
     final db = LocalDbService();
     targetPath = db.getString('count_targetPath');
     logInterval = db.getInt('count_logInterval') ?? 100;
+    // Gene - Nov, 26, 2026: Restore saved file-type categories (defaulting to all when unset).
+    final savedCategories = db.getStringList('count_selectedCategories');
+    if (savedCategories != null) {
+      final savedIds = savedCategories.toSet();
+      selectedCategories = CountFileCategory.values
+          .where((c) => savedIds.contains(c.id))
+          .toSet();
+    } else {
+      selectedCategories = Set<CountFileCategory>.from(
+        CountFileCategory.values,
+      );
+    }
     notifyListeners();
   }
 
@@ -121,6 +193,69 @@ class CountFilesProvider with ChangeNotifier {
     final db = LocalDbService();
     await db.setOrRemoveString('count_targetPath', targetPath);
     await db.setInt('count_logInterval', logInterval);
+    // Gene - Nov, 26, 2026: Persist selected file-type categories per profile.
+    await db.setStringList(
+      'count_selectedCategories',
+      CountFileCategory.values
+          .where(selectedCategories.contains)
+          .map((c) => c.id)
+          .toList(),
+    );
+  }
+
+  // Gene - Nov, 26, 2026: File-type filter helpers and mutators for CountFilesProvider.
+  bool get allCategoriesSelected =>
+      selectedCategories.length == CountFileCategory.values.length;
+
+  bool get hasAnyCategorySelected => selectedCategories.isNotEmpty;
+
+  bool get canStartCounting => targetPath != null && hasAnyCategorySelected;
+
+  int get categoryIncludeMask =>
+      selectedCategories.fold<int>(0, (acc, c) => acc | c.mask);
+
+  bool isCategorySelected(CountFileCategory category) =>
+      selectedCategories.contains(category);
+
+  String get filterSummary {
+    if (allCategoriesSelected) return 'All Files';
+    if (!hasAnyCategorySelected) return 'None';
+    return CountFileCategory.values
+        .where(selectedCategories.contains)
+        .map((c) => c.label)
+        .join(', ');
+  }
+
+  String get excludedSummary {
+    return CountFileCategory.values
+        .where((c) => !selectedCategories.contains(c))
+        .map((c) => c.label)
+        .join(', ');
+  }
+
+  void setAllCategories(bool selected) {
+    if (isCounting) return;
+    selectedCategories = selected
+        ? Set<CountFileCategory>.from(CountFileCategory.values)
+        : <CountFileCategory>{};
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void toggleAllCategories() {
+    setAllCategories(!allCategoriesSelected);
+  }
+
+  void toggleCategory(CountFileCategory category, [bool? value]) {
+    if (isCounting) return;
+    final shouldSelect = value ?? !selectedCategories.contains(category);
+    if (shouldSelect) {
+      selectedCategories.add(category);
+    } else {
+      selectedCategories.remove(category);
+    }
+    _saveSettings();
+    notifyListeners();
   }
 
   void setLogInterval(int val) {
@@ -160,9 +295,19 @@ class CountFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
+//   void clearLogs() {
+//     logs.clear();
+//     totalFiles = 0;
+//     totalFolders = 0;
+//     errors = 0;
+//     currentStatus = 'Idle';
+//     notifyListeners();
+//   }
+  // Gene - Nov, 26, 2026: Reset excludedFiles alongside totalFiles/totalFolders when clearing logs.
   void clearLogs() {
     logs.clear();
     totalFiles = 0;
+    excludedFiles = 0;
     totalFolders = 0;
     errors = 0;
     currentStatus = 'Idle';
@@ -205,9 +350,17 @@ class CountFilesProvider with ChangeNotifier {
       return;
     }
 
+    // Gene - Nov, 26, 2026: Require at least one file-type category and log filter selection.
+    if (!hasAnyCategorySelected) {
+      _addLog('✗ Error: Select at least one file type to count.');
+      notifyListeners();
+      return;
+    }
+
     isCounting = true;
     _stopRequested = false;
     totalFiles = 0;
+    excludedFiles = 0;
     totalFolders = 0;
     errors = 0;
     // Gene - Nov, 25, 2026: Initialize Count status with live scanning file counter.
@@ -217,6 +370,10 @@ class CountFilesProvider with ChangeNotifier {
 
     _addLog('⏳ Starting file count...');
     _addLog('  Target: $targetPath');
+    _addLog('  Counting: $filterSummary');
+    if (!allCategoriesSelected) {
+      _addLog('  Excluding: $excludedSummary');
+    }
 
     await _fileLogger.logRunStart(operation: 'Count', targetPath: targetPath);
 
@@ -276,9 +433,15 @@ class CountFilesProvider with ChangeNotifier {
       //   }
       // });
       _stopRustJob();
+      // _rustJob = RustCountJob.start(
+      //   targetPath: targetPath!,
+      //   logInterval: logInterval,
+      // );
+      // Gene - Nov, 26, 2026: Pass selected category includeMask to native Rust count engine.
       _rustJob = RustCountJob.start(
         targetPath: targetPath!,
         logInterval: logInterval,
+        includeMask: categoryIncludeMask,
       );
       // Gene - Nov, 25, 2026: Poll every 150ms instead of 100ms.
       // _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
@@ -301,12 +464,15 @@ class CountFilesProvider with ChangeNotifier {
 
     try {
       final prevFiles = totalFiles;
+      // Gene - Nov, 26, 2026: Track excludedFiles updates from Rust snapshot.
+      final prevExcluded = excludedFiles;
       final prevFolders = totalFolders;
       final prevErrors = errors;
       final prevStatus = currentStatus;
 
       final snap = job.poll();
       totalFiles = snap.files;
+      excludedFiles = snap.excludedFiles;
       totalFolders = snap.folders;
       errors = snap.errors;
 
@@ -339,6 +505,7 @@ class CountFilesProvider with ChangeNotifier {
       }
 
       if (prevFiles != totalFiles ||
+          prevExcluded != excludedFiles ||
           prevFolders != totalFolders ||
           prevErrors != errors ||
           prevStatus != currentStatus ||
@@ -362,13 +529,23 @@ class CountFilesProvider with ChangeNotifier {
       _addLog(
         '  Count so far — Files: ${_numFmt.format(totalFiles)}, Folders: ${_numFmt.format(totalFolders)} in $elapsed',
       );
+      // Gene - Nov, 26, 2026: Log excluded files count when filtering is active.
+      if (!allCategoriesSelected || excludedFiles > 0) {
+        _addLog('  Excluded Files: ${_numFmt.format(excludedFiles)}');
+      }
     } else {
       _addLog('🏁 Count completed in $elapsed');
       _addLog('  Total Files: ${_numFmt.format(totalFiles)}');
+      if (!allCategoriesSelected || excludedFiles > 0) {
+        _addLog('  Excluded Files: ${_numFmt.format(excludedFiles)}');
+      }
       _addLog('  Total Folders: ${_numFmt.format(totalFolders)}');
     }
 
     await _fileLogger.info('Count', 'Total Files: $totalFiles');
+    if (!allCategoriesSelected || excludedFiles > 0) {
+      await _fileLogger.info('Count', 'Excluded Files: $excludedFiles');
+    }
     await _fileLogger.info('Count', 'Total Folders: $totalFolders');
     if (errors > 0) {
       await _fileLogger.error('Count', 'Errors encountered: $errors');
@@ -400,7 +577,10 @@ class CountFilesProvider with ChangeNotifier {
               : (errors > 0 && totalFiles == 0 && totalFolders == 0
                     ? 'Error'
                     : 'Completed'),
-          configSummary: 'Target: $targetPath, Log Every: $logInterval',
+          // configSummary: 'Target: $targetPath, Log Every: $logInterval',
+          // Gene - Nov, 26, 2026: Include active file-type filter summary in Count run history.
+          configSummary:
+              'Target: $targetPath, Types: $filterSummary, Log Every: $logInterval',
           sourcePath: targetPath,
         ),
       );
