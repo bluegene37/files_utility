@@ -15,10 +15,12 @@ class AppInfo {
   // Gene - Nov, 23, 2026: Bump appVersion to 1.2.1 for Microsoft Store release and gate external updates on STORE_BUILD
   // Gene - Nov, 24, 2026: Bump appVersion to 1.2.2 to stay synchronized with pubspec.yaml
   // Gene - Nov, 24, 2026: Bump appVersion to 1.2.4 to stay synchronized with pubspec.yaml
+  // Gene - Nov, 26, 2026: Bump appVersion to 1.2.5 to stay synchronized with pubspec.yaml
+  // static const String appVersion = '1.2.4';
   // static const String appVersion = '1.2.2';
   // static const String appVersion = '1.2.1';
   // static const String appVersion = '1.2.0';
-  static const String appVersion = '1.2.4';
+  static const String appVersion = '1.2.5';
 
   // Gene - Nov, 23, 2026: Support compile-time STORE_BUILD flag to disable external self-updates in Microsoft Store builds
   static const bool isStoreBuild = bool.fromEnvironment(

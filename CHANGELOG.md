@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<!-- Gene - Nov, 26, 2026: Added v1.2.5 changelog entry covering native Rust engines and Count Files enhancements -->
+## [1.2.5] - 2026-11-26
+
+### Added
+- **Native Rust File Engines**: Converted Transfer, Copy, Count, Delete, and FTP local scanning to native Rust engines with Win32 `CopyFileExW`/`MoveFileExW` parallelization and a live scanning file counter in Transfer & Copy.
+- **Count Files Filters, Folder Size & Date Range**: Added file-type filter checkboxes with an excluded counter, total folder size calculation with a **Get Folder Size** button, and a **Check Date Range** button tracking oldest and latest file dates.
+
+### Changed
+- **Rust Engine Optimizations & Lifecycle Safety**: Optimized native engines, hardened provider lifecycle safety, and removed the window title counter.
+
 <!-- Gene - Nov, 24, 2026: Added v1.2.4 changelog entry covering FTP scheduling enhancements, Store publishing automation, and CI/test fixes -->
 ## [1.2.4] - 2026-11-24
 
