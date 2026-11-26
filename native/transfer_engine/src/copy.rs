@@ -14,9 +14,16 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime};
 
+// use crate::common::{
+//     c_str_to_string, fast_copy_to_part_and_swap, path_basename, push_json_escaped,
+//     relative_dir_string, resolve_within_root, system_time_to_epoch_ms, DEFAULT_IO_WORKERS,
+//     MAX_QUEUED_LOGS, MAX_QUEUE_CAPACITY,
+// };
+// Gene - Nov, 26, 2026: Import case-insensitive filename_key, dynamic io_worker_count, lexical dest-skipping, and single-canonicalize symlink check.
 use crate::common::{
-    c_str_to_string, fast_copy_to_part_and_swap, path_basename, push_json_escaped,
-    relative_dir_string, resolve_within_root, system_time_to_epoch_ms, DEFAULT_IO_WORKERS,
+    c_str_to_string, fast_copy_to_part_and_swap, filename_key, io_worker_count,
+    lexical_equal_or_within, normalize_lexical, path_basename, push_json_escaped,
+    relative_dir_string, resolve_canonical_within_root, system_time_to_epoch_ms, FilenameKey,
     MAX_QUEUED_LOGS, MAX_QUEUE_CAPACITY,
 };
 
@@ -132,15 +139,25 @@ impl CopyQueue {
         popped
     }
 
+    // Gene - Nov, 26, 2026: Recover poisoned mutexes on close and use try_lock for transient UI phase updates.
+    // fn close(&self, clear_pending: bool) {
+    //     if let Ok(mut guard) = self.inner.lock() {
+    //         if clear_pending {
+    //             guard.tasks.clear();
+    //         }
+    //         guard.closed = true;
+    //         self.not_empty.notify_all();
+    //         self.not_full.notify_all();
+    //     }
+    // }
     fn close(&self, clear_pending: bool) {
-        if let Ok(mut guard) = self.inner.lock() {
-            if clear_pending {
-                guard.tasks.clear();
-            }
-            guard.closed = true;
-            self.not_empty.notify_all();
-            self.not_full.notify_all();
+        let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        if clear_pending {
+            guard.tasks.clear();
         }
+        guard.closed = true;
+        self.not_empty.notify_all();
+        self.not_full.notify_all();
     }
 }
 
@@ -217,17 +234,40 @@ impl CopySharedState {
         }
     }
 
+    // Gene - Nov, 26, 2026: Use try_lock for transient phase updates while blocking for PHASE_DONE, and write progress files atomically.
+    // fn set_phase(&self, phase: u8, dir_name: Option<&str>, copied_name: Option<&str>) {
+    //     if let Ok(mut ui) = self.ui.lock() {
+    //         ui.phase = phase;
+    //         if let Some(d) = dir_name {
+    //             ui.current_dir_name.clear();
+    //             ui.current_dir_name.push_str(d);
+    //         }
+    //         if let Some(c) = copied_name {
+    //             ui.latest_copied_name.clear();
+    //             ui.latest_copied_name.push_str(c);
+    //         }
+    //     }
+    // }
     fn set_phase(&self, phase: u8, dir_name: Option<&str>, copied_name: Option<&str>) {
-        if let Ok(mut ui) = self.ui.lock() {
-            ui.phase = phase;
-            if let Some(d) = dir_name {
-                ui.current_dir_name.clear();
-                ui.current_dir_name.push_str(d);
+        let mut ui = if phase == PHASE_DONE {
+            match self.ui.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
             }
-            if let Some(c) = copied_name {
-                ui.latest_copied_name.clear();
-                ui.latest_copied_name.push_str(c);
+        } else {
+            match self.ui.try_lock() {
+                Ok(g) => g,
+                Err(_) => return,
             }
+        };
+        ui.phase = phase;
+        if let Some(d) = dir_name {
+            ui.current_dir_name.clear();
+            ui.current_dir_name.push_str(d);
+        }
+        if let Some(c) = copied_name {
+            ui.latest_copied_name.clear();
+            ui.latest_copied_name.push_str(c);
         }
     }
 
@@ -300,7 +340,18 @@ fn save_progress_file(
         state.files_inspected.load(Ordering::Relaxed),
     );
 
-    let _ = fs::write(path, json);
+    // let _ = fs::write(path, json);
+    let mut tmp_os = path.as_os_str().to_os_string();
+    tmp_os.push(".tmp");
+    let tmp_path = PathBuf::from(tmp_os);
+    if fs::write(&tmp_path, &json).is_ok() {
+        if fs::rename(&tmp_path, path).is_err() {
+            let _ = fs::remove_file(&tmp_path);
+            let _ = fs::write(path, &json);
+        }
+    } else {
+        let _ = fs::write(path, &json);
+    }
 }
 
 fn spawn_copy_worker(
@@ -357,7 +408,534 @@ fn spawn_copy_worker(
         .ok()
 }
 
-fn read_dest_sizes(dest_dir: &Path) -> HashMap<OsString, u64> {
+// Gene - Nov, 26, 2026: Case-accurate dest map, zero-lastProcessed parallel copy, iterative DFS stack,
+// dest-inside-source guard, single-canonicalize symlinks, dynamic workers, and safe resume completion tracking.
+// fn read_dest_sizes(dest_dir: &Path) -> HashMap<OsString, u64> {
+//     let mut map = HashMap::new();
+//     let entries = match fs::read_dir(dest_dir) {
+//         Ok(iter) => iter,
+//         Err(_) => return map,
+//     };
+//     for entry in entries.flatten() {
+//         if let Ok(ft) = entry.file_type() {
+//             if ft.is_file() {
+//                 if let Ok(meta) = entry.metadata() {
+//                     map.insert(entry.file_name(), meta.len());
+//                 }
+//             }
+//         }
+//     }
+//     map
+// }
+//
+// fn drain_completed_trackers(
+//     pending_trackers: &mut Vec<(String, Arc<AtomicUsize>)>,
+//     completed_dirs: &mut HashSet<String>,
+//     last_processed_files: &mut HashMap<String, String>,
+// ) {
+//     pending_trackers.retain(|(rel, cnt)| {
+//         if cnt.load(Ordering::Acquire) == 0 {
+//             completed_dirs.insert(rel.clone());
+//             last_processed_files.remove(rel);
+//             false
+//         } else {
+//             true
+//         }
+//     });
+// }
+//
+// #[allow(clippy::too_many_arguments)]
+// fn inspect_and_enqueue_copy_file(
+//     file_path: PathBuf,
+//     name_os: OsString,
+//     name_str: &str,
+//     known_meta: Option<Metadata>,
+//     dir_name: &str,
+//     rel_path: &str,
+//     dest_dir: &Path,
+//     dest_dir_created: &mut bool,
+//     dest_sizes: &mut Option<HashMap<OsString, u64>>,
+//     created_dirs: &mut HashSet<PathBuf>,
+//     dir_pending: &Option<Arc<AtomicUsize>>,
+//     config: &CopyConfig,
+//     state: &CopySharedState,
+//     queue: &CopyQueue,
+//     last_processed_files: &mut HashMap<String, String>,
+// ) -> bool {
+//     state.files_inspected.fetch_add(1, Ordering::Relaxed);
+//
+//     let meta = match known_meta {
+//         Some(m) => m,
+//         None => match fs::metadata(&file_path) {
+//             Ok(m) => m,
+//             Err(e) => {
+//                 state.errors.fetch_add(1, Ordering::Relaxed);
+//                 state.push_error_log(format!("✗ Failed to inspect {name_str}: {e}"));
+//                 return true;
+//             }
+//         },
+//     };
+//
+//     let src_size = meta.len();
+//     let modified = match meta.modified() {
+//         Ok(m) => m,
+//         Err(e) => {
+//             state.errors.fetch_add(1, Ordering::Relaxed);
+//             state.push_error_log(format!("✗ Failed to inspect {name_str}: {e}"));
+//             return true;
+//         }
+//     };
+//
+//     if config.enable_age_filter || config.enable_date_range {
+//         let modified_ms = system_time_to_epoch_ms(modified);
+//         if config.enable_age_filter && modified_ms > config.age_threshold_epoch_ms {
+//             state.files_skipped.fetch_add(1, Ordering::Relaxed);
+//             return true;
+//         }
+//         if config.enable_date_range
+//             && (modified_ms < config.from_inclusive_epoch_ms
+//                 || modified_ms >= config.to_exclusive_epoch_ms)
+//         {
+//             state.files_skipped.fetch_add(1, Ordering::Relaxed);
+//             return true;
+//         }
+//     }
+//
+//     let sizes_map = dest_sizes.get_or_insert_with(|| read_dest_sizes(dest_dir));
+//     if sizes_map.get(&name_os) == Some(&src_size) {
+//         let already = state.files_already_exist.fetch_add(1, Ordering::Relaxed) + 1;
+//         if config.log_interval > 0 && already % config.log_interval == 0 {
+//             state.set_phase(PHASE_CHECKING, Some(dir_name), None);
+//             state.push_log(format!(
+//                 "⏭ {already} files already exist at destination (skipping)"
+//             ));
+//         }
+//         return true;
+//     }
+//
+//     if !*dest_dir_created {
+//         if !created_dirs.contains(dest_dir) {
+//             if let Err(e) = fs::create_dir_all(dest_dir) {
+//                 state.errors.fetch_add(1, Ordering::Relaxed);
+//                 state.push_error_log(format!("✗ Failed to copy {name_str}: {e}"));
+//                 return true;
+//             }
+//             created_dirs.insert(dest_dir.to_path_buf());
+//         }
+//         *dest_dir_created = true;
+//     }
+//
+//     if let Some(ref cnt) = dir_pending {
+//         cnt.fetch_add(1, Ordering::AcqRel);
+//     }
+//
+//     let ok = queue.push(
+//         CopyTask {
+//             src: file_path,
+//             dest: dest_dir.join(&name_os),
+//             modified: Some(modified),
+//             dir_pending: dir_pending.clone(),
+//         },
+//         state,
+//     );
+//     if !ok {
+//         if let Some(ref cnt) = dir_pending {
+//             cnt.fetch_sub(1, Ordering::AcqRel);
+//         }
+//         return false;
+//     }
+//
+//     if config.progress_file_path.is_some() {
+//         last_processed_files.insert(rel_path.to_string(), name_str.to_string());
+//     }
+//     true
+// }
+//
+// struct ResumeFileCandidate {
+//     path: PathBuf,
+//     name_os: OsString,
+//     name: String,
+//     known_meta: Option<Metadata>,
+// }
+//
+// #[allow(clippy::too_many_arguments)]
+// fn walk_and_copy(
+//     dir: &Path,
+//     canonical_root: &Path,
+//     config: &CopyConfig,
+//     state: &CopySharedState,
+//     queue: &CopyQueue,
+//     visited_symlinks: &mut HashSet<PathBuf>,
+//     created_dirs: &mut HashSet<PathBuf>,
+//     completed_dirs: &mut HashSet<String>,
+//     last_processed_files: &mut HashMap<String, String>,
+//     pending_trackers: &mut Vec<(String, Arc<AtomicUsize>)>,
+//     last_save: &mut Instant,
+// ) {
+//     if state.is_stopped() || !state.wait_if_paused() {
+//         return;
+//     }
+//
+//     let rel_path = relative_dir_string(dir, &config.source_path);
+//     if completed_dirs.contains(&rel_path) {
+//         state.dirs_skipped.fetch_add(1, Ordering::Relaxed);
+//         return;
+//     }
+//
+//     let dir_name = path_basename(dir);
+//     state.set_phase(PHASE_SCANNING, Some(&dir_name), None);
+//
+//     let entries = match fs::read_dir(dir) {
+//         Ok(iter) => iter,
+//         Err(e) => {
+//             state.errors.fetch_add(1, Ordering::Relaxed);
+//             state.push_error_log(format!("✗ Cannot access: {} ({e})", dir.display()));
+//             return;
+//         }
+//     };
+//
+//     let dest_dir = if rel_path == "." {
+//         config.dest_path.clone()
+//     } else {
+//         config.dest_path.join(&rel_path)
+//     };
+//     let mut dest_dir_created = created_dirs.contains(&dest_dir);
+//     let mut dest_sizes: Option<HashMap<OsString, u64>> = None;
+//     let dir_pending = config
+//         .progress_file_path
+//         .as_ref()
+//         .map(|_| Arc::new(AtomicUsize::new(0)));
+//
+//     let mut subdirs: Vec<PathBuf> = Vec::new();
+//     let resume_last_name = last_processed_files.get(&rel_path).cloned();
+//
+//     if let Some(ref last_name) = resume_last_name {
+//         // Resuming an interrupted directory requires deterministic filename sorting.
+//         let mut files: Vec<ResumeFileCandidate> = Vec::new();
+//         for entry_res in entries {
+//             if state.is_stopped() {
+//                 return;
+//             }
+//             let entry = match entry_res {
+//                 Ok(e) => e,
+//                 Err(_) => continue,
+//             };
+//             let entry_path = entry.path();
+//             let ft = match entry.file_type() {
+//                 Ok(t) => t,
+//                 Err(_) => continue,
+//             };
+//             if ft.is_file() {
+//                 let name_os = entry.file_name();
+//                 let name = name_os.to_string_lossy().into_owned();
+//                 files.push(ResumeFileCandidate {
+//                     path: entry_path,
+//                     name_os,
+//                     name,
+//                     known_meta: entry.metadata().ok(),
+//                 });
+//             } else if ft.is_dir() {
+//                 subdirs.push(entry_path);
+//             } else if ft.is_symlink() && resolve_within_root(canonical_root, &entry_path) {
+//                 if let Ok(canon_target) = fs::canonicalize(&entry_path) {
+//                     if let Ok(meta) = fs::metadata(&entry_path) {
+//                         if meta.is_dir() {
+//                             if visited_symlinks.insert(canon_target) {
+//                                 subdirs.push(entry_path);
+//                             }
+//                         } else if meta.is_file() {
+//                             let name_os = entry.file_name();
+//                             let name = name_os.to_string_lossy().into_owned();
+//                             files.push(ResumeFileCandidate {
+//                                 path: entry_path,
+//                                 name_os,
+//                                 name,
+//                                 known_meta: Some(meta),
+//                             });
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//
+//         files.sort_by(|a, b| a.name.cmp(&b.name));
+//         let start_idx = files
+//             .iter()
+//             .position(|f| &f.name == last_name)
+//             .map(|i| i + 1)
+//             .unwrap_or(0);
+//
+//         for candidate in files.into_iter().skip(start_idx) {
+//             if state.is_stopped() || !state.wait_if_paused() {
+//                 break;
+//             }
+//             if !inspect_and_enqueue_copy_file(
+//                 candidate.path,
+//                 candidate.name_os,
+//                 &candidate.name,
+//                 candidate.known_meta,
+//                 &dir_name,
+//                 &rel_path,
+//                 &dest_dir,
+//                 &mut dest_dir_created,
+//                 &mut dest_sizes,
+//                 created_dirs,
+//                 &dir_pending,
+//                 config,
+//                 state,
+//                 queue,
+//                 last_processed_files,
+//             ) {
+//                 break;
+//             }
+//         }
+//     } else {
+//         // Streaming fast-path: process read_dir entries directly with zero sorting overhead.
+//         for entry_res in entries {
+//             if state.is_stopped() || !state.wait_if_paused() {
+//                 break;
+//             }
+//             let entry = match entry_res {
+//                 Ok(e) => e,
+//                 Err(_) => continue,
+//             };
+//             let entry_path = entry.path();
+//             let ft = match entry.file_type() {
+//                 Ok(t) => t,
+//                 Err(_) => continue,
+//             };
+//
+//             if ft.is_file() {
+//                 let name_os = entry.file_name();
+//                 let name_str = name_os.to_string_lossy().into_owned();
+//                 if !inspect_and_enqueue_copy_file(
+//                     entry_path,
+//                     name_os,
+//                     &name_str,
+//                     entry.metadata().ok(),
+//                     &dir_name,
+//                     &rel_path,
+//                     &dest_dir,
+//                     &mut dest_dir_created,
+//                     &mut dest_sizes,
+//                     created_dirs,
+//                     &dir_pending,
+//                     config,
+//                     state,
+//                     queue,
+//                     last_processed_files,
+//                 ) {
+//                     break;
+//                 }
+//             } else if ft.is_dir() {
+//                 subdirs.push(entry_path);
+//             } else if ft.is_symlink() && resolve_within_root(canonical_root, &entry_path) {
+//                 if let Ok(canon_target) = fs::canonicalize(&entry_path) {
+//                     if let Ok(meta) = fs::metadata(&entry_path) {
+//                         if meta.is_dir() {
+//                             if visited_symlinks.insert(canon_target) {
+//                                 subdirs.push(entry_path);
+//                             }
+//                         } else if meta.is_file() {
+//                             let name_os = entry.file_name();
+//                             let name_str = name_os.to_string_lossy().into_owned();
+//                             if !inspect_and_enqueue_copy_file(
+//                                 entry_path,
+//                                 name_os,
+//                                 &name_str,
+//                                 Some(meta),
+//                                 &dir_name,
+//                                 &rel_path,
+//                                 &dest_dir,
+//                                 &mut dest_dir_created,
+//                                 &mut dest_sizes,
+//                                 created_dirs,
+//                                 &dir_pending,
+//                                 config,
+//                                 state,
+//                                 queue,
+//                                 last_processed_files,
+//                             ) {
+//                                 break;
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//
+//             if let Some(ref progress_path) = config.progress_file_path {
+//                 if last_save.elapsed() >= Duration::from_secs(2) {
+//                     drain_completed_trackers(pending_trackers, completed_dirs, last_processed_files);
+//                     save_progress_file(
+//                         progress_path,
+//                         config,
+//                         completed_dirs,
+//                         last_processed_files,
+//                         state,
+//                     );
+//                     *last_save = Instant::now();
+//                 }
+//             }
+//         }
+//     }
+//
+//     if let Some(cnt) = dir_pending {
+//         pending_trackers.push((rel_path.clone(), cnt));
+//     }
+//
+//     subdirs.sort_by(|a, b| path_basename(a).cmp(&path_basename(b)));
+//     for sub in subdirs {
+//         if state.is_stopped() {
+//             return;
+//         }
+//         walk_and_copy(
+//             &sub,
+//             canonical_root,
+//             config,
+//             state,
+//             queue,
+//             visited_symlinks,
+//             created_dirs,
+//             completed_dirs,
+//             last_processed_files,
+//             pending_trackers,
+//             last_save,
+//         );
+//     }
+//
+//     if let Some(ref progress_path) = config.progress_file_path {
+//         drain_completed_trackers(pending_trackers, completed_dirs, last_processed_files);
+//         if last_save.elapsed() >= Duration::from_secs(2) {
+//             save_progress_file(
+//                 progress_path,
+//                 config,
+//                 completed_dirs,
+//                 last_processed_files,
+//                 state,
+//             );
+//             *last_save = Instant::now();
+//         }
+//     }
+// }
+//
+// fn run_copy_coordinator(
+//     config: CopyConfig,
+//     state: Arc<CopySharedState>,
+//     queue: Arc<CopyQueue>,
+// ) {
+//     let is_resuming =
+//         !config.completed_dirs.is_empty() || !config.last_processed_files.is_empty();
+//
+//     let canonical_root = match fs::canonicalize(&config.source_path) {
+//         Ok(p) => p,
+//         Err(e) => {
+//             state.set_critical_error(format!(
+//                 "Failed to access source directory {}: {e}",
+//                 config.source_path.display()
+//             ));
+//             queue.close(true);
+//             state.set_phase(PHASE_DONE, None, None);
+//             state.done.store(true, Ordering::Release);
+//             return;
+//         }
+//     };
+//
+//     let mut workers = Vec::with_capacity(DEFAULT_IO_WORKERS);
+//     for _ in 0..DEFAULT_IO_WORKERS {
+//         if let Some(h) = spawn_copy_worker(
+//             Arc::clone(&queue),
+//             Arc::clone(&state),
+//             config.log_interval,
+//         ) {
+//             workers.push(h);
+//         }
+//     }
+//
+//     let mut visited_symlinks: HashSet<PathBuf> = HashSet::new();
+//     let mut created_dirs: HashSet<PathBuf> = HashSet::new();
+//     let mut completed_dirs = config.completed_dirs.clone();
+//     let mut last_processed_files = config.last_processed_files.clone();
+//     let mut pending_trackers: Vec<(String, Arc<AtomicUsize>)> = Vec::new();
+//     let mut last_save = Instant::now();
+//
+//     walk_and_copy(
+//         &config.source_path,
+//         &canonical_root,
+//         &config,
+//         &state,
+//         &queue,
+//         &mut visited_symlinks,
+//         &mut created_dirs,
+//         &mut completed_dirs,
+//         &mut last_processed_files,
+//         &mut pending_trackers,
+//         &mut last_save,
+//     );
+//
+//     queue.close(state.is_stopped());
+//     for w in workers {
+//         let _ = w.join();
+//     }
+//
+//     if state.is_stopped() {
+//         drain_completed_trackers(&mut pending_trackers, &mut completed_dirs, &mut last_processed_files);
+//         if let Some(ref progress_path) = config.progress_file_path {
+//             save_progress_file(
+//                 progress_path,
+//                 &config,
+//                 &completed_dirs,
+//                 &last_processed_files,
+//                 &state,
+//             );
+//         }
+//     } else {
+//         let dirs_skipped = state.dirs_skipped.load(Ordering::Relaxed);
+//         let resume_note = if is_resuming {
+//             format!(" ({dirs_skipped} dirs skipped via resume)")
+//         } else {
+//             String::new()
+//         };
+//         state.push_log(format!("🏁 Copy completed successfully.{resume_note}"));
+//         if let Some(ref progress_path) = config.progress_file_path {
+//             let _ = fs::remove_file(progress_path);
+//         }
+//     }
+//
+//     state.set_phase(PHASE_DONE, None, None);
+//     state.done.store(true, Ordering::Release);
+// }
+//
+// fn build_copy_poll_json(state: &CopySharedState) -> String {
+//     let files_copied = state.files_copied.load(Ordering::Relaxed);
+//     let files_skipped = state.files_skipped.load(Ordering::Relaxed);
+//     let files_already_exist = state.files_already_exist.load(Ordering::Relaxed);
+//     let errors = state.errors.load(Ordering::Relaxed);
+//     let files_inspected = state.files_inspected.load(Ordering::Relaxed);
+//     let dirs_skipped = state.dirs_skipped.load(Ordering::Relaxed);
+//     let is_done = state.done.load(Ordering::Acquire);
+//
+//     let (phase, current_dir_name, latest_copied_name, critical_error, logs, error_logs) =
+//         match state.ui.lock() {
+//             Ok(mut ui) => (
+//                 ui.phase,
+//                 ui.current_dir_name.clone(),
+//                 ui.latest_copied_name.clone(),
+//                 ui.critical_error.take(),
+//                 ui.logs.drain(..).collect::<Vec<_>>(),
+//                 ui.error_logs.drain(..).collect::<Vec<_>>(),
+//             ),
+//             Err(_) => (
+//                 PHASE_DONE,
+//                 String::new(),
+//                 String::new(),
+//                 None,
+//                 Vec::new(),
+//                 Vec::new(),
+//             ),
+//         };
+//
+//     let mut json = String::with_capacity(384);
+fn read_dest_sizes(dest_dir: &Path) -> HashMap<FilenameKey, u64> {
     let mut map = HashMap::new();
     let entries = match fs::read_dir(dest_dir) {
         Ok(iter) => iter,
@@ -367,7 +945,7 @@ fn read_dest_sizes(dest_dir: &Path) -> HashMap<OsString, u64> {
         if let Ok(ft) = entry.file_type() {
             if ft.is_file() {
                 if let Ok(meta) = entry.metadata() {
-                    map.insert(entry.file_name(), meta.len());
+                    map.insert(filename_key(&entry.file_name()), meta.len());
                 }
             }
         }
@@ -401,13 +979,14 @@ fn inspect_and_enqueue_copy_file(
     rel_path: &str,
     dest_dir: &Path,
     dest_dir_created: &mut bool,
-    dest_sizes: &mut Option<HashMap<OsString, u64>>,
+    dest_sizes: &mut Option<HashMap<FilenameKey, u64>>,
     created_dirs: &mut HashSet<PathBuf>,
     dir_pending: &Option<Arc<AtomicUsize>>,
     config: &CopyConfig,
     state: &CopySharedState,
     queue: &CopyQueue,
     last_processed_files: &mut HashMap<String, String>,
+    record_last_processed: bool,
 ) -> bool {
     state.files_inspected.fetch_add(1, Ordering::Relaxed);
 
@@ -449,7 +1028,7 @@ fn inspect_and_enqueue_copy_file(
     }
 
     let sizes_map = dest_sizes.get_or_insert_with(|| read_dest_sizes(dest_dir));
-    if sizes_map.get(&name_os) == Some(&src_size) {
+    if sizes_map.get(&filename_key(&name_os)) == Some(&src_size) {
         let already = state.files_already_exist.fetch_add(1, Ordering::Relaxed) + 1;
         if config.log_interval > 0 && already % config.log_interval == 0 {
             state.set_phase(PHASE_CHECKING, Some(dir_name), None);
@@ -462,12 +1041,23 @@ fn inspect_and_enqueue_copy_file(
 
     if !*dest_dir_created {
         if !created_dirs.contains(dest_dir) {
-            if let Err(e) = fs::create_dir_all(dest_dir) {
-                state.errors.fetch_add(1, Ordering::Relaxed);
-                state.push_error_log(format!("✗ Failed to copy {name_str}: {e}"));
-                return true;
+            match fs::create_dir(dest_dir) {
+                Ok(()) => {
+                    created_dirs.insert(dest_dir.to_path_buf());
+                    *dest_sizes = Some(HashMap::new());
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    created_dirs.insert(dest_dir.to_path_buf());
+                }
+                Err(_) => {
+                    if let Err(e) = fs::create_dir_all(dest_dir) {
+                        state.errors.fetch_add(1, Ordering::Relaxed);
+                        state.push_error_log(format!("✗ Failed to copy {name_str}: {e}"));
+                        return true;
+                    }
+                    created_dirs.insert(dest_dir.to_path_buf());
+                }
             }
-            created_dirs.insert(dest_dir.to_path_buf());
         }
         *dest_dir_created = true;
     }
@@ -492,7 +1082,7 @@ fn inspect_and_enqueue_copy_file(
         return false;
     }
 
-    if config.progress_file_path.is_some() {
+    if record_last_processed && config.progress_file_path.is_some() {
         last_processed_files.insert(rel_path.to_string(), name_str.to_string());
     }
     true
@@ -503,266 +1093,6 @@ struct ResumeFileCandidate {
     name_os: OsString,
     name: String,
     known_meta: Option<Metadata>,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn walk_and_copy(
-    dir: &Path,
-    canonical_root: &Path,
-    config: &CopyConfig,
-    state: &CopySharedState,
-    queue: &CopyQueue,
-    visited_symlinks: &mut HashSet<PathBuf>,
-    created_dirs: &mut HashSet<PathBuf>,
-    completed_dirs: &mut HashSet<String>,
-    last_processed_files: &mut HashMap<String, String>,
-    pending_trackers: &mut Vec<(String, Arc<AtomicUsize>)>,
-    last_save: &mut Instant,
-) {
-    if state.is_stopped() || !state.wait_if_paused() {
-        return;
-    }
-
-    let rel_path = relative_dir_string(dir, &config.source_path);
-    if completed_dirs.contains(&rel_path) {
-        state.dirs_skipped.fetch_add(1, Ordering::Relaxed);
-        return;
-    }
-
-    let dir_name = path_basename(dir);
-    state.set_phase(PHASE_SCANNING, Some(&dir_name), None);
-
-    let entries = match fs::read_dir(dir) {
-        Ok(iter) => iter,
-        Err(e) => {
-            state.errors.fetch_add(1, Ordering::Relaxed);
-            state.push_error_log(format!("✗ Cannot access: {} ({e})", dir.display()));
-            return;
-        }
-    };
-
-    let dest_dir = if rel_path == "." {
-        config.dest_path.clone()
-    } else {
-        config.dest_path.join(&rel_path)
-    };
-    let mut dest_dir_created = created_dirs.contains(&dest_dir);
-    let mut dest_sizes: Option<HashMap<OsString, u64>> = None;
-    let dir_pending = config
-        .progress_file_path
-        .as_ref()
-        .map(|_| Arc::new(AtomicUsize::new(0)));
-
-    let mut subdirs: Vec<PathBuf> = Vec::new();
-    let resume_last_name = last_processed_files.get(&rel_path).cloned();
-
-    if let Some(ref last_name) = resume_last_name {
-        // Resuming an interrupted directory requires deterministic filename sorting.
-        let mut files: Vec<ResumeFileCandidate> = Vec::new();
-        for entry_res in entries {
-            if state.is_stopped() {
-                return;
-            }
-            let entry = match entry_res {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            let entry_path = entry.path();
-            let ft = match entry.file_type() {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-            if ft.is_file() {
-                let name_os = entry.file_name();
-                let name = name_os.to_string_lossy().into_owned();
-                files.push(ResumeFileCandidate {
-                    path: entry_path,
-                    name_os,
-                    name,
-                    known_meta: entry.metadata().ok(),
-                });
-            } else if ft.is_dir() {
-                subdirs.push(entry_path);
-            } else if ft.is_symlink() && resolve_within_root(canonical_root, &entry_path) {
-                if let Ok(canon_target) = fs::canonicalize(&entry_path) {
-                    if let Ok(meta) = fs::metadata(&entry_path) {
-                        if meta.is_dir() {
-                            if visited_symlinks.insert(canon_target) {
-                                subdirs.push(entry_path);
-                            }
-                        } else if meta.is_file() {
-                            let name_os = entry.file_name();
-                            let name = name_os.to_string_lossy().into_owned();
-                            files.push(ResumeFileCandidate {
-                                path: entry_path,
-                                name_os,
-                                name,
-                                known_meta: Some(meta),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        files.sort_by(|a, b| a.name.cmp(&b.name));
-        let start_idx = files
-            .iter()
-            .position(|f| &f.name == last_name)
-            .map(|i| i + 1)
-            .unwrap_or(0);
-
-        for candidate in files.into_iter().skip(start_idx) {
-            if state.is_stopped() || !state.wait_if_paused() {
-                break;
-            }
-            if !inspect_and_enqueue_copy_file(
-                candidate.path,
-                candidate.name_os,
-                &candidate.name,
-                candidate.known_meta,
-                &dir_name,
-                &rel_path,
-                &dest_dir,
-                &mut dest_dir_created,
-                &mut dest_sizes,
-                created_dirs,
-                &dir_pending,
-                config,
-                state,
-                queue,
-                last_processed_files,
-            ) {
-                break;
-            }
-        }
-    } else {
-        // Streaming fast-path: process read_dir entries directly with zero sorting overhead.
-        for entry_res in entries {
-            if state.is_stopped() || !state.wait_if_paused() {
-                break;
-            }
-            let entry = match entry_res {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            let entry_path = entry.path();
-            let ft = match entry.file_type() {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-
-            if ft.is_file() {
-                let name_os = entry.file_name();
-                let name_str = name_os.to_string_lossy().into_owned();
-                if !inspect_and_enqueue_copy_file(
-                    entry_path,
-                    name_os,
-                    &name_str,
-                    entry.metadata().ok(),
-                    &dir_name,
-                    &rel_path,
-                    &dest_dir,
-                    &mut dest_dir_created,
-                    &mut dest_sizes,
-                    created_dirs,
-                    &dir_pending,
-                    config,
-                    state,
-                    queue,
-                    last_processed_files,
-                ) {
-                    break;
-                }
-            } else if ft.is_dir() {
-                subdirs.push(entry_path);
-            } else if ft.is_symlink() && resolve_within_root(canonical_root, &entry_path) {
-                if let Ok(canon_target) = fs::canonicalize(&entry_path) {
-                    if let Ok(meta) = fs::metadata(&entry_path) {
-                        if meta.is_dir() {
-                            if visited_symlinks.insert(canon_target) {
-                                subdirs.push(entry_path);
-                            }
-                        } else if meta.is_file() {
-                            let name_os = entry.file_name();
-                            let name_str = name_os.to_string_lossy().into_owned();
-                            if !inspect_and_enqueue_copy_file(
-                                entry_path,
-                                name_os,
-                                &name_str,
-                                Some(meta),
-                                &dir_name,
-                                &rel_path,
-                                &dest_dir,
-                                &mut dest_dir_created,
-                                &mut dest_sizes,
-                                created_dirs,
-                                &dir_pending,
-                                config,
-                                state,
-                                queue,
-                                last_processed_files,
-                            ) {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if let Some(ref progress_path) = config.progress_file_path {
-                if last_save.elapsed() >= Duration::from_secs(2) {
-                    drain_completed_trackers(pending_trackers, completed_dirs, last_processed_files);
-                    save_progress_file(
-                        progress_path,
-                        config,
-                        completed_dirs,
-                        last_processed_files,
-                        state,
-                    );
-                    *last_save = Instant::now();
-                }
-            }
-        }
-    }
-
-    if let Some(cnt) = dir_pending {
-        pending_trackers.push((rel_path.clone(), cnt));
-    }
-
-    subdirs.sort_by(|a, b| path_basename(a).cmp(&path_basename(b)));
-    for sub in subdirs {
-        if state.is_stopped() {
-            return;
-        }
-        walk_and_copy(
-            &sub,
-            canonical_root,
-            config,
-            state,
-            queue,
-            visited_symlinks,
-            created_dirs,
-            completed_dirs,
-            last_processed_files,
-            pending_trackers,
-            last_save,
-        );
-    }
-
-    if let Some(ref progress_path) = config.progress_file_path {
-        drain_completed_trackers(pending_trackers, completed_dirs, last_processed_files);
-        if last_save.elapsed() >= Duration::from_secs(2) {
-            save_progress_file(
-                progress_path,
-                config,
-                completed_dirs,
-                last_processed_files,
-                state,
-            );
-            *last_save = Instant::now();
-        }
-    }
 }
 
 fn run_copy_coordinator(
@@ -787,8 +1117,12 @@ fn run_copy_coordinator(
         }
     };
 
-    let mut workers = Vec::with_capacity(DEFAULT_IO_WORKERS);
-    for _ in 0..DEFAULT_IO_WORKERS {
+    let norm_dest = normalize_lexical(&config.dest_path);
+    let canon_dest = fs::canonicalize(&config.dest_path).ok();
+
+    let worker_count = io_worker_count();
+    let mut workers = Vec::with_capacity(worker_count);
+    for _ in 0..worker_count {
         if let Some(h) = spawn_copy_worker(
             Arc::clone(&queue),
             Arc::clone(&state),
@@ -798,6 +1132,14 @@ fn run_copy_coordinator(
         }
     }
 
+    if workers.is_empty() {
+        state.set_critical_error("Failed to spawn copy worker threads".to_string());
+        queue.close(true);
+        state.set_phase(PHASE_DONE, None, None);
+        state.done.store(true, Ordering::Release);
+        return;
+    }
+
     let mut visited_symlinks: HashSet<PathBuf> = HashSet::new();
     let mut created_dirs: HashSet<PathBuf> = HashSet::new();
     let mut completed_dirs = config.completed_dirs.clone();
@@ -805,19 +1147,281 @@ fn run_copy_coordinator(
     let mut pending_trackers: Vec<(String, Arc<AtomicUsize>)> = Vec::new();
     let mut last_save = Instant::now();
 
-    walk_and_copy(
-        &config.source_path,
-        &canonical_root,
-        &config,
-        &state,
-        &queue,
-        &mut visited_symlinks,
-        &mut created_dirs,
-        &mut completed_dirs,
-        &mut last_processed_files,
-        &mut pending_trackers,
-        &mut last_save,
-    );
+    let mut dirs_stack: Vec<PathBuf> = Vec::new();
+    dirs_stack.push(config.source_path.clone());
+
+    while let Some(dir) = dirs_stack.pop() {
+        if state.is_stopped() || !state.wait_if_paused() {
+            break;
+        }
+
+        let dir_name = path_basename(&dir);
+        if lexical_equal_or_within(&norm_dest, &dir) {
+            state.push_log(format!("ℹ Skipping destination folder: {dir_name}"));
+            continue;
+        }
+
+        let rel_path = relative_dir_string(&dir, &config.source_path);
+        if completed_dirs.contains(&rel_path) {
+            state.dirs_skipped.fetch_add(1, Ordering::Relaxed);
+            continue;
+        }
+
+        state.set_phase(PHASE_SCANNING, Some(&dir_name), None);
+
+        let entries = match fs::read_dir(&dir) {
+            Ok(iter) => iter,
+            Err(e) => {
+                state.errors.fetch_add(1, Ordering::Relaxed);
+                state.push_error_log(format!("✗ Cannot access: {} ({e})", dir.display()));
+                continue;
+            }
+        };
+
+        let dest_dir = if rel_path == "." {
+            config.dest_path.clone()
+        } else {
+            config.dest_path.join(&rel_path)
+        };
+        let mut dest_dir_created = created_dirs.contains(&dest_dir);
+        let mut dest_sizes: Option<HashMap<FilenameKey, u64>> = None;
+        let dir_pending = config
+            .progress_file_path
+            .as_ref()
+            .map(|_| Arc::new(AtomicUsize::new(0)));
+
+        let mut subdirs: Vec<PathBuf> = Vec::new();
+        let mut dir_completed_scan = true;
+        let resume_last_name = last_processed_files.get(&rel_path).cloned();
+
+        if let Some(ref last_name) = resume_last_name {
+            // Resuming a legacy directory checkpoint requires deterministic filename sorting.
+            let mut files: Vec<ResumeFileCandidate> = Vec::new();
+            for entry_res in entries {
+                if state.is_stopped() {
+                    dir_completed_scan = false;
+                    break;
+                }
+                let entry = match entry_res {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let entry_path = entry.path();
+                let ft = match entry.file_type() {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                if ft.is_file() {
+                    let name_os = entry.file_name();
+                    let name = name_os.to_string_lossy().into_owned();
+                    files.push(ResumeFileCandidate {
+                        path: entry_path,
+                        name_os,
+                        name,
+                        known_meta: entry.metadata().ok(),
+                    });
+                } else if ft.is_dir() {
+                    subdirs.push(entry_path);
+                } else if ft.is_symlink() {
+                    if let Some(canon_target) =
+                        resolve_canonical_within_root(&canonical_root, &entry_path)
+                    {
+                        if let Some(ref cd) = canon_dest {
+                            if canon_target == *cd || canon_target.starts_with(cd) {
+                                continue;
+                            }
+                        }
+                        if let Ok(meta) = fs::metadata(&entry_path) {
+                            if meta.is_dir() {
+                                if visited_symlinks.insert(canon_target) {
+                                    subdirs.push(entry_path);
+                                }
+                            } else if meta.is_file() {
+                                let name_os = entry.file_name();
+                                let name = name_os.to_string_lossy().into_owned();
+                                files.push(ResumeFileCandidate {
+                                    path: entry_path,
+                                    name_os,
+                                    name,
+                                    known_meta: Some(meta),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            if dir_completed_scan {
+                files.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+                let start_idx = files
+                    .iter()
+                    .position(|f| &f.name == last_name)
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+
+                for candidate in files.into_iter().skip(start_idx) {
+                    if state.is_stopped() || !state.wait_if_paused() {
+                        dir_completed_scan = false;
+                        break;
+                    }
+                    if !inspect_and_enqueue_copy_file(
+                        candidate.path,
+                        candidate.name_os,
+                        &candidate.name,
+                        candidate.known_meta,
+                        &dir_name,
+                        &rel_path,
+                        &dest_dir,
+                        &mut dest_dir_created,
+                        &mut dest_sizes,
+                        &mut created_dirs,
+                        &dir_pending,
+                        &config,
+                        &state,
+                        &queue,
+                        &mut last_processed_files,
+                        false,
+                    ) {
+                        dir_completed_scan = false;
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Streaming fast-path: process read_dir entries directly with zero sorting overhead.
+            for entry_res in entries {
+                if state.is_stopped() || !state.wait_if_paused() {
+                    dir_completed_scan = false;
+                    break;
+                }
+                let entry = match entry_res {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let entry_path = entry.path();
+                let ft = match entry.file_type() {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+
+                if ft.is_file() {
+                    let name_os = entry.file_name();
+                    let name_str = name_os.to_string_lossy().into_owned();
+                    if !inspect_and_enqueue_copy_file(
+                        entry_path,
+                        name_os,
+                        &name_str,
+                        entry.metadata().ok(),
+                        &dir_name,
+                        &rel_path,
+                        &dest_dir,
+                        &mut dest_dir_created,
+                        &mut dest_sizes,
+                        &mut created_dirs,
+                        &dir_pending,
+                        &config,
+                        &state,
+                        &queue,
+                        &mut last_processed_files,
+                        false,
+                    ) {
+                        dir_completed_scan = false;
+                        break;
+                    }
+                } else if ft.is_dir() {
+                    subdirs.push(entry_path);
+                } else if ft.is_symlink() {
+                    if let Some(canon_target) =
+                        resolve_canonical_within_root(&canonical_root, &entry_path)
+                    {
+                        if let Some(ref cd) = canon_dest {
+                            if canon_target == *cd || canon_target.starts_with(cd) {
+                                continue;
+                            }
+                        }
+                        if let Ok(meta) = fs::metadata(&entry_path) {
+                            if meta.is_dir() {
+                                if visited_symlinks.insert(canon_target) {
+                                    subdirs.push(entry_path);
+                                }
+                            } else if meta.is_file() {
+                                let name_os = entry.file_name();
+                                let name_str = name_os.to_string_lossy().into_owned();
+                                if !inspect_and_enqueue_copy_file(
+                                    entry_path,
+                                    name_os,
+                                    &name_str,
+                                    Some(meta),
+                                    &dir_name,
+                                    &rel_path,
+                                    &dest_dir,
+                                    &mut dest_dir_created,
+                                    &mut dest_sizes,
+                                    &mut created_dirs,
+                                    &dir_pending,
+                                    &config,
+                                    &state,
+                                    &queue,
+                                    &mut last_processed_files,
+                                    false,
+                                ) {
+                                    dir_completed_scan = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(ref progress_path) = config.progress_file_path {
+                    if last_save.elapsed() >= Duration::from_secs(2) {
+                        drain_completed_trackers(
+                            &mut pending_trackers,
+                            &mut completed_dirs,
+                            &mut last_processed_files,
+                        );
+                        save_progress_file(
+                            progress_path,
+                            &config,
+                            &completed_dirs,
+                            &last_processed_files,
+                            &state,
+                        );
+                        last_save = Instant::now();
+                    }
+                }
+            }
+        }
+
+        if dir_completed_scan && !state.is_stopped() {
+            if let Some(cnt) = dir_pending {
+                pending_trackers.push((rel_path.clone(), cnt));
+            }
+        }
+
+        subdirs.sort_unstable_by(|a, b| path_basename(a).cmp(&path_basename(b)));
+        for sub in subdirs.into_iter().rev() {
+            dirs_stack.push(sub);
+        }
+
+        if let Some(ref progress_path) = config.progress_file_path {
+            drain_completed_trackers(
+                &mut pending_trackers,
+                &mut completed_dirs,
+                &mut last_processed_files,
+            );
+            if last_save.elapsed() >= Duration::from_secs(2) {
+                save_progress_file(
+                    progress_path,
+                    &config,
+                    &completed_dirs,
+                    &last_processed_files,
+                    &state,
+                );
+                last_save = Instant::now();
+            }
+        }
+    }
 
     queue.close(state.is_stopped());
     for w in workers {
@@ -825,7 +1429,11 @@ fn run_copy_coordinator(
     }
 
     if state.is_stopped() {
-        drain_completed_trackers(&mut pending_trackers, &mut completed_dirs, &mut last_processed_files);
+        drain_completed_trackers(
+            &mut pending_trackers,
+            &mut completed_dirs,
+            &mut last_processed_files,
+        );
         if let Some(ref progress_path) = config.progress_file_path {
             save_progress_file(
                 progress_path,
@@ -881,7 +1489,7 @@ fn build_copy_poll_json(state: &CopySharedState) -> String {
             ),
         };
 
-    let mut json = String::with_capacity(384);
+    let mut json = String::with_capacity(384 + logs.len() * 64 + error_logs.len() * 64);
     let _ = write!(
         json,
         "{{\"filesCopied\":{files_copied},\"filesSkipped\":{files_skipped},\"filesAlreadyExist\":{files_already_exist},\"errors\":{errors},\"filesInspected\":{files_inspected},\"dirsSkipped\":{dirs_skipped},\"phase\":{phase},\"currentDirName\":"
@@ -1016,6 +1624,87 @@ pub unsafe extern "C" fn copy_engine_start(cfg: *const CopyConfigC) -> *mut Copy
     res.unwrap_or(std::ptr::null_mut())
 }
 
+// Gene - Nov, 26, 2026: Use poison-safe mutex recovery across copy_engine pause/resume/stop/destroy.
+// #[no_mangle]
+// pub unsafe extern "C" fn copy_engine_pause(job: *mut CopyJob) {
+//     let _ = catch_unwind(AssertUnwindSafe(|| {
+//         if job.is_null() {
+//             return;
+//         }
+//         let job_ref = &*job;
+//         if let Ok(mut paused) = job_ref.state.pause_lock.lock() {
+//             *paused = true;
+//         }
+//     }));
+// }
+//
+// #[no_mangle]
+// pub unsafe extern "C" fn copy_engine_resume(job: *mut CopyJob) {
+//     let _ = catch_unwind(AssertUnwindSafe(|| {
+//         if job.is_null() {
+//             return;
+//         }
+//         let job_ref = &*job;
+//         if let Ok(mut paused) = job_ref.state.pause_lock.lock() {
+//             *paused = false;
+//         }
+//         job_ref.state.pause_cvar.notify_all();
+//     }));
+// }
+//
+// #[no_mangle]
+// pub unsafe extern "C" fn copy_engine_stop(job: *mut CopyJob) {
+//     let _ = catch_unwind(AssertUnwindSafe(|| {
+//         if job.is_null() {
+//             return;
+//         }
+//         let job_ref = &*job;
+//         job_ref.state.cancel_flag.store(1, Ordering::Release);
+//         job_ref.state.stop_requested.store(true, Ordering::Release);
+//         if let Ok(mut paused) = job_ref.state.pause_lock.lock() {
+//             *paused = false;
+//         }
+//         job_ref.state.pause_cvar.notify_all();
+//         job_ref.queue.close(true);
+//     }));
+// }
+//
+// #[no_mangle]
+// pub unsafe extern "C" fn copy_engine_poll(job: *mut CopyJob) -> *mut c_char {
+//     let res = catch_unwind(AssertUnwindSafe(|| {
+//         if job.is_null() {
+//             return std::ptr::null_mut();
+//         }
+//         let job_ref = &*job;
+//         let json = build_copy_poll_json(&job_ref.state);
+//         match CString::new(json) {
+//             Ok(cstr) => cstr.into_raw(),
+//             Err(_) => std::ptr::null_mut(),
+//         }
+//     }));
+//
+//     res.unwrap_or(std::ptr::null_mut())
+// }
+//
+// #[no_mangle]
+// pub unsafe extern "C" fn copy_engine_destroy(job: *mut CopyJob) {
+//     let _ = catch_unwind(AssertUnwindSafe(|| {
+//         if job.is_null() {
+//             return;
+//         }
+//         let mut boxed = Box::from_raw(job);
+//         boxed.state.cancel_flag.store(1, Ordering::Release);
+//         boxed.state.stop_requested.store(true, Ordering::Release);
+//         if let Ok(mut paused) = boxed.state.pause_lock.lock() {
+//             *paused = false;
+//         }
+//         boxed.state.pause_cvar.notify_all();
+//         boxed.queue.close(true);
+//         if let Some(handle) = boxed.handle.take() {
+//             let _ = handle.join();
+//         }
+//     }));
+// }
 #[no_mangle]
 pub unsafe extern "C" fn copy_engine_pause(job: *mut CopyJob) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
@@ -1023,9 +1712,12 @@ pub unsafe extern "C" fn copy_engine_pause(job: *mut CopyJob) {
             return;
         }
         let job_ref = &*job;
-        if let Ok(mut paused) = job_ref.state.pause_lock.lock() {
-            *paused = true;
-        }
+        let mut paused = job_ref
+            .state
+            .pause_lock
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        *paused = true;
     }));
 }
 
@@ -1036,7 +1728,12 @@ pub unsafe extern "C" fn copy_engine_resume(job: *mut CopyJob) {
             return;
         }
         let job_ref = &*job;
-        if let Ok(mut paused) = job_ref.state.pause_lock.lock() {
+        {
+            let mut paused = job_ref
+                .state
+                .pause_lock
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
             *paused = false;
         }
         job_ref.state.pause_cvar.notify_all();
@@ -1052,7 +1749,12 @@ pub unsafe extern "C" fn copy_engine_stop(job: *mut CopyJob) {
         let job_ref = &*job;
         job_ref.state.cancel_flag.store(1, Ordering::Release);
         job_ref.state.stop_requested.store(true, Ordering::Release);
-        if let Ok(mut paused) = job_ref.state.pause_lock.lock() {
+        {
+            let mut paused = job_ref
+                .state
+                .pause_lock
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
             *paused = false;
         }
         job_ref.state.pause_cvar.notify_all();
@@ -1086,7 +1788,12 @@ pub unsafe extern "C" fn copy_engine_destroy(job: *mut CopyJob) {
         let mut boxed = Box::from_raw(job);
         boxed.state.cancel_flag.store(1, Ordering::Release);
         boxed.state.stop_requested.store(true, Ordering::Release);
-        if let Ok(mut paused) = boxed.state.pause_lock.lock() {
+        {
+            let mut paused = boxed
+                .state
+                .pause_lock
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
             *paused = false;
         }
         boxed.state.pause_cvar.notify_all();
@@ -1277,6 +1984,154 @@ mod tests {
         assert!(!dst.join("done_dir").exists());
         assert_eq!(state.dirs_skipped.load(Ordering::Relaxed), 1);
         assert_eq!(state.files_copied.load(Ordering::Relaxed), 6);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // Gene - Nov, 26, 2026: Added regression tests for dest-inside-source skipping, read-only mtime preservation, and atomic progress writes.
+    #[test]
+    fn skips_destination_nested_inside_source() {
+        let root = make_temp_dir("rust_copy_nested_dest");
+        let src = root.join("source");
+        let dst = src.join("backup_dest");
+        fs::create_dir_all(&dst).unwrap();
+        fs::write(src.join("a.txt"), b"ALPHA").unwrap();
+
+        let cfg = CopyConfig {
+            source_path: src.clone(),
+            dest_path: dst.clone(),
+            progress_file_path: None,
+            completed_dirs: HashSet::new(),
+            last_processed_files: HashMap::new(),
+            enable_age_filter: false,
+            age_threshold_epoch_ms: 0,
+            enable_date_range: false,
+            from_inclusive_epoch_ms: 0,
+            to_exclusive_epoch_ms: 0,
+            initial_copied: 0,
+            initial_skipped: 0,
+            initial_already_exist: 0,
+            initial_errors: 0,
+            initial_inspected: 0,
+            log_interval: 100,
+        };
+        let state = Arc::new(CopySharedState::new(&cfg));
+        let queue = Arc::new(CopyQueue::new());
+        run_copy_coordinator(cfg, Arc::clone(&state), queue);
+
+        assert_eq!(fs::read(dst.join("a.txt")).unwrap(), b"ALPHA");
+        assert!(!dst.join("backup_dest").exists());
+        assert_eq!(state.files_copied.load(Ordering::Relaxed), 1);
+        assert_eq!(state.errors.load(Ordering::Relaxed), 0);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserves_modified_timestamp_for_readonly_file() {
+        let root = make_temp_dir("rust_copy_readonly_mtime");
+        let src = root.join("source");
+        let dst = root.join("dest");
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&dst).unwrap();
+
+        let src_file = src.join("readonly.txt");
+        fs::write(&src_file, b"READONLY").unwrap();
+        let target_time = UNIX_EPOCH + Duration::from_secs(1_650_000_000);
+        File::options()
+            .write(true)
+            .open(&src_file)
+            .unwrap()
+            .set_modified(target_time)
+            .unwrap();
+        let mut perms = fs::metadata(&src_file).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&src_file, perms).unwrap();
+
+        let cfg = CopyConfig {
+            source_path: src.clone(),
+            dest_path: dst.clone(),
+            progress_file_path: None,
+            completed_dirs: HashSet::new(),
+            last_processed_files: HashMap::new(),
+            enable_age_filter: false,
+            age_threshold_epoch_ms: 0,
+            enable_date_range: false,
+            from_inclusive_epoch_ms: 0,
+            to_exclusive_epoch_ms: 0,
+            initial_copied: 0,
+            initial_skipped: 0,
+            initial_already_exist: 0,
+            initial_errors: 0,
+            initial_inspected: 0,
+            log_interval: 100,
+        };
+        let state = Arc::new(CopySharedState::new(&cfg));
+        let queue = Arc::new(CopyQueue::new());
+        run_copy_coordinator(cfg, Arc::clone(&state), queue);
+
+        assert_eq!(state.files_copied.load(Ordering::Relaxed), 1);
+        let dst_mtime = fs::metadata(dst.join("readonly.txt"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        let diff = dst_mtime
+            .duration_since(target_time)
+            .or_else(|_| target_time.duration_since(dst_mtime))
+            .unwrap();
+        assert!(diff <= Duration::from_secs(1));
+
+        // Restore write permission so remove_dir_all succeeds cleanly.
+        let mut reset_perms = fs::metadata(&src_file).unwrap().permissions();
+        reset_perms.set_readonly(false);
+        let _ = fs::set_permissions(&src_file, reset_perms);
+        let dst_file = dst.join("readonly.txt");
+        if let Ok(m) = fs::metadata(&dst_file) {
+            let mut dp = m.permissions();
+            dp.set_readonly(false);
+            let _ = fs::set_permissions(&dst_file, dp);
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn interrupted_directory_is_not_marked_completed_and_progress_is_valid_json() {
+        let root = make_temp_dir("rust_copy_progress_atomic");
+        let src = root.join("source");
+        let dst = root.join("dest");
+        let progress_path = root.join("progress.json");
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&dst).unwrap();
+
+        let cfg = CopyConfig {
+            source_path: src.clone(),
+            dest_path: dst.clone(),
+            progress_file_path: Some(progress_path.clone()),
+            completed_dirs: HashSet::new(),
+            last_processed_files: HashMap::new(),
+            enable_age_filter: false,
+            age_threshold_epoch_ms: 0,
+            enable_date_range: false,
+            from_inclusive_epoch_ms: 0,
+            to_exclusive_epoch_ms: 0,
+            initial_copied: 2,
+            initial_skipped: 1,
+            initial_already_exist: 0,
+            initial_errors: 0,
+            initial_inspected: 3,
+            log_interval: 100,
+        };
+        let state = Arc::new(CopySharedState::new(&cfg));
+        let mut completed = HashSet::new();
+        completed.insert("done_sub".to_string());
+        let last_proc = HashMap::new();
+
+        save_progress_file(&progress_path, &cfg, &completed, &last_proc, &state);
+        let saved = fs::read_to_string(&progress_path).unwrap();
+        assert!(saved.contains("\"completedDirs\":[\"done_sub\"]"));
+        assert!(saved.contains("\"filesCopied\":2"));
+        assert!(!root.join("progress.json.tmp").exists());
 
         let _ = fs::remove_dir_all(&root);
     }

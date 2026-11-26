@@ -138,6 +138,8 @@ class CountFilesProvider with ChangeNotifier {
   // ReceivePort? _receivePort;
   RustCountJob? _rustJob;
   Timer? _pollTimer;
+  // Gene - Nov, 26, 2026: Added non-blocking stop fallback timer for graceful Count stop().
+  Timer? _stopFallbackTimer;
 
   CountFilesProvider() {
     _loadSettings();
@@ -164,7 +166,16 @@ class CountFilesProvider with ChangeNotifier {
   //   _receivePort?.close();
   //   _receivePort = null;
   // }
+  // void _stopRustJob() {
+  //   _pollTimer?.cancel();
+  //   _pollTimer = null;
+  //   _rustJob?.stop();
+  //   _rustJob?.dispose();
+  //   _rustJob = null;
+  // }
   void _stopRustJob() {
+    _stopFallbackTimer?.cancel();
+    _stopFallbackTimer = null;
     _pollTimer?.cancel();
     _pollTimer = null;
     _rustJob?.stop();
@@ -335,14 +346,38 @@ class CountFilesProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Gene - Nov, 26, 2026: Make stop() non-blocking on UI thread using signal + 2s fallback timer.
+  // void stop() {
+  //   if (!isCounting) return;
+  //   _stopRequested = true;
+  //   currentStatus = '⛔ Stopping...';
+  //   // Gene - Nov, 25, 2026: Stop native RustCountJob instead of Dart isolate.
+  //   // _stopIsolate();
+  //   _stopRustJob();
+  //   _finishRun(wasStopped: true);
+  //   notifyListeners();
+  // }
   void stop() {
     if (!isCounting) return;
     _stopRequested = true;
     currentStatus = '⛔ Stopping...';
-    // Gene - Nov, 25, 2026: Stop native RustCountJob instead of Dart isolate.
-    // _stopIsolate();
-    _stopRustJob();
-    _finishRun(wasStopped: true);
+    _stopFallbackTimer?.cancel();
+
+    final job = _rustJob;
+    if (job == null) {
+      _stopRustJob();
+      _finishRun(wasStopped: true);
+      notifyListeners();
+      return;
+    }
+
+    job.stop();
+    _stopFallbackTimer = Timer(const Duration(seconds: 2), () {
+      if (_rustJob != null && isCounting) {
+        _stopRustJob();
+        _finishRun(wasStopped: true);
+      }
+    });
     notifyListeners();
   }
 
@@ -1016,11 +1051,17 @@ class CountFilesProvider with ChangeNotifier {
         _fileLogger.error('Count', 'Critical Error: ${snap.criticalError}');
       }
 
+      // Gene - Nov, 26, 2026: Finish run with wasStopped: _stopRequested so graceful stop drains final stats.
+      // if (snap.isDone) {
+      //   _stopRustJob();
+      //   if (!_stopRequested) {
+      //     _finishRun(wasStopped: false);
+      //   }
+      //   return;
+      // }
       if (snap.isDone) {
         _stopRustJob();
-        if (!_stopRequested) {
-          _finishRun(wasStopped: false);
-        }
+        _finishRun(wasStopped: _stopRequested);
         return;
       }
 

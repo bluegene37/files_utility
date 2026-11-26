@@ -18,9 +18,14 @@ use std::thread::{self, JoinHandle};
 //     c_str_to_string, path_basename, push_json_escaped, resolve_within_root, DEFAULT_IO_WORKERS,
 //     MAX_QUEUED_LOGS,
 // };
+// use crate::common::{
+//     c_str_to_string, path_basename, push_json_escaped, resolve_within_root,
+//     system_time_to_epoch_ms, DEFAULT_IO_WORKERS, MAX_QUEUED_LOGS,
+// };
+// Gene - Nov, 26, 2026: Import io_worker_count and single-canonicalize resolve_canonical_within_root.
 use crate::common::{
-    c_str_to_string, path_basename, push_json_escaped, resolve_within_root,
-    system_time_to_epoch_ms, DEFAULT_IO_WORKERS, MAX_QUEUED_LOGS,
+    c_str_to_string, io_worker_count, path_basename, push_json_escaped,
+    resolve_canonical_within_root, system_time_to_epoch_ms, MAX_QUEUED_LOGS,
 };
 
 // Gene - Nov, 26, 2026: Added file-type category bitmask constants and case-insensitive extension classifier.
@@ -154,12 +159,28 @@ impl CountWorkQueue {
         }
     }
 
+    // Gene - Nov, 26, 2026: Smart condvar wakeups (only wake waiters when work was added or queue drains) + poison recovery.
+    // fn push_subdirs_and_finish_dir(&self, subdirs: Vec<PathBuf>) {
+    //     if let Ok(mut guard) = self.inner.lock() {
+    //         for d in subdirs {
+    //             guard.dirs.push_back(d);
+    //         }
+    //         guard.active_workers = guard.active_workers.saturating_sub(1);
+    //         self.cv.notify_all();
+    //     }
+    // }
     fn push_subdirs_and_finish_dir(&self, subdirs: Vec<PathBuf>) {
-        if let Ok(mut guard) = self.inner.lock() {
-            for d in subdirs {
-                guard.dirs.push_back(d);
-            }
-            guard.active_workers = guard.active_workers.saturating_sub(1);
+        let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let added = subdirs.len();
+        for d in subdirs {
+            guard.dirs.push_back(d);
+        }
+        guard.active_workers = guard.active_workers.saturating_sub(1);
+        if guard.active_workers == 0 && guard.dirs.is_empty() {
+            self.cv.notify_all();
+        } else if added == 1 {
+            self.cv.notify_one();
+        } else if added > 1 {
             self.cv.notify_all();
         }
     }
@@ -373,8 +394,15 @@ impl CountSharedState {
         }
     }
 
+    // Gene - Nov, 26, 2026: Use try_lock for transient current_dir_name updates to avoid UI lock contention across workers.
+    // fn set_current_dir(&self, name: &str) {
+    //     if let Ok(mut ui) = self.ui.lock() {
+    //         ui.current_dir_name.clear();
+    //         ui.current_dir_name.push_str(name);
+    //     }
+    // }
     fn set_current_dir(&self, name: &str) {
-        if let Ok(mut ui) = self.ui.lock() {
+        if let Ok(mut ui) = self.ui.try_lock() {
             ui.current_dir_name.clear();
             ui.current_dir_name.push_str(name);
         }
@@ -911,8 +939,223 @@ fn record_file_mtime<F: FnOnce() -> PathBuf>(
     state.update_date_bounds(ms, &rel);
 }
 
+// Gene - Nov, 26, 2026: Batch atomic updates (every 64 entries + per-dir), use single-canonicalize symlinks,
+// scale workers via io_worker_count(), and preallocate poll JSON buffer based on drained log count.
+// fn run_count_worker(
+//     canonical_root: &PathBuf,
+//     root_path: &Path,
+//     log_interval: u64,
+//     include_mask: u32,
+//     size_only: bool,
+//     queue: &CountWorkQueue,
+//     state: &CountSharedState,
+// ) {
+//     let mut local_oldest_ms: Option<i64> = None;
+//     let mut local_latest_ms: Option<i64> = None;
+//
+//     while let Some(dir) = queue.pop_dir(&state.stop_requested) {
+//         let dir_name = path_basename(&dir);
+//         state.set_current_dir(&dir_name);
+//
+//         let mut subdirs = Vec::new();
+//         match fs::read_dir(&dir) {
+//             Ok(entries) => {
+//                 for entry_res in entries {
+//                     if state.stop_requested.load(Ordering::Acquire) {
+//                         break;
+//                     }
+//                     let entry = match entry_res {
+//                         Ok(e) => e,
+//                         Err(e) => {
+//                             state.errors.fetch_add(1, Ordering::Relaxed);
+//                             state.push_error_log(format!(
+//                                 "Error accessing: {} — {e}",
+//                                 dir.display()
+//                             ));
+//                             continue;
+//                         }
+//                     };
+//
+//                     let ft = match entry.file_type() {
+//                         Ok(ft) => ft,
+//                         Err(_) => continue,
+//                     };
+//
+//                     if ft.is_file() {
+//                         if size_only {
+//                             state.files.fetch_add(1, Ordering::Relaxed);
+//                             if let Ok(meta) = entry.metadata() {
+//                                 state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+//                                 record_file_mtime(
+//                                     &meta,
+//                                     || entry.path(),
+//                                     root_path,
+//                                     &mut local_oldest_ms,
+//                                     &mut local_latest_ms,
+//                                     state,
+//                                 );
+//                             }
+//                         } else {
+//                             let name = entry.file_name().to_string_lossy().into_owned();
+//                             if matches_count_filter(&name, include_mask) {
+//                                 if let Ok(meta) = entry.metadata() {
+//                                     state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+//                                     record_file_mtime(
+//                                         &meta,
+//                                         || entry.path(),
+//                                         root_path,
+//                                         &mut local_oldest_ms,
+//                                         &mut local_latest_ms,
+//                                         state,
+//                                     );
+//                                 }
+//                                 state.record_counted_file(&name, log_interval);
+//                             } else {
+//                                 state.excluded_files.fetch_add(1, Ordering::Relaxed);
+//                             }
+//                         }
+//                     } else if ft.is_dir() {
+//                         state.folders.fetch_add(1, Ordering::Relaxed);
+//                         subdirs.push(entry.path());
+//                     } else if ft.is_symlink() {
+//                         let entry_path = entry.path();
+//                         if !resolve_within_root(canonical_root, &entry_path) {
+//                             continue;
+//                         }
+//                         if let Ok(canon_target) = fs::canonicalize(&entry_path) {
+//                             if let Ok(meta) = fs::metadata(&entry_path) {
+//                                 if meta.is_dir() {
+//                                     let is_new = state
+//                                         .visited_symlinks
+//                                         .lock()
+//                                         .map(|mut s| s.insert(canon_target))
+//                                         .unwrap_or(false);
+//                                     if is_new {
+//                                         state.folders.fetch_add(1, Ordering::Relaxed);
+//                                         subdirs.push(entry_path);
+//                                     }
+//                                 } else if meta.is_file() {
+//                                     if size_only {
+//                                         state.files.fetch_add(1, Ordering::Relaxed);
+//                                         state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+//                                         record_file_mtime(
+//                                             &meta,
+//                                             || entry_path.clone(),
+//                                             root_path,
+//                                             &mut local_oldest_ms,
+//                                             &mut local_latest_ms,
+//                                             state,
+//                                         );
+//                                     } else {
+//                                         let name = entry.file_name().to_string_lossy().into_owned();
+//                                         if matches_count_filter(&name, include_mask) {
+//                                             state
+//                                                 .total_bytes
+//                                                 .fetch_add(meta.len(), Ordering::Relaxed);
+//                                             record_file_mtime(
+//                                                 &meta,
+//                                                 || entry_path.clone(),
+//                                                 root_path,
+//                                                 &mut local_oldest_ms,
+//                                                 &mut local_latest_ms,
+//                                                 state,
+//                                             );
+//                                             state.record_counted_file(&name, log_interval);
+//                                         } else {
+//                                             state.excluded_files.fetch_add(1, Ordering::Relaxed);
+//                                         }
+//                                     }
+//                                 }
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//             Err(e) => {
+//                 state.errors.fetch_add(1, Ordering::Relaxed);
+//                 state.push_error_log(format!("Error accessing: {} — {e}", dir.display()));
+//             }
+//         }
+//
+//         queue.push_subdirs_and_finish_dir(subdirs);
+//     }
+// }
+//
+// fn run_count(
+//     target_path: PathBuf,
+//     log_interval: u64,
+//     include_mask: u32,
+//     size_only: bool,
+//     queue: Arc<CountWorkQueue>,
+//     state: Arc<CountSharedState>,
+// ) {
+//     let root_path = Arc::new(target_path.clone());
+//     let canonical_root = match fs::canonicalize(&target_path) {
+//         Ok(p) => Arc::new(p),
+//         Err(e) => {
+//             state.set_critical_error(format!(
+//                 "Failed to access target directory {}: {e}",
+//                 target_path.display()
+//             ));
+//             state.done.store(true, Ordering::Release);
+//             return;
+//         }
+//     };
+//
+//     let mut handles = Vec::with_capacity(DEFAULT_IO_WORKERS);
+//     for _ in 0..DEFAULT_IO_WORKERS {
+//         let q = Arc::clone(&queue);
+//         let s = Arc::clone(&state);
+//         let r = Arc::clone(&canonical_root);
+//         let rp = Arc::clone(&root_path);
+//         if let Ok(h) = thread::Builder::new()
+//             .name("count_engine_worker".to_string())
+//             .spawn(move || {
+//                 run_count_worker(&r, &rp, log_interval, include_mask, size_only, &q, &s);
+//             })
+//         {
+//             handles.push(h);
+//         }
+//     }
+//
+//     for h in handles {
+//         let _ = h.join();
+//     }
+//
+//     state.done.store(true, Ordering::Release);
+// }
+//
+// fn build_count_poll_json(state: &CountSharedState) -> String {
+//     let files = state.files.load(Ordering::Relaxed);
+//     let excluded_files = state.excluded_files.load(Ordering::Relaxed);
+//     let folders = state.folders.load(Ordering::Relaxed);
+//     let total_bytes = state.total_bytes.load(Ordering::Relaxed);
+//     let errors = state.errors.load(Ordering::Relaxed);
+//     let is_done = state.done.load(Ordering::Acquire);
+//
+//     let (oldest_ms, oldest_path, latest_ms, latest_path) = match state.date_bounds.lock() {
+//         Ok(bounds) => (
+//             bounds.oldest.as_ref().map(|e| e.modified_ms),
+//             bounds.oldest.as_ref().map(|e| e.relative_path.clone()),
+//             bounds.latest.as_ref().map(|e| e.modified_ms),
+//             bounds.latest.as_ref().map(|e| e.relative_path.clone()),
+//         ),
+//         Err(_) => (None, None, None, None),
+//     };
+//
+//     let (current_dir_name, critical_error, logs, error_logs) = match state.ui.lock() {
+//         Ok(mut ui) => (
+//             ui.current_dir_name.clone(),
+//             ui.critical_error.take(),
+//             ui.logs.drain(..).collect::<Vec<_>>(),
+//             ui.error_logs.drain(..).collect::<Vec<_>>(),
+//         ),
+//         Err(_) => (String::new(), None, Vec::new(), Vec::new()),
+//     };
+//
+//     let mut json = String::with_capacity(320);
 fn run_count_worker(
-    canonical_root: &PathBuf,
+    canonical_root: &Path,
     root_path: &Path,
     log_interval: u64,
     include_mask: u32,
@@ -928,6 +1171,11 @@ fn run_count_worker(
         state.set_current_dir(&dir_name);
 
         let mut subdirs = Vec::new();
+        let mut local_files: u64 = 0;
+        let mut local_excluded: u64 = 0;
+        let mut local_bytes: u64 = 0;
+        let mut local_folders: u64 = 0;
+
         match fs::read_dir(&dir) {
             Ok(entries) => {
                 for entry_res in entries {
@@ -953,9 +1201,9 @@ fn run_count_worker(
 
                     if ft.is_file() {
                         if size_only {
-                            state.files.fetch_add(1, Ordering::Relaxed);
+                            local_files += 1;
                             if let Ok(meta) = entry.metadata() {
-                                state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+                                local_bytes += meta.len();
                                 record_file_mtime(
                                     &meta,
                                     || entry.path(),
@@ -965,11 +1213,17 @@ fn run_count_worker(
                                     state,
                                 );
                             }
+                            if local_files >= 64 {
+                                state.files.fetch_add(local_files, Ordering::Relaxed);
+                                state.total_bytes.fetch_add(local_bytes, Ordering::Relaxed);
+                                local_files = 0;
+                                local_bytes = 0;
+                            }
                         } else {
                             let name = entry.file_name().to_string_lossy().into_owned();
                             if matches_count_filter(&name, include_mask) {
                                 if let Ok(meta) = entry.metadata() {
-                                    state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+                                    local_bytes += meta.len();
                                     record_file_mtime(
                                         &meta,
                                         || entry.path(),
@@ -978,36 +1232,59 @@ fn run_count_worker(
                                         &mut local_latest_ms,
                                         state,
                                     );
+                                    if local_bytes >= 64 * 1024 {
+                                        state.total_bytes.fetch_add(local_bytes, Ordering::Relaxed);
+                                        local_bytes = 0;
+                                    }
                                 }
                                 state.record_counted_file(&name, log_interval);
                             } else {
-                                state.excluded_files.fetch_add(1, Ordering::Relaxed);
+                                local_excluded += 1;
+                                if local_excluded >= 64 {
+                                    state
+                                        .excluded_files
+                                        .fetch_add(local_excluded, Ordering::Relaxed);
+                                    local_excluded = 0;
+                                }
                             }
                         }
                     } else if ft.is_dir() {
-                        state.folders.fetch_add(1, Ordering::Relaxed);
+                        local_folders += 1;
                         subdirs.push(entry.path());
                     } else if ft.is_symlink() {
                         let entry_path = entry.path();
-                        if !resolve_within_root(canonical_root, &entry_path) {
+                        let Some(canon_target) =
+                            resolve_canonical_within_root(canonical_root, &entry_path)
+                        else {
                             continue;
-                        }
-                        if let Ok(canon_target) = fs::canonicalize(&entry_path) {
-                            if let Ok(meta) = fs::metadata(&entry_path) {
-                                if meta.is_dir() {
-                                    let is_new = state
-                                        .visited_symlinks
-                                        .lock()
-                                        .map(|mut s| s.insert(canon_target))
-                                        .unwrap_or(false);
-                                    if is_new {
-                                        state.folders.fetch_add(1, Ordering::Relaxed);
-                                        subdirs.push(entry_path);
-                                    }
-                                } else if meta.is_file() {
-                                    if size_only {
-                                        state.files.fetch_add(1, Ordering::Relaxed);
-                                        state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+                        };
+                        if let Ok(meta) = fs::metadata(&entry_path) {
+                            if meta.is_dir() {
+                                let is_new = state
+                                    .visited_symlinks
+                                    .lock()
+                                    .map(|mut s| s.insert(canon_target))
+                                    .unwrap_or(false);
+                                if is_new {
+                                    local_folders += 1;
+                                    subdirs.push(entry_path);
+                                }
+                            } else if meta.is_file() {
+                                if size_only {
+                                    local_files += 1;
+                                    local_bytes += meta.len();
+                                    record_file_mtime(
+                                        &meta,
+                                        || entry_path.clone(),
+                                        root_path,
+                                        &mut local_oldest_ms,
+                                        &mut local_latest_ms,
+                                        state,
+                                    );
+                                } else {
+                                    let name = entry.file_name().to_string_lossy().into_owned();
+                                    if matches_count_filter(&name, include_mask) {
+                                        local_bytes += meta.len();
                                         record_file_mtime(
                                             &meta,
                                             || entry_path.clone(),
@@ -1016,24 +1293,9 @@ fn run_count_worker(
                                             &mut local_latest_ms,
                                             state,
                                         );
+                                        state.record_counted_file(&name, log_interval);
                                     } else {
-                                        let name = entry.file_name().to_string_lossy().into_owned();
-                                        if matches_count_filter(&name, include_mask) {
-                                            state
-                                                .total_bytes
-                                                .fetch_add(meta.len(), Ordering::Relaxed);
-                                            record_file_mtime(
-                                                &meta,
-                                                || entry_path.clone(),
-                                                root_path,
-                                                &mut local_oldest_ms,
-                                                &mut local_latest_ms,
-                                                state,
-                                            );
-                                            state.record_counted_file(&name, log_interval);
-                                        } else {
-                                            state.excluded_files.fetch_add(1, Ordering::Relaxed);
-                                        }
+                                        local_excluded += 1;
                                     }
                                 }
                             }
@@ -1045,6 +1307,21 @@ fn run_count_worker(
                 state.errors.fetch_add(1, Ordering::Relaxed);
                 state.push_error_log(format!("Error accessing: {} — {e}", dir.display()));
             }
+        }
+
+        if local_files > 0 {
+            state.files.fetch_add(local_files, Ordering::Relaxed);
+        }
+        if local_excluded > 0 {
+            state
+                .excluded_files
+                .fetch_add(local_excluded, Ordering::Relaxed);
+        }
+        if local_bytes > 0 {
+            state.total_bytes.fetch_add(local_bytes, Ordering::Relaxed);
+        }
+        if local_folders > 0 {
+            state.folders.fetch_add(local_folders, Ordering::Relaxed);
         }
 
         queue.push_subdirs_and_finish_dir(subdirs);
@@ -1072,8 +1349,9 @@ fn run_count(
         }
     };
 
-    let mut handles = Vec::with_capacity(DEFAULT_IO_WORKERS);
-    for _ in 0..DEFAULT_IO_WORKERS {
+    let worker_count = io_worker_count();
+    let mut handles = Vec::with_capacity(worker_count);
+    for _ in 0..worker_count {
         let q = Arc::clone(&queue);
         let s = Arc::clone(&state);
         let r = Arc::clone(&canonical_root);
@@ -1086,6 +1364,12 @@ fn run_count(
         {
             handles.push(h);
         }
+    }
+
+    if handles.is_empty() {
+        state.set_critical_error("Failed to spawn count worker threads".to_string());
+        state.done.store(true, Ordering::Release);
+        return;
     }
 
     for h in handles {
@@ -1123,7 +1407,7 @@ fn build_count_poll_json(state: &CountSharedState) -> String {
         Err(_) => (String::new(), None, Vec::new(), Vec::new()),
     };
 
-    let mut json = String::with_capacity(320);
+    let mut json = String::with_capacity(320 + logs.len() * 64 + error_logs.len() * 64);
     let _ = write!(
         json,
         "{{\"files\":{files},\"excludedFiles\":{excluded_files},\"folders\":{folders},\"totalBytes\":{total_bytes},\"errors\":{errors},\"currentDirName\":"

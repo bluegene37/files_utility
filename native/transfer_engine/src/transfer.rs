@@ -14,10 +14,17 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
 
+// use crate::common::{
+//     c_str_to_string, fast_move_no_overwrite, lexical_equal_or_within, normalize_lexical,
+//     path_basename, push_json_escaped, resolve_within_root, system_time_to_epoch_ms, MoveOutcome,
+//     DEFAULT_IO_WORKERS, MAX_QUEUED_LOGS, MAX_QUEUE_CAPACITY,
+// };
+// Gene - Nov, 26, 2026: Import filename_key, io_worker_count, and resolve_canonical_within_root.
 use crate::common::{
-    c_str_to_string, fast_move_no_overwrite, lexical_equal_or_within, normalize_lexical,
-    path_basename, push_json_escaped, resolve_within_root, system_time_to_epoch_ms, MoveOutcome,
-    DEFAULT_IO_WORKERS, MAX_QUEUED_LOGS, MAX_QUEUE_CAPACITY,
+    c_str_to_string, fast_move_no_overwrite, filename_key, io_worker_count,
+    lexical_equal_or_within, normalize_lexical, path_basename, push_json_escaped,
+    resolve_canonical_within_root, system_time_to_epoch_ms, FilenameKey, MoveOutcome,
+    MAX_QUEUED_LOGS, MAX_QUEUE_CAPACITY,
 };
 
 const SAVE_PROGRESS_INTERVAL_DIRS: u64 = 20;
@@ -129,15 +136,25 @@ impl TransferQueue {
         item
     }
 
+    // Gene - Nov, 26, 2026: Recover poisoned mutex on close.
+    // fn close(&self, clear_pending: bool) {
+    //     if let Ok(mut guard) = self.inner.lock() {
+    //         if clear_pending {
+    //             guard.tasks.clear();
+    //         }
+    //         guard.closed = true;
+    //         self.not_empty.notify_all();
+    //         self.not_full.notify_all();
+    //     }
+    // }
     fn close(&self, clear_pending: bool) {
-        if let Ok(mut guard) = self.inner.lock() {
-            if clear_pending {
-                guard.tasks.clear();
-            }
-            guard.closed = true;
-            self.not_empty.notify_all();
-            self.not_full.notify_all();
+        let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        if clear_pending {
+            guard.tasks.clear();
         }
+        guard.closed = true;
+        self.not_empty.notify_all();
+        self.not_full.notify_all();
     }
 }
 
@@ -199,16 +216,38 @@ impl SharedState {
         }
     }
 
+    // Gene - Nov, 26, 2026: Use try_lock for transient scan status updates and blocking lock for moving/stopping/done/save_dir.
+    // fn set_phase_and_dir(&self, phase: u8, dir_name: &str, save_dir: Option<String>) {
+    //     if let Ok(mut ui) = self.ui.lock() {
+    //         ui.phase = phase;
+    //         if !dir_name.is_empty() {
+    //             ui.current_dir_name.clear();
+    //             ui.current_dir_name.push_str(dir_name);
+    //         }
+    //         if let Some(dir) = save_dir {
+    //             ui.latest_save_dir = Some(dir);
+    //         }
+    //     }
+    // }
     fn set_phase_and_dir(&self, phase: u8, dir_name: &str, save_dir: Option<String>) {
-        if let Ok(mut ui) = self.ui.lock() {
-            ui.phase = phase;
-            if !dir_name.is_empty() {
-                ui.current_dir_name.clear();
-                ui.current_dir_name.push_str(dir_name);
+        let mut ui = if phase == PHASE_SCANNING && save_dir.is_none() {
+            match self.ui.try_lock() {
+                Ok(g) => g,
+                Err(_) => return,
             }
-            if let Some(dir) = save_dir {
-                ui.latest_save_dir = Some(dir);
+        } else {
+            match self.ui.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
             }
+        };
+        ui.phase = phase;
+        if !dir_name.is_empty() {
+            ui.current_dir_name.clear();
+            ui.current_dir_name.push_str(dir_name);
+        }
+        if let Some(dir) = save_dir {
+            ui.latest_save_dir = Some(dir);
         }
     }
 
@@ -237,14 +276,26 @@ impl SharedState {
     }
 }
 
-fn read_existing_dest_names(dest_dir: &Path) -> HashSet<OsString> {
+// Gene - Nov, 26, 2026: Use case-accurate FilenameKey on Windows/macOS and skip read_dir on newly created destination folders.
+// fn read_existing_dest_names(dest_dir: &Path) -> HashSet<OsString> {
+//     let mut set = HashSet::new();
+//     let entries = match fs::read_dir(dest_dir) {
+//         Ok(iter) => iter,
+//         Err(_) => return set,
+//     };
+//     for entry in entries.flatten() {
+//         set.insert(entry.file_name());
+//     }
+//     set
+// }
+fn read_existing_dest_names(dest_dir: &Path) -> HashSet<FilenameKey> {
     let mut set = HashSet::new();
     let entries = match fs::read_dir(dest_dir) {
         Ok(iter) => iter,
         Err(_) => return set,
     };
     for entry in entries.flatten() {
-        set.insert(entry.file_name());
+        set.insert(filename_key(&entry.file_name()));
     }
     set
 }
@@ -313,6 +364,319 @@ fn spawn_transfer_worker(
         .ok()
 }
 
+// Gene - Nov, 26, 2026: Skip read_dir on newly created dest dirs, use case-accurate FilenameKey,
+// dynamic io_worker_count(), single-canonicalize symlinks, and empty-worker deadlock guard.
+// #[allow(clippy::too_many_arguments)]
+// fn inspect_and_enqueue_file(
+//     file_path: PathBuf,
+//     file_name_os: OsString,
+//     parent_dir: &Path,
+//     dir_name: &str,
+//     known_metadata: Option<Metadata>,
+//     config: &TransferConfig,
+//     dest_dir: &Path,
+//     dest_dir_created: &mut bool,
+//     existing_dest: &mut Option<HashSet<OsString>>,
+//     queue: &TransferQueue,
+//     state: &SharedState,
+// ) -> bool {
+//     state.files_scanned.fetch_add(1, Ordering::Relaxed);
+//
+//     let mut modified: Option<SystemTime> = None;
+//     let mut modified_ms: i64 = 0;
+//
+//     if config.enable_age_filter || config.enable_date_range {
+//         let meta = match known_metadata {
+//             Some(m) => m,
+//             None => match fs::metadata(&file_path) {
+//                 Ok(m) => m,
+//                 Err(e) => {
+//                     state.push_log(format!(
+//                         "✗ Error accessing {}: {e}",
+//                         file_path.display()
+//                     ));
+//                     state.errors.fetch_add(1, Ordering::Relaxed);
+//                     return true;
+//                 }
+//             },
+//         };
+//         let mtime = match meta.modified() {
+//             Ok(m) => m,
+//             Err(e) => {
+//                 state.push_log(format!(
+//                     "✗ Error accessing {}: {e}",
+//                     file_path.display()
+//                 ));
+//                 state.errors.fetch_add(1, Ordering::Relaxed);
+//                 return true;
+//             }
+//         };
+//         let ms = system_time_to_epoch_ms(mtime);
+//         if config.enable_age_filter && ms > config.age_threshold_epoch_ms {
+//             return true;
+//         }
+//         if config.enable_date_range
+//             && (ms < config.from_inclusive_epoch_ms || ms >= config.to_exclusive_epoch_ms)
+//         {
+//             return true;
+//         }
+//         modified = Some(mtime);
+//         modified_ms = ms;
+//     }
+//
+//     let file_name = file_name_os.to_string_lossy().into_owned();
+//
+//     if !*dest_dir_created {
+//         if let Err(e) = fs::create_dir_all(dest_dir) {
+//             state.push_log(format!(
+//                 "✗ Failed to move {}: {e}",
+//                 file_path.display()
+//             ));
+//             state.errors.fetch_add(1, Ordering::Relaxed);
+//             return true;
+//         }
+//         *dest_dir_created = true;
+//     }
+//
+//     let dest_names = existing_dest.get_or_insert_with(|| read_existing_dest_names(dest_dir));
+//     if dest_names.contains(&file_name_os) {
+//         state.push_log(format!(
+//             "⚠ Skipped {file_name}: a file with that name already exists at the destination"
+//         ));
+//         state.errors.fetch_add(1, Ordering::Relaxed);
+//         return true;
+//     }
+//     dest_names.insert(file_name_os.clone());
+//
+//     let dest_file = dest_dir.join(&file_name_os);
+//     let _ = parent_dir;
+//
+//     queue.push(
+//         TransferTask {
+//             src_file: file_path,
+//             dest_file,
+//             dir_name: dir_name.to_string(),
+//             file_name,
+//             modified,
+//             modified_ms,
+//         },
+//         state,
+//     )
+// }
+//
+// fn run_transfer(
+//     config: TransferConfig,
+//     state: Arc<SharedState>,
+//     queue: Arc<TransferQueue>,
+// ) {
+//     let canonical_source_root = match fs::canonicalize(&config.source_path) {
+//         Ok(p) => p,
+//         Err(e) => {
+//             state.set_critical_error(format!(
+//                 "Failed to access source directory {}: {e}",
+//                 config.source_path.display()
+//             ));
+//             queue.close(true);
+//             state.set_phase_and_dir(PHASE_DONE, "", None);
+//             state.done.store(true, Ordering::Release);
+//             return;
+//         }
+//     };
+//
+//     let _ = &config.last_scanned_dir;
+//     let norm_dest = normalize_lexical(&config.dest_path);
+//     let canon_dest = fs::canonicalize(&config.dest_path).ok();
+//
+//     let mut workers = Vec::with_capacity(DEFAULT_IO_WORKERS);
+//     for _ in 0..DEFAULT_IO_WORKERS {
+//         if let Some(h) = spawn_transfer_worker(
+//             Arc::clone(&queue),
+//             Arc::clone(&state),
+//             config.log_interval,
+//         ) {
+//             workers.push(h);
+//         }
+//     }
+//
+//     let mut visited_symlinks: HashSet<PathBuf> = HashSet::new();
+//     let mut created_dirs: HashSet<PathBuf> = HashSet::new();
+//     let mut dirs_to_process: VecDeque<PathBuf> = VecDeque::new();
+//     dirs_to_process.push_back(config.source_path.clone());
+//     let recursive = !config.exclude_subfolders;
+//
+//     while let Some(dir) = dirs_to_process.pop_front() {
+//         if state.is_stopped() || !state.wait_if_paused() {
+//             break;
+//         }
+//
+//         let dir_name = path_basename(&dir);
+//
+//         if lexical_equal_or_within(&norm_dest, &dir) {
+//             state.push_log(format!("ℹ Skipping destination folder: {dir_name}"));
+//             continue;
+//         }
+//
+//         let dirs_count = state.dirs_scanned.fetch_add(1, Ordering::Relaxed) + 1;
+//         let save_dir = if dirs_count % SAVE_PROGRESS_INTERVAL_DIRS == 0 {
+//             Some(dir.to_string_lossy().into_owned())
+//         } else {
+//             None
+//         };
+//         state.set_phase_and_dir(PHASE_SCANNING, &dir_name, save_dir);
+//
+//         let entries = match fs::read_dir(&dir) {
+//             Ok(iter) => iter,
+//             Err(e) => {
+//                 state.push_log(format!("✗ Error reading directory {}: {e}", dir.display()));
+//                 continue;
+//             }
+//         };
+//
+//         let rel_dir = dir
+//             .strip_prefix(&config.source_path)
+//             .unwrap_or_else(|_| Path::new(""));
+//         let dest_dir = if rel_dir.as_os_str().is_empty() {
+//             config.dest_path.clone()
+//         } else {
+//             config.dest_path.join(rel_dir)
+//         };
+//         let mut dest_dir_created = created_dirs.contains(&dest_dir);
+//         let mut existing_dest: Option<HashSet<OsString>> = None;
+//         let mut subdirs: Vec<PathBuf> = Vec::new();
+//
+//         for entry_res in entries {
+//             if state.is_stopped() || !state.wait_if_paused() {
+//                 break;
+//             }
+//
+//             let entry = match entry_res {
+//                 Ok(e) => e,
+//                 Err(e) => {
+//                     state.push_log(format!("✗ Error reading directory {}: {e}", dir.display()));
+//                     continue;
+//                 }
+//             };
+//
+//             let entry_path = entry.path();
+//             let file_type = match entry.file_type() {
+//                 Ok(ft) => ft,
+//                 Err(e) => {
+//                     state.push_log(format!(
+//                         "✗ Error accessing {}: {e}",
+//                         entry_path.display()
+//                     ));
+//                     state.errors.fetch_add(1, Ordering::Relaxed);
+//                     continue;
+//                 }
+//             };
+//
+//             if file_type.is_file() {
+//                 let meta = if config.enable_age_filter || config.enable_date_range {
+//                     entry.metadata().ok()
+//                 } else {
+//                     None
+//                 };
+//                 if !inspect_and_enqueue_file(
+//                     entry_path,
+//                     entry.file_name(),
+//                     &dir,
+//                     &dir_name,
+//                     meta,
+//                     &config,
+//                     &dest_dir,
+//                     &mut dest_dir_created,
+//                     &mut existing_dest,
+//                     &queue,
+//                     &state,
+//                 ) {
+//                     break;
+//                 }
+//             } else if file_type.is_dir() {
+//                 if recursive {
+//                     subdirs.push(entry_path);
+//                 }
+//             } else if file_type.is_symlink() {
+//                 if !resolve_within_root(&canonical_source_root, &entry_path) {
+//                     state.push_log(format!(
+//                         "ℹ Skipped link pointing outside the source: {}",
+//                         path_basename(&entry_path)
+//                     ));
+//                     continue;
+//                 }
+//                 if let Ok(canon_target) = fs::canonicalize(&entry_path) {
+//                     if let Some(ref cd) = canon_dest {
+//                         if canon_target == *cd || canon_target.starts_with(cd) {
+//                             continue;
+//                         }
+//                     }
+//                     if let Ok(target_meta) = fs::metadata(&entry_path) {
+//                         if target_meta.is_dir() {
+//                             if recursive && visited_symlinks.insert(canon_target) {
+//                                 subdirs.push(entry_path);
+//                             }
+//                         } else if target_meta.is_file() {
+//                             if !inspect_and_enqueue_file(
+//                                 entry_path,
+//                                 entry.file_name(),
+//                                 &dir,
+//                                 &dir_name,
+//                                 Some(target_meta),
+//                                 &config,
+//                                 &dest_dir,
+//                                 &mut dest_dir_created,
+//                                 &mut existing_dest,
+//                                 &queue,
+//                                 &state,
+//                             ) {
+//                                 break;
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//
+//         if dest_dir_created {
+//             created_dirs.insert(dest_dir);
+//         }
+//
+//         if recursive && !subdirs.is_empty() && !state.is_stopped() {
+//             subdirs.sort_by(|a, b| path_basename(a).cmp(&path_basename(b)));
+//             for sub in subdirs {
+//                 dirs_to_process.push_back(sub);
+//             }
+//         }
+//     }
+//
+//     queue.close(state.is_stopped());
+//     for w in workers {
+//         let _ = w.join();
+//     }
+//
+//     state.set_phase_and_dir(PHASE_DONE, "", None);
+//     state.done.store(true, Ordering::Release);
+// }
+//
+// fn build_poll_json(state: &SharedState) -> String {
+//     let files_scanned = state.files_scanned.load(Ordering::Relaxed);
+//     let dirs_scanned = state.dirs_scanned.load(Ordering::Relaxed);
+//     let files_moved = state.files_moved.load(Ordering::Relaxed);
+//     let errors = state.errors.load(Ordering::Relaxed);
+//     let is_done = state.done.load(Ordering::Acquire);
+//
+//     let (phase, current_dir_name, save_scanned_dir, critical_error, logs) =
+//         match state.ui.lock() {
+//             Ok(mut ui) => {
+//                 let dir = ui.current_dir_name.clone();
+//                 let save = ui.latest_save_dir.take();
+//                 let crit = ui.critical_error.take();
+//                 let drained: Vec<String> = ui.logs.drain(..).collect();
+//                 (ui.phase, dir, save, crit, drained)
+//             }
+//             Err(_) => (PHASE_DONE, String::new(), None, None, Vec::new()),
+//         };
+//
+//     let mut json = String::with_capacity(256);
 #[allow(clippy::too_many_arguments)]
 fn inspect_and_enqueue_file(
     file_path: PathBuf,
@@ -323,7 +687,7 @@ fn inspect_and_enqueue_file(
     config: &TransferConfig,
     dest_dir: &Path,
     dest_dir_created: &mut bool,
-    existing_dest: &mut Option<HashSet<OsString>>,
+    existing_dest: &mut Option<HashSet<FilenameKey>>,
     queue: &TransferQueue,
     state: &SharedState,
 ) -> bool {
@@ -374,26 +738,38 @@ fn inspect_and_enqueue_file(
     let file_name = file_name_os.to_string_lossy().into_owned();
 
     if !*dest_dir_created {
-        if let Err(e) = fs::create_dir_all(dest_dir) {
-            state.push_log(format!(
-                "✗ Failed to move {}: {e}",
-                file_path.display()
-            ));
-            state.errors.fetch_add(1, Ordering::Relaxed);
-            return true;
+        match fs::create_dir(dest_dir) {
+            Ok(()) => {
+                *dest_dir_created = true;
+                *existing_dest = Some(HashSet::new());
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                *dest_dir_created = true;
+            }
+            Err(_) => {
+                if let Err(e) = fs::create_dir_all(dest_dir) {
+                    state.push_log(format!(
+                        "✗ Failed to move {}: {e}",
+                        file_path.display()
+                    ));
+                    state.errors.fetch_add(1, Ordering::Relaxed);
+                    return true;
+                }
+                *dest_dir_created = true;
+            }
         }
-        *dest_dir_created = true;
     }
 
+    let key = filename_key(&file_name_os);
     let dest_names = existing_dest.get_or_insert_with(|| read_existing_dest_names(dest_dir));
-    if dest_names.contains(&file_name_os) {
+    if dest_names.contains(&key) {
         state.push_log(format!(
             "⚠ Skipped {file_name}: a file with that name already exists at the destination"
         ));
         state.errors.fetch_add(1, Ordering::Relaxed);
         return true;
     }
-    dest_names.insert(file_name_os.clone());
+    dest_names.insert(key);
 
     let dest_file = dest_dir.join(&file_name_os);
     let _ = parent_dir;
@@ -434,8 +810,9 @@ fn run_transfer(
     let norm_dest = normalize_lexical(&config.dest_path);
     let canon_dest = fs::canonicalize(&config.dest_path).ok();
 
-    let mut workers = Vec::with_capacity(DEFAULT_IO_WORKERS);
-    for _ in 0..DEFAULT_IO_WORKERS {
+    let worker_count = io_worker_count();
+    let mut workers = Vec::with_capacity(worker_count);
+    for _ in 0..worker_count {
         if let Some(h) = spawn_transfer_worker(
             Arc::clone(&queue),
             Arc::clone(&state),
@@ -443,6 +820,14 @@ fn run_transfer(
         ) {
             workers.push(h);
         }
+    }
+
+    if workers.is_empty() {
+        state.set_critical_error("Failed to spawn transfer worker threads".to_string());
+        queue.close(true);
+        state.set_phase_and_dir(PHASE_DONE, "", None);
+        state.done.store(true, Ordering::Release);
+        return;
     }
 
     let mut visited_symlinks: HashSet<PathBuf> = HashSet::new();
@@ -488,7 +873,7 @@ fn run_transfer(
             config.dest_path.join(rel_dir)
         };
         let mut dest_dir_created = created_dirs.contains(&dest_dir);
-        let mut existing_dest: Option<HashSet<OsString>> = None;
+        let mut existing_dest: Option<HashSet<FilenameKey>> = None;
         let mut subdirs: Vec<PathBuf> = Vec::new();
 
         for entry_res in entries {
@@ -543,40 +928,40 @@ fn run_transfer(
                     subdirs.push(entry_path);
                 }
             } else if file_type.is_symlink() {
-                if !resolve_within_root(&canonical_source_root, &entry_path) {
+                let Some(canon_target) =
+                    resolve_canonical_within_root(&canonical_source_root, &entry_path)
+                else {
                     state.push_log(format!(
                         "ℹ Skipped link pointing outside the source: {}",
                         path_basename(&entry_path)
                     ));
                     continue;
-                }
-                if let Ok(canon_target) = fs::canonicalize(&entry_path) {
-                    if let Some(ref cd) = canon_dest {
-                        if canon_target == *cd || canon_target.starts_with(cd) {
-                            continue;
-                        }
+                };
+                if let Some(ref cd) = canon_dest {
+                    if canon_target == *cd || canon_target.starts_with(cd) {
+                        continue;
                     }
-                    if let Ok(target_meta) = fs::metadata(&entry_path) {
-                        if target_meta.is_dir() {
-                            if recursive && visited_symlinks.insert(canon_target) {
-                                subdirs.push(entry_path);
-                            }
-                        } else if target_meta.is_file() {
-                            if !inspect_and_enqueue_file(
-                                entry_path,
-                                entry.file_name(),
-                                &dir,
-                                &dir_name,
-                                Some(target_meta),
-                                &config,
-                                &dest_dir,
-                                &mut dest_dir_created,
-                                &mut existing_dest,
-                                &queue,
-                                &state,
-                            ) {
-                                break;
-                            }
+                }
+                if let Ok(target_meta) = fs::metadata(&entry_path) {
+                    if target_meta.is_dir() {
+                        if recursive && visited_symlinks.insert(canon_target) {
+                            subdirs.push(entry_path);
+                        }
+                    } else if target_meta.is_file() {
+                        if !inspect_and_enqueue_file(
+                            entry_path,
+                            entry.file_name(),
+                            &dir,
+                            &dir_name,
+                            Some(target_meta),
+                            &config,
+                            &dest_dir,
+                            &mut dest_dir_created,
+                            &mut existing_dest,
+                            &queue,
+                            &state,
+                        ) {
+                            break;
                         }
                     }
                 }
@@ -588,7 +973,7 @@ fn run_transfer(
         }
 
         if recursive && !subdirs.is_empty() && !state.is_stopped() {
-            subdirs.sort_by(|a, b| path_basename(a).cmp(&path_basename(b)));
+            subdirs.sort_unstable_by(|a, b| path_basename(a).cmp(&path_basename(b)));
             for sub in subdirs {
                 dirs_to_process.push_back(sub);
             }
@@ -623,7 +1008,7 @@ fn build_poll_json(state: &SharedState) -> String {
             Err(_) => (PHASE_DONE, String::new(), None, None, Vec::new()),
         };
 
-    let mut json = String::with_capacity(256);
+    let mut json = String::with_capacity(256 + logs.len() * 64);
     let _ = write!(
         json,
         "{{\"filesScanned\":{files_scanned},\"dirsScanned\":{dirs_scanned},\"filesMoved\":{files_moved},\"errors\":{errors},\"phase\":{phase},\"currentDirName\":"
@@ -767,6 +1152,61 @@ pub unsafe extern "C" fn transfer_engine_resume(job: *mut TransferJob) {
     }));
 }
 
+// Gene - Nov, 26, 2026: Use poison-safe pause_lock recovery in transfer_engine_stop and transfer_engine_destroy.
+// #[no_mangle]
+// pub unsafe extern "C" fn transfer_engine_stop(job: *mut TransferJob) {
+//     let _ = catch_unwind(AssertUnwindSafe(|| {
+//         if job.is_null() {
+//             return;
+//         }
+//         let job_ref = &*job;
+//         job_ref.state.cancel_flag.store(1, Ordering::Release);
+//         job_ref.state.stop_requested.store(true, Ordering::Release);
+//         job_ref.state.set_phase_and_dir(PHASE_STOPPING, "", None);
+//         if let Ok(mut paused) = job_ref.state.pause_lock.lock() {
+//             *paused = false;
+//         }
+//         job_ref.state.pause_cvar.notify_all();
+//         job_ref.queue.close(true);
+//     }));
+// }
+//
+// #[no_mangle]
+// pub unsafe extern "C" fn transfer_engine_poll(job: *mut TransferJob) -> *mut c_char {
+//     let res = catch_unwind(AssertUnwindSafe(|| {
+//         if job.is_null() {
+//             return std::ptr::null_mut();
+//         }
+//         let job_ref = &*job;
+//         let json = build_poll_json(&job_ref.state);
+//         match CString::new(json) {
+//             Ok(cstr) => cstr.into_raw(),
+//             Err(_) => std::ptr::null_mut(),
+//         }
+//     }));
+//
+//     res.unwrap_or(std::ptr::null_mut())
+// }
+//
+// #[no_mangle]
+// pub unsafe extern "C" fn transfer_engine_destroy(job: *mut TransferJob) {
+//     let _ = catch_unwind(AssertUnwindSafe(|| {
+//         if job.is_null() {
+//             return;
+//         }
+//         let mut boxed = Box::from_raw(job);
+//         boxed.state.cancel_flag.store(1, Ordering::Release);
+//         boxed.state.stop_requested.store(true, Ordering::Release);
+//         if let Ok(mut paused) = boxed.state.pause_lock.lock() {
+//             *paused = false;
+//         }
+//         boxed.state.pause_cvar.notify_all();
+//         boxed.queue.close(true);
+//         if let Some(handle) = boxed.handle.take() {
+//             let _ = handle.join();
+//         }
+//     }));
+// }
 #[no_mangle]
 pub unsafe extern "C" fn transfer_engine_stop(job: *mut TransferJob) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
@@ -777,7 +1217,12 @@ pub unsafe extern "C" fn transfer_engine_stop(job: *mut TransferJob) {
         job_ref.state.cancel_flag.store(1, Ordering::Release);
         job_ref.state.stop_requested.store(true, Ordering::Release);
         job_ref.state.set_phase_and_dir(PHASE_STOPPING, "", None);
-        if let Ok(mut paused) = job_ref.state.pause_lock.lock() {
+        {
+            let mut paused = job_ref
+                .state
+                .pause_lock
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
             *paused = false;
         }
         job_ref.state.pause_cvar.notify_all();
@@ -811,7 +1256,12 @@ pub unsafe extern "C" fn transfer_engine_destroy(job: *mut TransferJob) {
         let mut boxed = Box::from_raw(job);
         boxed.state.cancel_flag.store(1, Ordering::Release);
         boxed.state.stop_requested.store(true, Ordering::Release);
-        if let Ok(mut paused) = boxed.state.pause_lock.lock() {
+        {
+            let mut paused = boxed
+                .state
+                .pause_lock
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
             *paused = false;
         }
         boxed.state.pause_cvar.notify_all();
@@ -1182,6 +1632,43 @@ mod tests {
         }
 
         assert_eq!(fs::read_dir(&dst).unwrap().count(), 10);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // Gene - Nov, 26, 2026: Verify case-insensitive destination collision detection on Windows/macOS.
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn case_insensitive_dest_is_never_overwritten() {
+        let root = make_temp_dir("rust_tx_case_overwrite");
+        let src = root.join("source");
+        let dst = root.join("dest");
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&dst).unwrap();
+
+        fs::write(src.join("Report.TXT"), b"INCOMING").unwrap();
+        fs::write(dst.join("report.txt"), b"ORIGINAL").unwrap();
+
+        let (state, logs) = run_sync(TransferConfig {
+            source_path: src.clone(),
+            dest_path: dst.clone(),
+            last_scanned_dir: None,
+            enable_age_filter: false,
+            age_threshold_epoch_ms: 0,
+            enable_date_range: false,
+            from_inclusive_epoch_ms: 0,
+            to_exclusive_epoch_ms: 0,
+            exclude_subfolders: false,
+            initial_files_moved: 0,
+            initial_errors: 0,
+            log_interval: 100,
+        });
+
+        assert_eq!(fs::read(dst.join("report.txt")).unwrap(), b"ORIGINAL");
+        assert!(src.join("Report.TXT").exists());
+        assert_eq!(state.files_moved.load(Ordering::Relaxed), 0);
+        assert_eq!(state.errors.load(Ordering::Relaxed), 1);
+        assert!(logs.iter().any(|l| l.contains("already exists")));
+
         let _ = fs::remove_dir_all(&root);
     }
 }

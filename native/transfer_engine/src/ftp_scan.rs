@@ -27,16 +27,40 @@ struct FtpScanResult {
     errors: Vec<String>,
 }
 
+// Gene - Nov, 26, 2026: Added cooperative stop_requested cancellation on destroy and unstable sort for FTP scan.
+// pub struct FtpScanJob {
+//     done: Arc<AtomicBool>,
+//     result: Arc<Mutex<Option<FtpScanResult>>>,
+//     handle: Option<JoinHandle<()>>,
+// }
+//
+// fn run_ftp_scan(
+//     dir_path: PathBuf,
+//     root_path: PathBuf,
+//     include_creation_time: bool,
+// ) -> FtpScanResult {
 pub struct FtpScanJob {
     done: Arc<AtomicBool>,
+    stop_requested: Arc<AtomicBool>,
     result: Arc<Mutex<Option<FtpScanResult>>>,
     handle: Option<JoinHandle<()>>,
 }
 
+#[cfg(test)]
 fn run_ftp_scan(
     dir_path: PathBuf,
     root_path: PathBuf,
     include_creation_time: bool,
+) -> FtpScanResult {
+    let never_stop = AtomicBool::new(false);
+    run_ftp_scan_with_cancel(dir_path, root_path, include_creation_time, &never_stop)
+}
+
+fn run_ftp_scan_with_cancel(
+    dir_path: PathBuf,
+    root_path: PathBuf,
+    include_creation_time: bool,
+    stop_requested: &AtomicBool,
 ) -> FtpScanResult {
     let mut files = Vec::new();
     let mut errors = Vec::new();
@@ -68,6 +92,13 @@ fn run_ftp_scan(
     };
 
     for entry_res in entries {
+        // Gene - Nov, 26, 2026: Abort scan promptly when stop_requested is set.
+        if stop_requested.load(Ordering::Acquire) {
+            return FtpScanResult {
+                files: Vec::new(),
+                errors: Vec::new(),
+            };
+        }
         let entry = match entry_res {
             Ok(e) => e,
             Err(e) => {
@@ -114,7 +145,9 @@ fn run_ftp_scan(
         }
     }
 
-    files.sort_by(|a, b| a.path.cmp(&b.path));
+    // files.sort_by(|a, b| a.path.cmp(&b.path));
+    // Gene - Nov, 26, 2026: Use sort_unstable_by for faster deterministic path sorting.
+    files.sort_unstable_by(|a, b| a.path.cmp(&b.path));
     FtpScanResult { files, errors }
 }
 
@@ -162,15 +195,18 @@ pub unsafe extern "C" fn ftp_scan_start(
         let include_created = include_creation_time != 0;
 
         let done = Arc::new(AtomicBool::new(false));
+        // Gene - Nov, 26, 2026: Wire stop_requested cancellation into FtpScanJob start and destroy.
+        let stop_requested = Arc::new(AtomicBool::new(false));
         let result = Arc::new(Mutex::new(None));
         let worker_done = Arc::clone(&done);
+        let worker_stop = Arc::clone(&stop_requested);
         let worker_result = Arc::clone(&result);
 
         let handle = thread::Builder::new()
             .name("ftp_scan_worker".to_string())
             .spawn(move || {
                 let scan_res = catch_unwind(AssertUnwindSafe(|| {
-                    run_ftp_scan(dir, root, include_created)
+                    run_ftp_scan_with_cancel(dir, root, include_created, &worker_stop)
                 }))
                 .unwrap_or_else(|_| FtpScanResult {
                     files: Vec::new(),
@@ -186,6 +222,7 @@ pub unsafe extern "C" fn ftp_scan_start(
         match handle {
             Some(h) => Box::into_raw(Box::new(FtpScanJob {
                 done,
+                stop_requested,
                 result,
                 handle: Some(h),
             })),
@@ -229,6 +266,8 @@ pub unsafe extern "C" fn ftp_scan_destroy(job: *mut FtpScanJob) {
             return;
         }
         let mut boxed = Box::from_raw(job);
+        // Gene - Nov, 26, 2026: Signal stop_requested before joining worker so cancelled scans exit promptly.
+        boxed.stop_requested.store(true, Ordering::Release);
         if let Some(handle) = boxed.handle.take() {
             let _ = handle.join();
         }
@@ -287,6 +326,18 @@ mod tests {
         let created = unsafe { native_file_creation_ms(c_path.as_ptr()) };
         assert!(created == i64::MIN || created > 0);
 
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // Gene - Nov, 26, 2026: Verify ftp_scan aborts cleanly when stop_requested is pre-signaled.
+    #[test]
+    fn ftp_scan_respects_stop_requested_flag() {
+        let root = make_temp_dir("rust_ftp_cancel");
+        fs::write(root.join("file.txt"), b"DATA").unwrap();
+        let stop = AtomicBool::new(true);
+        let res = run_ftp_scan_with_cancel(root.clone(), root.clone(), false, &stop);
+        assert!(res.files.is_empty());
+        assert!(res.errors.is_empty());
         let _ = fs::remove_dir_all(&root);
     }
 }

@@ -2095,15 +2095,177 @@ class CopyFilesProvider with ChangeNotifier {
   }
 
   // Gene - Nov, 25, 2026: Poll native Rust copy_engine for live stats, scanning counter, logs, and completion.
+  // Gene - Nov, 26, 2026: Guard against stop() mid-await, isolate worker errors in multi-pair runs, and notify only on state change.
+  // Future<void> _pollCopyWorker(
+  //   _ActiveWorker worker,
+  //   int pairIndex,
+  //   int origIdx,
+  //   int runOrder,
+  // ) async {
+  //   if (worker.isPolling || worker.job.isDisposed) return;
+  //   worker.isPolling = true;
+  //   try {
+  //     final snap = worker.job.poll();
+  //
+  //     _pairStats[pairIndex] = [
+  //       snap.filesCopied,
+  //       snap.filesSkipped,
+  //       snap.errors,
+  //       snap.filesAlreadyExist,
+  //       snap.filesInspected,
+  //     ];
+  //     _recalcStats();
+  //
+  //     if (!isPaused) {
+  //       String rawStatus;
+  //       if (snap.phase == 2 && snap.latestCopiedName.isNotEmpty) {
+  //         rawStatus =
+  //             'Copying: ${snap.latestCopiedName} (${_numFmt.format(snap.filesCopied)} copied, ${_numFmt.format(snap.filesInspected)} scanned)';
+  //       } else if (snap.phase == 3) {
+  //         rawStatus =
+  //             '⏭ Checking: ${snap.currentDirName} – ${_numFmt.format(snap.filesAlreadyExist)} already exist, ${_numFmt.format(snap.filesCopied)} copied';
+  //       } else {
+  //         rawStatus = snap.currentDirName.isEmpty
+  //             ? '⏳ Scanning (${_numFmt.format(snap.filesInspected)} files)...'
+  //             : '⏳ Scanning (${_numFmt.format(snap.filesInspected)} files): ${snap.currentDirName}';
+  //       }
+  //
+  //       if (!useMultipleDirectories) {
+  //         currentStatus = rawStatus;
+  //       } else if (_activeWorkers.length == 1) {
+  //         currentStatus = 'P${origIdx + 1}: $rawStatus';
+  //       } else {
+  //         currentStatus =
+  //             '${_activeWorkers.length} pairs (Order $runOrder) – P${origIdx + 1}: $rawStatus';
+  //       }
+  //     }
+  //
+  //     for (final log in snap.logs) {
+  //       _addLog('[P${origIdx + 1}] $log');
+  //     }
+  //
+  //     for (final err in snap.errorLogs) {
+  //       _addLog('[P${origIdx + 1}] $err');
+  //       await _fileLogger.error('Copy', err);
+  //     }
+  //
+  //     if (snap.criticalError != null) {
+  //       _log.severe(
+  //         'Rust copy critical error (pair ${origIdx + 1}): ${snap.criticalError}',
+  //       );
+  //       await _fileLogger.error(
+  //         'Copy',
+  //         'Critical Error (pair ${origIdx + 1}): ${snap.criticalError}',
+  //       );
+  //     }
+  //
+  //     if (snap.isDone) {
+  //       _addLog(
+  //         '[P${origIdx + 1}] 🏁 Done: ${_numFmt.format(snap.filesCopied)} copied, ${_numFmt.format(snap.filesAlreadyExist)} exist, ${_numFmt.format(snap.filesSkipped)} skipped, ${_numFmt.format(snap.errors)} errors',
+  //       );
+  //
+  //       worker.pollTimer?.cancel();
+  //       worker.pollTimer = null;
+  //       worker.job.dispose();
+  //       _activeWorkers.remove(worker);
+  //       _totalPairsCompleted++;
+  //       _pairsCompletedInGroup++;
+  //
+  //       _recalcStats();
+  //
+  //       final currentOrder = _runOrderGroups[_currentGroupIndex];
+  //       final groupSize = _pairsToProcess
+  //           .where((p) => p['runOrder'] == currentOrder)
+  //           .length;
+  //       if (_pairsCompletedInGroup >= groupSize) {
+  //         _addLog('═══ Run Order $currentOrder complete ═══');
+  //         _currentGroupIndex++;
+  //         if (_currentGroupIndex < _runOrderGroups.length) {
+  //           await _startCurrentGroup();
+  //         }
+  //       }
+  //
+  //       if (_totalPairsCompleted >= _pairsToProcess.length) {
+  //         final elapsed = _getElapsedStr();
+  //         _addLog(
+  //           '🏁 All ${_pairsToProcess.length} pair(s) completed. Total: ${_numFmt.format(filesCopied)} copied, ${_numFmt.format(errors)} errors in $elapsed',
+  //         );
+  //
+  //         final runId = _fileLogger.getRunId('Copy') ?? 'UNKNOWN';
+  //         final start = _fileLogger.getStartTime('Copy') ?? DateTime.now();
+  //
+  //         await _fileLogger.logRunEnd(
+  //           operation: 'Copy',
+  //           filesProcessed: filesCopied,
+  //           errors: errors,
+  //           wasStopped: false,
+  //         );
+  //
+  //         try {
+  //           await HistoryService().saveRecord(
+  //             RunRecord(
+  //               id: runId,
+  //               operation: 'Copy',
+  //               startTime: start,
+  //               endTime: DateTime.now(),
+  //               filesProcessed: filesCopied,
+  //               errors: errors,
+  //               status: errors > 0 && filesCopied == 0 ? 'Error' : 'Completed',
+  //               configSummary:
+  //                   'Source: ${sourcePath ?? "Multiple"}, Dest: ${destPath ?? "Multiple"} (Pairs: ${_pairsToProcess.length}, Exist: $filesAlreadyExist, Skipped: $filesSkipped)',
+  //               sourcePath: sourcePath,
+  //               destPath: destPath,
+  //             ),
+  //           );
+  //         } catch (_) {}
+  //
+  //         if (onCompletionAction == 'pause') {
+  //           _scheduleTimer?.cancel();
+  //           _scheduleTimer = null;
+  //           _scheduleNextRun();
+  //         } else {
+  //           isProcessing = false;
+  //           currentStatus = 'Idle';
+  //           _scheduleTimer?.cancel();
+  //           _scheduleTimer = null;
+  //         }
+  //       }
+  //     }
+  //
+  //     notifyListeners();
+  //   } catch (e, stack) {
+  //     _log.severe(
+  //       'Error polling Rust copy worker (pair ${origIdx + 1})',
+  //       e,
+  //       stack,
+  //     );
+  //     worker.pollTimer?.cancel();
+  //     worker.pollTimer = null;
+  //     worker.job.dispose();
+  //     _activeWorkers.remove(worker);
+  //     isProcessing = false;
+  //     currentStatus = 'Idle';
+  //     notifyListeners();
+  //   } finally {
+  //     worker.isPolling = false;
+  //   }
+  // }
   Future<void> _pollCopyWorker(
     _ActiveWorker worker,
     int pairIndex,
     int origIdx,
     int runOrder,
   ) async {
-    if (worker.isPolling || worker.job.isDisposed) return;
+    if (worker.isPolling || worker.job.isDisposed || !isProcessing) return;
     worker.isPolling = true;
     try {
+      final prevCopied = filesCopied;
+      final prevSkipped = filesSkipped;
+      final prevAlreadyExist = filesAlreadyExist;
+      final prevErrors = errors;
+      final prevScanned = filesScanned;
+      final prevStatus = currentStatus;
+
       final snap = worker.job.poll();
 
       _pairStats[pairIndex] = [
@@ -2158,6 +2320,19 @@ class CopyFilesProvider with ChangeNotifier {
         );
       }
 
+      if (!isProcessing) return;
+
+      final hasChanged =
+          prevCopied != filesCopied ||
+          prevSkipped != filesSkipped ||
+          prevAlreadyExist != filesAlreadyExist ||
+          prevErrors != errors ||
+          prevScanned != filesScanned ||
+          prevStatus != currentStatus ||
+          snap.logs.isNotEmpty ||
+          snap.errorLogs.isNotEmpty ||
+          snap.criticalError != null;
+
       if (snap.isDone) {
         _addLog(
           '[P${origIdx + 1}] 🏁 Done: ${_numFmt.format(snap.filesCopied)} copied, ${_numFmt.format(snap.filesAlreadyExist)} exist, ${_numFmt.format(snap.filesSkipped)} skipped, ${_numFmt.format(snap.errors)} errors',
@@ -2183,6 +2358,8 @@ class CopyFilesProvider with ChangeNotifier {
             await _startCurrentGroup();
           }
         }
+
+        if (!isProcessing) return;
 
         if (_totalPairsCompleted >= _pairsToProcess.length) {
           final elapsed = _getElapsedStr();
@@ -2218,6 +2395,8 @@ class CopyFilesProvider with ChangeNotifier {
             );
           } catch (_) {}
 
+          if (!isProcessing) return;
+
           if (onCompletionAction == 'pause') {
             _scheduleTimer?.cancel();
             _scheduleTimer = null;
@@ -2229,9 +2408,13 @@ class CopyFilesProvider with ChangeNotifier {
             _scheduleTimer = null;
           }
         }
+        notifyListeners();
+        return;
       }
 
-      notifyListeners();
+      if (hasChanged) {
+        notifyListeners();
+      }
     } catch (e, stack) {
       _log.severe(
         'Error polling Rust copy worker (pair ${origIdx + 1})',
@@ -2242,8 +2425,10 @@ class CopyFilesProvider with ChangeNotifier {
       worker.pollTimer = null;
       worker.job.dispose();
       _activeWorkers.remove(worker);
-      isProcessing = false;
-      currentStatus = 'Idle';
+      if (_activeWorkers.isEmpty) {
+        isProcessing = false;
+        currentStatus = 'Idle';
+      }
       notifyListeners();
     } finally {
       worker.isPolling = false;
