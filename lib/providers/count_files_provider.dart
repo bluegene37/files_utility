@@ -116,6 +116,9 @@ class CountFilesProvider with ChangeNotifier {
     CountFileCategory.values,
   );
   int totalFolders = 0;
+  // Gene - Nov, 26, 2026: Track total counted bytes and whether the active/last run is size-only.
+  int totalBytes = 0;
+  bool isSizeOnlyRun = false;
   int errors = 0;
   int logInterval = 100;
   bool _stopRequested = false;
@@ -211,6 +214,23 @@ class CountFilesProvider with ChangeNotifier {
 
   bool get canStartCounting => targetPath != null && hasAnyCategorySelected;
 
+  // Gene - Nov, 26, 2026: Format byte counts into human-readable B, KB, MB, GB, or TB strings.
+  static String formatByteSize(int bytes) {
+    if (bytes <= 0) return '0 B';
+    const int kb = 1024;
+    const int mb = kb * 1024;
+    const int gb = mb * 1024;
+    const int tb = gb * 1024;
+    if (bytes < kb) return '$bytes B';
+    if (bytes < mb) return '${(bytes / kb).toStringAsFixed(1)} KB';
+    if (bytes < gb) return '${(bytes / mb).toStringAsFixed(2)} MB';
+    if (bytes < tb) return '${(bytes / gb).toStringAsFixed(2)} GB';
+    return '${(bytes / tb).toStringAsFixed(2)} TB';
+  }
+
+  String get formattedTotalSize => formatByteSize(totalBytes);
+  bool get canGetFolderSize => targetPath != null && !isCounting;
+
   int get categoryIncludeMask =>
       selectedCategories.fold<int>(0, (acc, c) => acc | c.mask);
 
@@ -303,12 +323,23 @@ class CountFilesProvider with ChangeNotifier {
 //     currentStatus = 'Idle';
 //     notifyListeners();
 //   }
-  // Gene - Nov, 26, 2026: Reset excludedFiles alongside totalFiles/totalFolders when clearing logs.
+  // Gene - Nov, 26, 2026: Reset totalBytes and isSizeOnlyRun alongside counts when clearing logs.
+  // void clearLogs() {
+  //   logs.clear();
+  //   totalFiles = 0;
+  //   excludedFiles = 0;
+  //   totalFolders = 0;
+  //   errors = 0;
+  //   currentStatus = 'Idle';
+  //   notifyListeners();
+  // }
   void clearLogs() {
     logs.clear();
     totalFiles = 0;
     excludedFiles = 0;
     totalFolders = 0;
+    totalBytes = 0;
+    isSizeOnlyRun = false;
     errors = 0;
     currentStatus = 'Idle';
     notifyListeners();
@@ -342,7 +373,222 @@ class CountFilesProvider with ChangeNotifier {
     }
   }
 
-  Future<void> startCounting() async {
+  // Gene - Nov, 26, 2026: Added startFolderSize() and totalBytes tracking/logging for both Count and Get Folder Size runs.
+  // Future<void> startCounting() async {
+  //   if (isCounting) return;
+  //
+  //   if (targetPath == null) {
+  //     _addLog('✗ Error: No target directory selected.');
+  //     return;
+  //   }
+  //
+  //   // Gene - Nov, 26, 2026: Require at least one file-type category and log filter selection.
+  //   if (!hasAnyCategorySelected) {
+  //     _addLog('✗ Error: Select at least one file type to count.');
+  //     notifyListeners();
+  //     return;
+  //   }
+  //
+  //   isCounting = true;
+  //   _stopRequested = false;
+  //   totalFiles = 0;
+  //   excludedFiles = 0;
+  //   totalFolders = 0;
+  //   errors = 0;
+  //   // Gene - Nov, 25, 2026: Initialize Count status with live scanning file counter.
+  //   // currentStatus = '⏳ Counting...';
+  //   currentStatus = '⏳ Scanning (0 files)...';
+  //   notifyListeners();
+  //
+  //   _addLog('⏳ Starting file count...');
+  //   _addLog('  Target: $targetPath');
+  //   _addLog('  Counting: $filterSummary');
+  //   if (!allCategoriesSelected) {
+  //     _addLog('  Excluding: $excludedSummary');
+  //   }
+  //
+  //   await _fileLogger.logRunStart(operation: 'Count', targetPath: targetPath);
+  //
+  //   // _startTimer();
+  //
+  //   try {
+  //     final targetDir = Directory(targetPath!);
+  //     if (!await targetDir.exists()) {
+  //       _addLog('✗ Error: Target directory does not exist.');
+  //       await _fileLogger.error(
+  //         'Count',
+  //         'Target directory does not exist: $targetPath',
+  //       );
+  //       _finishRun(wasStopped: false);
+  //       return;
+  //     }
+  //
+  //     // Gene - Nov, 25, 2026: Run directory counting on native Rust count_engine instead of Dart isolate.
+  //     _stopRustJob();
+  //     // _rustJob = RustCountJob.start(
+  //     //   targetPath: targetPath!,
+  //     //   logInterval: logInterval,
+  //     // );
+  //     // Gene - Nov, 26, 2026: Pass selected category includeMask to native Rust count engine.
+  //     _rustJob = RustCountJob.start(
+  //       targetPath: targetPath!,
+  //       logInterval: logInterval,
+  //       includeMask: categoryIncludeMask,
+  //     );
+  //     // Gene - Nov, 25, 2026: Poll every 150ms instead of 100ms.
+  //     // _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+  //     _pollTimer = Timer.periodic(const Duration(milliseconds: 150), (_) {
+  //       _pollRustJob();
+  //     });
+  //   } catch (e) {
+  //     _addLog('✗ Critical Error: $e');
+  //     await _fileLogger.error('Count', 'Critical Error: $e');
+  //     // _stopIsolate();
+  //     _stopRustJob();
+  //     _finishRun(wasStopped: false);
+  //   }
+  // }
+  //
+  // // Gene - Nov, 25, 2026: Poll native Rust count_engine for live file/folder counts, logs, and completion.
+  // void _pollRustJob() {
+  //   final job = _rustJob;
+  //   if (job == null || job.isDisposed) return;
+  //
+  //   try {
+  //     final prevFiles = totalFiles;
+  //     // Gene - Nov, 26, 2026: Track excludedFiles updates from Rust snapshot.
+  //     final prevExcluded = excludedFiles;
+  //     final prevFolders = totalFolders;
+  //     final prevErrors = errors;
+  //     final prevStatus = currentStatus;
+  //
+  //     final snap = job.poll();
+  //     totalFiles = snap.files;
+  //     excludedFiles = snap.excludedFiles;
+  //     totalFolders = snap.folders;
+  //     errors = snap.errors;
+  //
+  //     if (!snap.isDone && !_stopRequested) {
+  //       currentStatus = snap.currentDirName.isEmpty
+  //           ? '⏳ Scanning (${_numFmt.format(totalFiles)} files)...'
+  //           : '⏳ Scanning (${_numFmt.format(totalFiles)} files): ${snap.currentDirName}';
+  //     }
+  //
+  //     for (final log in snap.logs) {
+  //       _addLog(log);
+  //     }
+  //
+  //     for (final err in snap.errorLogs) {
+  //       _addLog('✗ $err');
+  //       _fileLogger.error('Count', err);
+  //     }
+  //
+  //     if (snap.criticalError != null) {
+  //       _addLog('✗ Critical Error: ${snap.criticalError}');
+  //       _fileLogger.error('Count', 'Critical Error: ${snap.criticalError}');
+  //     }
+  //
+  //     if (snap.isDone) {
+  //       _stopRustJob();
+  //       if (!_stopRequested) {
+  //         _finishRun(wasStopped: false);
+  //       }
+  //       return;
+  //     }
+  //
+  //     if (prevFiles != totalFiles ||
+  //         prevExcluded != excludedFiles ||
+  //         prevFolders != totalFolders ||
+  //         prevErrors != errors ||
+  //         prevStatus != currentStatus ||
+  //         snap.logs.isNotEmpty ||
+  //         snap.errorLogs.isNotEmpty ||
+  //         snap.criticalError != null) {
+  //       notifyListeners();
+  //     }
+  //   } catch (e) {
+  //     _stopRustJob();
+  //     _addLog('✗ Critical Error: $e');
+  //     _fileLogger.error('Count', 'Critical Error: $e');
+  //     _finishRun(wasStopped: false);
+  //   }
+  // }
+  //
+  // Future<void> _finishRun({required bool wasStopped}) async {
+  //   final elapsed = _getElapsedStr();
+  //   if (wasStopped) {
+  //     _addLog('⛔ Stopped by user.');
+  //     _addLog(
+  //       '  Count so far — Files: ${_numFmt.format(totalFiles)}, Folders: ${_numFmt.format(totalFolders)} in $elapsed',
+  //     );
+  //     // Gene - Nov, 26, 2026: Log excluded files count when filtering is active.
+  //     if (!allCategoriesSelected || excludedFiles > 0) {
+  //       _addLog('  Excluded Files: ${_numFmt.format(excludedFiles)}');
+  //     }
+  //   } else {
+  //     _addLog('🏁 Count completed in $elapsed');
+  //     _addLog('  Total Files: ${_numFmt.format(totalFiles)}');
+  //     if (!allCategoriesSelected || excludedFiles > 0) {
+  //       _addLog('  Excluded Files: ${_numFmt.format(excludedFiles)}');
+  //     }
+  //     _addLog('  Total Folders: ${_numFmt.format(totalFolders)}');
+  //   }
+  //
+  //   await _fileLogger.info('Count', 'Total Files: $totalFiles');
+  //   if (!allCategoriesSelected || excludedFiles > 0) {
+  //     await _fileLogger.info('Count', 'Excluded Files: $excludedFiles');
+  //   }
+  //   await _fileLogger.info('Count', 'Total Folders: $totalFolders');
+  //   if (errors > 0) {
+  //     await _fileLogger.error('Count', 'Errors encountered: $errors');
+  //   }
+  //
+  //   // Capture before logRunEnd clears them
+  //   final runId = _fileLogger.getRunId('Count') ?? 'UNKNOWN';
+  //   final start = _fileLogger.getStartTime('Count') ?? DateTime.now();
+  //
+  //   await _fileLogger.logRunEnd(
+  //     operation: 'Count',
+  //     filesProcessed: totalFiles,
+  //     errors: errors,
+  //     wasStopped: wasStopped,
+  //   );
+  //
+  //   try {
+  //     await HistoryService().saveRecord(
+  //       RunRecord(
+  //         id: runId,
+  //         operation: 'Count',
+  //         startTime: start,
+  //         endTime: DateTime.now(),
+  //         filesProcessed: totalFiles,
+  //         foldersProcessed: totalFolders,
+  //         errors: errors,
+  //         status: wasStopped
+  //             ? 'Stopped'
+  //             : (errors > 0 && totalFiles == 0 && totalFolders == 0
+  //                   ? 'Error'
+  //                   : 'Completed'),
+  //         // configSummary: 'Target: $targetPath, Log Every: $logInterval',
+  //         // Gene - Nov, 26, 2026: Include active file-type filter summary in Count run history.
+  //         configSummary:
+  //             'Target: $targetPath, Types: $filterSummary, Log Every: $logInterval',
+  //         sourcePath: targetPath,
+  //       ),
+  //     );
+  //   } catch (_) {}
+  //
+  //   isCounting = false;
+  //   currentStatus = 'Idle';
+  //   // _stopTimer();
+  //   notifyListeners();
+  // }
+
+  Future<void> startCounting() => _startRun(sizeOnly: false);
+
+  Future<void> startFolderSize() => _startRun(sizeOnly: true);
+
+  Future<void> _startRun({required bool sizeOnly}) async {
     if (isCounting) return;
 
     if (targetPath == null) {
@@ -350,34 +596,38 @@ class CountFilesProvider with ChangeNotifier {
       return;
     }
 
-    // Gene - Nov, 26, 2026: Require at least one file-type category and log filter selection.
-    if (!hasAnyCategorySelected) {
+    if (!sizeOnly && !hasAnyCategorySelected) {
       _addLog('✗ Error: Select at least one file type to count.');
       notifyListeners();
       return;
     }
 
     isCounting = true;
+    isSizeOnlyRun = sizeOnly;
     _stopRequested = false;
     totalFiles = 0;
     excludedFiles = 0;
     totalFolders = 0;
+    totalBytes = 0;
     errors = 0;
-    // Gene - Nov, 25, 2026: Initialize Count status with live scanning file counter.
-    // currentStatus = '⏳ Counting...';
-    currentStatus = '⏳ Scanning (0 files)...';
+    currentStatus = sizeOnly
+        ? '⏳ Calculating size (0 B)...'
+        : '⏳ Scanning (0 files)...';
     notifyListeners();
 
-    _addLog('⏳ Starting file count...');
-    _addLog('  Target: $targetPath');
-    _addLog('  Counting: $filterSummary');
-    if (!allCategoriesSelected) {
-      _addLog('  Excluding: $excludedSummary');
+    if (sizeOnly) {
+      _addLog('⏳ Calculating folder size...');
+      _addLog('  Target: $targetPath (all files)');
+    } else {
+      _addLog('⏳ Starting file count...');
+      _addLog('  Target: $targetPath');
+      _addLog('  Counting: $filterSummary');
+      if (!allCategoriesSelected) {
+        _addLog('  Excluding: $excludedSummary');
+      }
     }
 
     await _fileLogger.logRunStart(operation: 'Count', targetPath: targetPath);
-
-    // _startTimer();
 
     try {
       final targetDir = Directory(targetPath!);
@@ -391,82 +641,33 @@ class CountFilesProvider with ChangeNotifier {
         return;
       }
 
-      // Gene - Nov, 25, 2026: Run directory counting on native Rust count_engine instead of Dart isolate.
-      // _receivePort?.close();
-      // _receivePort = ReceivePort();
-      //
-      // _workerIsolate = await Isolate.spawn(
-      //   _isolateWorker,
-      //   _CountParams(
-      //     targetPath: targetPath!,
-      //     logInterval: logInterval,
-      //     sendPort: _receivePort!.sendPort,
-      //   ),
-      // );
-      //
-      // _receivePort!.listen((message) {
-      //   if (message is _CountProgress) {
-      //     totalFiles = message.files;
-      //     totalFolders = message.folders;
-      //     errors = message.errors;
-      //
-      //     if (message.currentScanPath != null) {
-      //       currentStatus =
-      //           '⏳ Scanning: ${p.basename(message.currentScanPath!)}';
-      //     }
-      //
-      //     for (final log in message.logs) {
-      //       _addLog(log);
-      //     }
-      //
-      //     if (message.errorLog != null) {
-      //       _addLog('✗ ${message.errorLog}');
-      //       _fileLogger.error('Count', message.errorLog!);
-      //     }
-      //
-      //     if (message.isDone) {
-      //       _stopIsolate();
-      //       if (!_stopRequested) {
-      //         _finishRun(wasStopped: false);
-      //       }
-      //     }
-      //   }
-      // });
       _stopRustJob();
-      // _rustJob = RustCountJob.start(
-      //   targetPath: targetPath!,
-      //   logInterval: logInterval,
-      // );
-      // Gene - Nov, 26, 2026: Pass selected category includeMask to native Rust count engine.
       _rustJob = RustCountJob.start(
         targetPath: targetPath!,
-        logInterval: logInterval,
-        includeMask: categoryIncludeMask,
+        logInterval: sizeOnly ? 0 : logInterval,
+        includeMask: sizeOnly ? kCountCategoryAllMask : categoryIncludeMask,
+        sizeOnly: sizeOnly,
       );
-      // Gene - Nov, 25, 2026: Poll every 150ms instead of 100ms.
-      // _pollTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
       _pollTimer = Timer.periodic(const Duration(milliseconds: 150), (_) {
         _pollRustJob();
       });
     } catch (e) {
       _addLog('✗ Critical Error: $e');
       await _fileLogger.error('Count', 'Critical Error: $e');
-      // _stopIsolate();
       _stopRustJob();
       _finishRun(wasStopped: false);
     }
   }
 
-  // Gene - Nov, 25, 2026: Poll native Rust count_engine for live file/folder counts, logs, and completion.
   void _pollRustJob() {
     final job = _rustJob;
     if (job == null || job.isDisposed) return;
 
     try {
       final prevFiles = totalFiles;
-      // Gene - Nov, 26, 2026: Track excludedFiles updates from Rust snapshot.
       final prevExcluded = excludedFiles;
       final prevFolders = totalFolders;
+      final prevBytes = totalBytes;
       final prevErrors = errors;
       final prevStatus = currentStatus;
 
@@ -474,12 +675,19 @@ class CountFilesProvider with ChangeNotifier {
       totalFiles = snap.files;
       excludedFiles = snap.excludedFiles;
       totalFolders = snap.folders;
+      totalBytes = snap.totalBytes;
       errors = snap.errors;
 
       if (!snap.isDone && !_stopRequested) {
-        currentStatus = snap.currentDirName.isEmpty
-            ? '⏳ Scanning (${_numFmt.format(totalFiles)} files)...'
-            : '⏳ Scanning (${_numFmt.format(totalFiles)} files): ${snap.currentDirName}';
+        if (isSizeOnlyRun) {
+          currentStatus = snap.currentDirName.isEmpty
+              ? '⏳ Calculating size ($formattedTotalSize)...'
+              : '⏳ Calculating size ($formattedTotalSize): ${snap.currentDirName}';
+        } else {
+          currentStatus = snap.currentDirName.isEmpty
+              ? '⏳ Scanning (${_numFmt.format(totalFiles)} files) • $formattedTotalSize...'
+              : '⏳ Scanning (${_numFmt.format(totalFiles)} files) • $formattedTotalSize: ${snap.currentDirName}';
+        }
       }
 
       for (final log in snap.logs) {
@@ -507,6 +715,7 @@ class CountFilesProvider with ChangeNotifier {
       if (prevFiles != totalFiles ||
           prevExcluded != excludedFiles ||
           prevFolders != totalFolders ||
+          prevBytes != totalBytes ||
           prevErrors != errors ||
           prevStatus != currentStatus ||
           snap.logs.isNotEmpty ||
@@ -524,15 +733,22 @@ class CountFilesProvider with ChangeNotifier {
 
   Future<void> _finishRun({required bool wasStopped}) async {
     final elapsed = _getElapsedStr();
+    final sizeStr = formattedTotalSize;
+    final exactBytes = _numFmt.format(totalBytes);
+
     if (wasStopped) {
       _addLog('⛔ Stopped by user.');
       _addLog(
-        '  Count so far — Files: ${_numFmt.format(totalFiles)}, Folders: ${_numFmt.format(totalFolders)} in $elapsed',
+        '  ${isSizeOnlyRun ? 'Size so far' : 'Count so far'} — Files: ${_numFmt.format(totalFiles)}, Folders: ${_numFmt.format(totalFolders)}, Size: $sizeStr in $elapsed',
       );
-      // Gene - Nov, 26, 2026: Log excluded files count when filtering is active.
-      if (!allCategoriesSelected || excludedFiles > 0) {
+      if (!isSizeOnlyRun && (!allCategoriesSelected || excludedFiles > 0)) {
         _addLog('  Excluded Files: ${_numFmt.format(excludedFiles)}');
       }
+    } else if (isSizeOnlyRun) {
+      _addLog('🏁 Folder size calculated in $elapsed');
+      _addLog('  Folder Size: $sizeStr ($exactBytes bytes)');
+      _addLog('  Total Files: ${_numFmt.format(totalFiles)}');
+      _addLog('  Total Folders: ${_numFmt.format(totalFolders)}');
     } else {
       _addLog('🏁 Count completed in $elapsed');
       _addLog('  Total Files: ${_numFmt.format(totalFiles)}');
@@ -540,13 +756,15 @@ class CountFilesProvider with ChangeNotifier {
         _addLog('  Excluded Files: ${_numFmt.format(excludedFiles)}');
       }
       _addLog('  Total Folders: ${_numFmt.format(totalFolders)}');
+      _addLog('  Total Size: $sizeStr ($exactBytes bytes)');
     }
 
     await _fileLogger.info('Count', 'Total Files: $totalFiles');
-    if (!allCategoriesSelected || excludedFiles > 0) {
+    if (!isSizeOnlyRun && (!allCategoriesSelected || excludedFiles > 0)) {
       await _fileLogger.info('Count', 'Excluded Files: $excludedFiles');
     }
     await _fileLogger.info('Count', 'Total Folders: $totalFolders');
+    await _fileLogger.info('Count', 'Total Size: $sizeStr ($totalBytes bytes)');
     if (errors > 0) {
       await _fileLogger.error('Count', 'Errors encountered: $errors');
     }
@@ -577,10 +795,9 @@ class CountFilesProvider with ChangeNotifier {
               : (errors > 0 && totalFiles == 0 && totalFolders == 0
                     ? 'Error'
                     : 'Completed'),
-          // configSummary: 'Target: $targetPath, Log Every: $logInterval',
-          // Gene - Nov, 26, 2026: Include active file-type filter summary in Count run history.
-          configSummary:
-              'Target: $targetPath, Types: $filterSummary, Log Every: $logInterval',
+          configSummary: isSizeOnlyRun
+              ? 'Mode: Folder Size, Target: $targetPath, Size: $sizeStr'
+              : 'Target: $targetPath, Types: $filterSummary, Size: $sizeStr, Log Every: $logInterval',
           sourcePath: targetPath,
         ),
       );
@@ -588,7 +805,6 @@ class CountFilesProvider with ChangeNotifier {
 
     isCounting = false;
     currentStatus = 'Idle';
-    // _stopTimer();
     notifyListeners();
   }
 

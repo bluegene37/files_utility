@@ -162,6 +162,16 @@ external void copyEngineDestroy(Pointer<Void> job);
 //   external int logInterval;
 // }
 // Gene - Nov, 26, 2026: Add includeMask bitmask field to CountConfigC for file-type category filtering.
+// Gene - Nov, 26, 2026: Add sizeOnly flag to CountConfigC for fast folder-size-only scans.
+// final class CountConfigC extends Struct {
+//   external Pointer<Utf8> targetPath;
+//
+//   @Uint64()
+//   external int logInterval;
+//
+//   @Uint32()
+//   external int includeMask;
+// }
 final class CountConfigC extends Struct {
   external Pointer<Utf8> targetPath;
 
@@ -170,6 +180,9 @@ final class CountConfigC extends Struct {
 
   @Uint32()
   external int includeMask;
+
+  @Uint8()
+  external int sizeOnly;
 }
 
 @Native<Pointer<Void> Function(Pointer<CountConfigC>)>(

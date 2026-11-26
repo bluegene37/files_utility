@@ -169,172 +169,241 @@ class CountFilesScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
 
-                      // Actions, Status, and Stats
-                      Row(
-                        children: [
-                          if (!provider.isCounting) ...[
-                            // ElevatedButton.icon(
-                            //   onPressed: provider.targetPath != null
-                            //       ? provider.startCounting
-                            //       : null,
-                            //   icon: const Icon(Icons.analytics_rounded),
-                            //   label: const Text('Count Files'),
-                            // ),
-                            // Gene - Nov, 26, 2026: Require both targetPath and at least one selected category before counting.
-                            ElevatedButton.icon(
-                              onPressed: provider.canStartCounting
-                                  ? provider.startCounting
-                                  : null,
-                              icon: const Icon(Icons.analytics_rounded),
-                              label: const Text('Count Files'),
-                            ),
-                            const SizedBox(width: 10),
-                            OutlinedButton.icon(
-                              onPressed: provider.clearLogs,
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('Clear'),
-                            ),
-                          ] else
-                            ElevatedButton.icon(
-                              onPressed: provider.stop,
-                              icon: const Icon(Icons.stop),
-                              label: const Text('Stop'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.error,
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                          const SizedBox(width: 16),
-
-                          //                           // Progress indicator
-                          //                           if (provider.isCounting)
-                          //                             Container(
-                          //                               width: 14,
-                          //                               height: 14,
-                          //                               margin: const EdgeInsets.only(right: 8),
-                          //                               child: const CircularProgressIndicator(
-                          //                                 strokeWidth: 2,
-                          //                                 valueColor: AlwaysStoppedAnimation<Color>(
-                          //                                   AppColors.success,
-                          //                                 ),
-                          //                               ),
-                          //                             ),
-                          //
-                          //                           // Status
-                          //                           Expanded(
-                          //                             child: Text(
-                          //                               provider.currentStatus,
-                          //                               style: TextStyle(
-                          //                                 fontWeight: FontWeight.w600,
-                          //                                 color: context.textPrimary,
-                          //                                 fontSize: 13,
-                          //                               ),
-                          //                               maxLines: 1,
-                          //                               overflow: TextOverflow.ellipsis,
-                          //                             ),
-                          //                           ),
-                          //                           const SizedBox(width: 8),
-                          //
-                          //                           // Stats
-                          //                           StatBadge(
-                          //                             title: 'Files',
-                          //                             value: provider.totalFiles.toString(),
-                          //                             color: AppColors.success,
-                          //                             icon: Icons.insert_drive_file,
-                          //                           ),
-                          //                           const SizedBox(width: 8),
-                          //                           StatBadge(
-                          //                             title: 'Folders',
-                          //                             value: provider.totalFolders.toString(),
-                          //                             color: AppColors.info,
-                          //                             icon: Icons.folder,
-                          //                           ),
-                          //                           const SizedBox(width: 8),
-                          //                           StatBadge(
-                          //                             title: 'Errors',
-                          //                             value: provider.errors.toString(),
-                          //                             color: AppColors.error,
-                          //                             icon: Icons.error,
-                          //                           ),
-                          // Gene - Nov, 22, 2026: Replaced hardcoded spinner and stat badge colors in CountFilesScreen with theme-aware getters.
-                          // Progress indicator
-                          if (provider.isCounting)
-                            Container(
-                              width: 14,
-                              height: 14,
-                              margin: const EdgeInsets.only(right: 8),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  context.successColor,
+                      // Gene - Nov, 26, 2026: Responsive Wrap with Get Folder Size button and live Size StatBadge.
+                      //                       // Actions, Status, and Stats
+                      //                       Row(
+                      //                         children: [
+                      //                           if (!provider.isCounting) ...[
+                      //                             // ElevatedButton.icon(
+                      //                             //   onPressed: provider.targetPath != null
+                      //                             //       ? provider.startCounting
+                      //                             //       : null,
+                      //                             //   icon: const Icon(Icons.analytics_rounded),
+                      //                             //   label: const Text('Count Files'),
+                      //                             // ),
+                      //                             // Gene - Nov, 26, 2026: Require both targetPath and at least one selected category before counting.
+                      //                             ElevatedButton.icon(
+                      //                               onPressed: provider.canStartCounting
+                      //                                   ? provider.startCounting
+                      //                                   : null,
+                      //                               icon: const Icon(Icons.analytics_rounded),
+                      //                               label: const Text('Count Files'),
+                      //                             ),
+                      //                             const SizedBox(width: 10),
+                      //                             OutlinedButton.icon(
+                      //                               onPressed: provider.clearLogs,
+                      //                               icon: const Icon(Icons.refresh),
+                      //                               label: const Text('Clear'),
+                      //                             ),
+                      //                           ] else
+                      //                             ElevatedButton.icon(
+                      //                               onPressed: provider.stop,
+                      //                               icon: const Icon(Icons.stop),
+                      //                               label: const Text('Stop'),
+                      //                               style: ElevatedButton.styleFrom(
+                      //                                 backgroundColor: AppColors.error,
+                      //                                 foregroundColor: Colors.white,
+                      //                               ),
+                      //                             ),
+                      //                           const SizedBox(width: 16),
+                      //
+                      //                           // Gene - Nov, 22, 2026: Replaced hardcoded spinner and stat badge colors in CountFilesScreen with theme-aware getters.
+                      //                           // Progress indicator
+                      //                           if (provider.isCounting)
+                      //                             Container(
+                      //                               width: 14,
+                      //                               height: 14,
+                      //                               margin: const EdgeInsets.only(right: 8),
+                      //                               child: CircularProgressIndicator(
+                      //                                 strokeWidth: 2,
+                      //                                 valueColor: AlwaysStoppedAnimation<Color>(
+                      //                                   context.successColor,
+                      //                                 ),
+                      //                               ),
+                      //                             ),
+                      //
+                      //                           // Status
+                      //                           // Gene - Nov, 25, 2026: Wrap Count status text in Tooltip to show full live scanning counter and folder name.
+                      //                           Expanded(
+                      //                             child: Tooltip(
+                      //                               message: provider.currentStatus,
+                      //                               child: Text(
+                      //                                 provider.currentStatus,
+                      //                                 style: TextStyle(
+                      //                                   fontWeight: FontWeight.w600,
+                      //                                   color: context.textPrimary,
+                      //                                   fontSize: 13,
+                      //                                 ),
+                      //                                 maxLines: 1,
+                      //                                 overflow: TextOverflow.ellipsis,
+                      //                               ),
+                      //                             ),
+                      //                           ),
+                      //                           const SizedBox(width: 8),
+                      //
+                      //                           // Stats
+                      //                           StatBadge(
+                      //                             title: 'Files',
+                      //                             value: provider.totalFiles.toString(),
+                      //                             color: context.successColor,
+                      //                             icon: Icons.insert_drive_file,
+                      //                           ),
+                      //                           // Gene - Nov, 26, 2026: Show live Excluded count badge whenever any category is unchecked or files are excluded.
+                      //                           if (!provider.allCategoriesSelected ||
+                      //                               provider.excludedFiles > 0) ...[
+                      //                             const SizedBox(width: 8),
+                      //                             StatBadge(
+                      //                               title: 'Excluded',
+                      //                               value: provider.excludedFiles.toString(),
+                      //                               color: context.warningColor,
+                      //                               icon: Icons.filter_alt_off_rounded,
+                      //                             ),
+                      //                           ],
+                      //                           const SizedBox(width: 8),
+                      //                           StatBadge(
+                      //                             title: 'Folders',
+                      //                             value: provider.totalFolders.toString(),
+                      //                             color: context.infoColor,
+                      //                             icon: Icons.folder,
+                      //                           ),
+                      //                           const SizedBox(width: 8),
+                      //                           StatBadge(
+                      //                             title: 'Errors',
+                      //                             value: provider.errors.toString(),
+                      //                             color: context.errorColor,
+                      //                             icon: Icons.error,
+                      //                           ),
+                      //                         ],
+                      //                       ),
+                      SizedBox(
+                        width: double.infinity,
+                        child: Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.spaceBetween,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (!provider.isCounting) ...[
+                                  ElevatedButton.icon(
+                                    onPressed: provider.canStartCounting
+                                        ? provider.startCounting
+                                        : null,
+                                    icon: const Icon(Icons.analytics_rounded),
+                                    label: const Text('Count Files'),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Tooltip(
+                                    message:
+                                        'Calculate total size of the target folder (all files, skips per-file logging)',
+                                    child: OutlinedButton.icon(
+                                      key: const Key('count_get_folder_size_btn'),
+                                      onPressed: provider.canGetFolderSize
+                                          ? provider.startFolderSize
+                                          : null,
+                                      icon: const Icon(
+                                        Icons.storage_rounded,
+                                        size: 18,
+                                      ),
+                                      label: const Text('Get Folder Size'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  OutlinedButton.icon(
+                                    onPressed: provider.clearLogs,
+                                    icon: const Icon(Icons.refresh),
+                                    label: const Text('Clear'),
+                                  ),
+                                ] else
+                                  ElevatedButton.icon(
+                                    onPressed: provider.stop,
+                                    icon: const Icon(Icons.stop),
+                                    label: const Text('Stop'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.error,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                const SizedBox(width: 12),
+                                if (provider.isCounting)
+                                  Container(
+                                    width: 14,
+                                    height: 14,
+                                    margin: const EdgeInsets.only(right: 8),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        context.successColor,
+                                      ),
+                                    ),
+                                  ),
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 280,
+                                  ),
+                                  child: Tooltip(
+                                    message: provider.currentStatus,
+                                    child: Text(
+                                      provider.currentStatus,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: context.textPrimary,
+                                        fontSize: 13,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
-
-                          // Status
-                          // Gene - Nov, 25, 2026: Wrap Count status text in Tooltip to show full live scanning counter and folder name.
-                          // Expanded(
-                          //   child: Text(
-                          //     provider.currentStatus,
-                          //     style: TextStyle(
-                          //       fontWeight: FontWeight.w600,
-                          //       color: context.textPrimary,
-                          //       fontSize: 13,
-                          //     ),
-                          //     maxLines: 1,
-                          //     overflow: TextOverflow.ellipsis,
-                          //   ),
-                          // ),
-                          Expanded(
-                            child: Tooltip(
-                              message: provider.currentStatus,
-                              child: Text(
-                                provider.currentStatus,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: context.textPrimary,
-                                  fontSize: 13,
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                StatBadge(
+                                  title: 'Files',
+                                  value: provider.totalFiles.toString(),
+                                  color: context.successColor,
+                                  icon: Icons.insert_drive_file,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-
-                          // Stats
-                          StatBadge(
-                            title: 'Files',
-                            value: provider.totalFiles.toString(),
-                            color: context.successColor,
-                            icon: Icons.insert_drive_file,
-                          ),
-                          // Gene - Nov, 26, 2026: Show live Excluded count badge whenever any category is unchecked or files are excluded.
-                          if (!provider.allCategoriesSelected ||
-                              provider.excludedFiles > 0) ...[
-                            const SizedBox(width: 8),
-                            StatBadge(
-                              title: 'Excluded',
-                              value: provider.excludedFiles.toString(),
-                              color: context.warningColor,
-                              icon: Icons.filter_alt_off_rounded,
+                                if (!provider.isSizeOnlyRun &&
+                                    (!provider.allCategoriesSelected ||
+                                        provider.excludedFiles > 0))
+                                  StatBadge(
+                                    title: 'Excluded',
+                                    value: provider.excludedFiles.toString(),
+                                    color: context.warningColor,
+                                    icon: Icons.filter_alt_off_rounded,
+                                  ),
+                                StatBadge(
+                                  title: 'Folders',
+                                  value: provider.totalFolders.toString(),
+                                  color: context.infoColor,
+                                  icon: Icons.folder,
+                                ),
+                                Tooltip(
+                                  message: '${provider.totalBytes} bytes',
+                                  child: StatBadge(
+                                    key: const Key('count_size_badge'),
+                                    title: 'Size',
+                                    value: provider.formattedTotalSize,
+                                    color: context.primaryAccent,
+                                    icon: Icons.storage_rounded,
+                                  ),
+                                ),
+                                StatBadge(
+                                  title: 'Errors',
+                                  value: provider.errors.toString(),
+                                  color: context.errorColor,
+                                  icon: Icons.error,
+                                ),
+                              ],
                             ),
                           ],
-                          const SizedBox(width: 8),
-                          StatBadge(
-                            title: 'Folders',
-                            value: provider.totalFolders.toString(),
-                            color: context.infoColor,
-                            icon: Icons.folder,
-                          ),
-                          const SizedBox(width: 8),
-                          StatBadge(
-                            title: 'Errors',
-                            value: provider.errors.toString(),
-                            color: context.errorColor,
-                            icon: Icons.error,
-                          ),
-                        ],
+                        ),
                       ),
                       const SizedBox(height: 10),
 

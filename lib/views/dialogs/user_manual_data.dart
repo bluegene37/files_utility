@@ -269,13 +269,32 @@ class UserManualData {
       //   'speed',
       //   'interval',
       // ],
-      // Gene - Nov, 26, 2026: Added file-type filtering keywords and documentation section for Count Files.
+      // Gene - Nov, 26, 2026: Added folder size keywords and Folder Size & Storage Metrics manual section.
+      // keywords: [
+      //   'count',
+      //   'audit',
+      //   'inventory',
+      //   'file count',
+      //   'folder count',
+      //   'speed',
+      //   'interval',
+      //   'filter',
+      //   'categories',
+      //   'images',
+      //   'documents',
+      //   'exclude',
+      // ],
       keywords: [
         'count',
         'audit',
         'inventory',
         'file count',
         'folder count',
+        'size',
+        'folder size',
+        'MB',
+        'GB',
+        'TB',
         'speed',
         'interval',
         'filter',
@@ -288,8 +307,21 @@ class UserManualData {
         ManualSection(
           title: 'High-Throughput File Tree Traversal',
           description:
-              'The Count Files module performs asynchronous non-blocking traversal of complex file trees with millions of files. It provides precise metrics on total file count, total folders, error counts, and elapsed scan duration.',
+              'The Count Files module performs asynchronous non-blocking traversal of complex file trees with millions of files. It provides precise metrics on total file count, total folders, total size, error counts, and elapsed scan duration.',
           tags: ['audit', 'inventory', 'traversal'],
+        ),
+        ManualSection(
+          title: 'Folder Size & Storage Metrics',
+          description:
+              'Every Count Files run automatically tallies the total size (B, KB, MB, GB, or TB) of all matched files alongside the file and folder counts. Use the Get Folder Size button for a quick full-folder size check that skips category filtering and per-file log emission.',
+          steps: [
+            'Run Count Files to see the file count, folder count, and total size for your selected categories in a single pass.',
+            'Click Get Folder Size to measure the entire target folder even when category filters are unchecked.',
+            'Hover over the Size badge to view the exact raw byte count.',
+          ],
+          tip:
+              'Counting and measuring size in one Count Files pass is faster than running two separate scans.',
+          tags: ['size', 'storage', 'folder-size'],
         ),
         ManualSection(
           title: 'File Type Filtering & Exclusions',

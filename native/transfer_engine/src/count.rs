@@ -37,11 +37,19 @@ pub const COUNT_CAT_ALL: u32 = COUNT_CAT_IMAGES
 //     pub log_interval: u64,
 // }
 // Gene - Nov, 26, 2026: Added include_mask bitmask field to CountConfigC for file-type filtering.
+// Gene - Nov, 26, 2026: Added size_only flag to CountConfigC for fast folder-size-only mode.
+// #[repr(C)]
+// pub struct CountConfigC {
+//     pub target_path: *const c_char,
+//     pub log_interval: u64,
+//     pub include_mask: u32,
+// }
 #[repr(C)]
 pub struct CountConfigC {
     pub target_path: *const c_char,
     pub log_interval: u64,
     pub include_mask: u32,
+    pub size_only: u8,
 }
 
 fn classify_file_category(file_name: &str) -> u32 {
@@ -189,10 +197,47 @@ impl CountWorkQueue {
 //         }
 //     }
 // Gene - Nov, 26, 2026: Added excluded_files counter to CountSharedState.
+// Gene - Nov, 26, 2026: Added total_bytes atomic counter to CountSharedState.
+// struct CountSharedState {
+//     files: AtomicU64,
+//     excluded_files: AtomicU64,
+//     folders: AtomicU64,
+//     errors: AtomicU64,
+//     stop_requested: AtomicBool,
+//     done: AtomicBool,
+//     visited_symlinks: Mutex<HashSet<PathBuf>>,
+//     ui: Mutex<CountUiState>,
+// }
+//
+// pub struct CountJob {
+//     state: Arc<CountSharedState>,
+//     queue: Arc<CountWorkQueue>,
+//     handle: Option<JoinHandle<()>>,
+// }
+//
+// impl CountSharedState {
+//     fn new() -> Self {
+//         Self {
+//             files: AtomicU64::new(0),
+//             excluded_files: AtomicU64::new(0),
+//             folders: AtomicU64::new(0),
+//             errors: AtomicU64::new(0),
+//             stop_requested: AtomicBool::new(false),
+//             done: AtomicBool::new(false),
+//             visited_symlinks: Mutex::new(HashSet::new()),
+//             ui: Mutex::new(CountUiState {
+//                 current_dir_name: String::new(),
+//                 critical_error: None,
+//                 logs: VecDeque::new(),
+//                 error_logs: VecDeque::new(),
+//             }),
+//         }
+//     }
 struct CountSharedState {
     files: AtomicU64,
     excluded_files: AtomicU64,
     folders: AtomicU64,
+    total_bytes: AtomicU64,
     errors: AtomicU64,
     stop_requested: AtomicBool,
     done: AtomicBool,
@@ -212,6 +257,7 @@ impl CountSharedState {
             files: AtomicU64::new(0),
             excluded_files: AtomicU64::new(0),
             folders: AtomicU64::new(0),
+            total_bytes: AtomicU64::new(0),
             errors: AtomicU64::new(0),
             stop_requested: AtomicBool::new(false),
             done: AtomicBool::new(false),
@@ -406,10 +452,160 @@ impl CountSharedState {
 //         "{{\"files\":{files},\"folders\":{folders},\"errors\":{errors},\"currentDirName\":"
 //     );
 // Gene - Nov, 26, 2026: Filtered counted files by include_mask and tracked excluded_files in worker & JSON poll output.
+// Gene - Nov, 26, 2026: Added total_bytes tracking and size_only mode to count worker, coordinator, and JSON poll.
+// fn run_count_worker(
+//     canonical_root: &PathBuf,
+//     log_interval: u64,
+//     include_mask: u32,
+//     queue: &CountWorkQueue,
+//     state: &CountSharedState,
+// ) {
+//     while let Some(dir) = queue.pop_dir(&state.stop_requested) {
+//         let dir_name = path_basename(&dir);
+//         state.set_current_dir(&dir_name);
+//
+//         let mut subdirs = Vec::new();
+//         match fs::read_dir(&dir) {
+//             Ok(entries) => {
+//                 for entry_res in entries {
+//                     if state.stop_requested.load(Ordering::Acquire) {
+//                         break;
+//                     }
+//                     let entry = match entry_res {
+//                         Ok(e) => e,
+//                         Err(e) => {
+//                             state.errors.fetch_add(1, Ordering::Relaxed);
+//                             state.push_error_log(format!(
+//                                 "Error accessing: {} — {e}",
+//                                 dir.display()
+//                             ));
+//                             continue;
+//                         }
+//                     };
+//
+//                     let ft = match entry.file_type() {
+//                         Ok(ft) => ft,
+//                         Err(_) => continue,
+//                     };
+//
+//                     if ft.is_file() {
+//                         let name = entry.file_name().to_string_lossy().into_owned();
+//                         if matches_count_filter(&name, include_mask) {
+//                             state.record_counted_file(&name, log_interval);
+//                         } else {
+//                             state.excluded_files.fetch_add(1, Ordering::Relaxed);
+//                         }
+//                     } else if ft.is_dir() {
+//                         state.folders.fetch_add(1, Ordering::Relaxed);
+//                         subdirs.push(entry.path());
+//                     } else if ft.is_symlink() {
+//                         let entry_path = entry.path();
+//                         if !resolve_within_root(canonical_root, &entry_path) {
+//                             continue;
+//                         }
+//                         if let Ok(canon_target) = fs::canonicalize(&entry_path) {
+//                             if let Ok(meta) = fs::metadata(&entry_path) {
+//                                 if meta.is_dir() {
+//                                     let is_new = state
+//                                         .visited_symlinks
+//                                         .lock()
+//                                         .map(|mut s| s.insert(canon_target))
+//                                         .unwrap_or(false);
+//                                     if is_new {
+//                                         state.folders.fetch_add(1, Ordering::Relaxed);
+//                                         subdirs.push(entry_path);
+//                                     }
+//                                 } else if meta.is_file() {
+//                                     let name = entry.file_name().to_string_lossy().into_owned();
+//                                     if matches_count_filter(&name, include_mask) {
+//                                         state.record_counted_file(&name, log_interval);
+//                                     } else {
+//                                         state.excluded_files.fetch_add(1, Ordering::Relaxed);
+//                                     }
+//                                 }
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//             Err(e) => {
+//                 state.errors.fetch_add(1, Ordering::Relaxed);
+//                 state.push_error_log(format!("Error accessing: {} — {e}", dir.display()));
+//             }
+//         }
+//
+//         queue.push_subdirs_and_finish_dir(subdirs);
+//     }
+// }
+//
+// fn run_count(
+//     target_path: PathBuf,
+//     log_interval: u64,
+//     include_mask: u32,
+//     queue: Arc<CountWorkQueue>,
+//     state: Arc<CountSharedState>,
+// ) {
+//     let canonical_root = match fs::canonicalize(&target_path) {
+//         Ok(p) => Arc::new(p),
+//         Err(e) => {
+//             state.set_critical_error(format!(
+//                 "Failed to access target directory {}: {e}",
+//                 target_path.display()
+//             ));
+//             state.done.store(true, Ordering::Release);
+//             return;
+//         }
+//     };
+//
+//     let mut handles = Vec::with_capacity(DEFAULT_IO_WORKERS);
+//     for _ in 0..DEFAULT_IO_WORKERS {
+//         let q = Arc::clone(&queue);
+//         let s = Arc::clone(&state);
+//         let r = Arc::clone(&canonical_root);
+//         if let Ok(h) = thread::Builder::new()
+//             .name("count_engine_worker".to_string())
+//             .spawn(move || {
+//                 run_count_worker(&r, log_interval, include_mask, &q, &s);
+//             })
+//         {
+//             handles.push(h);
+//         }
+//     }
+//
+//     for h in handles {
+//         let _ = h.join();
+//     }
+//
+//     state.done.store(true, Ordering::Release);
+// }
+//
+// fn build_count_poll_json(state: &CountSharedState) -> String {
+//     let files = state.files.load(Ordering::Relaxed);
+//     let excluded_files = state.excluded_files.load(Ordering::Relaxed);
+//     let folders = state.folders.load(Ordering::Relaxed);
+//     let errors = state.errors.load(Ordering::Relaxed);
+//     let is_done = state.done.load(Ordering::Acquire);
+//
+//     let (current_dir_name, critical_error, logs, error_logs) = match state.ui.lock() {
+//         Ok(mut ui) => (
+//             ui.current_dir_name.clone(),
+//             ui.critical_error.take(),
+//             ui.logs.drain(..).collect::<Vec<_>>(),
+//             ui.error_logs.drain(..).collect::<Vec<_>>(),
+//         ),
+//         Err(_) => (String::new(), None, Vec::new(), Vec::new()),
+//     };
+//
+//     let mut json = String::with_capacity(256);
+//     let _ = write!(
+//         json,
+//         "{{\"files\":{files},\"excludedFiles\":{excluded_files},\"folders\":{folders},\"errors\":{errors},\"currentDirName\":"
+//     );
 fn run_count_worker(
     canonical_root: &PathBuf,
     log_interval: u64,
     include_mask: u32,
+    size_only: bool,
     queue: &CountWorkQueue,
     state: &CountSharedState,
 ) {
@@ -442,11 +638,20 @@ fn run_count_worker(
                     };
 
                     if ft.is_file() {
-                        let name = entry.file_name().to_string_lossy().into_owned();
-                        if matches_count_filter(&name, include_mask) {
-                            state.record_counted_file(&name, log_interval);
+                        if size_only {
+                            state.files.fetch_add(1, Ordering::Relaxed);
+                            if let Ok(meta) = entry.metadata() {
+                                state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+                            }
                         } else {
-                            state.excluded_files.fetch_add(1, Ordering::Relaxed);
+                            let name = entry.file_name().to_string_lossy().into_owned();
+                            if matches_count_filter(&name, include_mask) {
+                                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                                state.total_bytes.fetch_add(size, Ordering::Relaxed);
+                                state.record_counted_file(&name, log_interval);
+                            } else {
+                                state.excluded_files.fetch_add(1, Ordering::Relaxed);
+                            }
                         }
                     } else if ft.is_dir() {
                         state.folders.fetch_add(1, Ordering::Relaxed);
@@ -469,11 +674,19 @@ fn run_count_worker(
                                         subdirs.push(entry_path);
                                     }
                                 } else if meta.is_file() {
-                                    let name = entry.file_name().to_string_lossy().into_owned();
-                                    if matches_count_filter(&name, include_mask) {
-                                        state.record_counted_file(&name, log_interval);
+                                    if size_only {
+                                        state.files.fetch_add(1, Ordering::Relaxed);
+                                        state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
                                     } else {
-                                        state.excluded_files.fetch_add(1, Ordering::Relaxed);
+                                        let name = entry.file_name().to_string_lossy().into_owned();
+                                        if matches_count_filter(&name, include_mask) {
+                                            state
+                                                .total_bytes
+                                                .fetch_add(meta.len(), Ordering::Relaxed);
+                                            state.record_counted_file(&name, log_interval);
+                                        } else {
+                                            state.excluded_files.fetch_add(1, Ordering::Relaxed);
+                                        }
                                     }
                                 }
                             }
@@ -495,6 +708,7 @@ fn run_count(
     target_path: PathBuf,
     log_interval: u64,
     include_mask: u32,
+    size_only: bool,
     queue: Arc<CountWorkQueue>,
     state: Arc<CountSharedState>,
 ) {
@@ -518,7 +732,7 @@ fn run_count(
         if let Ok(h) = thread::Builder::new()
             .name("count_engine_worker".to_string())
             .spawn(move || {
-                run_count_worker(&r, log_interval, include_mask, &q, &s);
+                run_count_worker(&r, log_interval, include_mask, size_only, &q, &s);
             })
         {
             handles.push(h);
@@ -536,6 +750,7 @@ fn build_count_poll_json(state: &CountSharedState) -> String {
     let files = state.files.load(Ordering::Relaxed);
     let excluded_files = state.excluded_files.load(Ordering::Relaxed);
     let folders = state.folders.load(Ordering::Relaxed);
+    let total_bytes = state.total_bytes.load(Ordering::Relaxed);
     let errors = state.errors.load(Ordering::Relaxed);
     let is_done = state.done.load(Ordering::Acquire);
 
@@ -552,7 +767,7 @@ fn build_count_poll_json(state: &CountSharedState) -> String {
     let mut json = String::with_capacity(256);
     let _ = write!(
         json,
-        "{{\"files\":{files},\"excludedFiles\":{excluded_files},\"folders\":{folders},\"errors\":{errors},\"currentDirName\":"
+        "{{\"files\":{files},\"excludedFiles\":{excluded_files},\"folders\":{folders},\"totalBytes\":{total_bytes},\"errors\":{errors},\"currentDirName\":"
     );
     push_json_escaped(&mut json, &current_dir_name);
     let _ = write!(json, ",\"isDone\":{is_done},\"criticalError\":");
@@ -608,12 +823,45 @@ pub unsafe extern "C" fn count_engine_start(cfg: *const CountConfigC) -> *mut Co
 //                     run_count(target_path, log_interval, worker_queue, worker_state);
 //                 }));
 // Gene - Nov, 26, 2026: Pass sanitized include_mask from CountConfigC to run_count.
-        let log_interval = if raw.log_interval == 0 {
+// Gene - Nov, 26, 2026: Forward size_only flag from CountConfigC to run_count.
+//         let log_interval = if raw.log_interval == 0 {
+//             100
+//         } else {
+//             raw.log_interval
+//         };
+//         let include_mask = raw.include_mask & COUNT_CAT_ALL;
+//
+//         let state = Arc::new(CountSharedState::new());
+//         let queue = Arc::new(CountWorkQueue::new(target_path.clone()));
+//         let worker_state = Arc::clone(&state);
+//         let worker_queue = Arc::clone(&queue);
+//
+//         let handle = thread::Builder::new()
+//             .name("count_engine_coordinator".to_string())
+//             .spawn(move || {
+//                 let state_for_panic = Arc::clone(&worker_state);
+//                 let run_res = catch_unwind(AssertUnwindSafe(|| {
+//                     run_count(
+//                         target_path,
+//                         log_interval,
+//                         include_mask,
+//                         worker_queue,
+//                         worker_state,
+//                     );
+//                 }));
+        let size_only = raw.size_only != 0;
+        let log_interval = if size_only {
+            0
+        } else if raw.log_interval == 0 {
             100
         } else {
             raw.log_interval
         };
-        let include_mask = raw.include_mask & COUNT_CAT_ALL;
+        let include_mask = if size_only {
+            COUNT_CAT_ALL
+        } else {
+            raw.include_mask & COUNT_CAT_ALL
+        };
 
         let state = Arc::new(CountSharedState::new());
         let queue = Arc::new(CountWorkQueue::new(target_path.clone()));
@@ -629,6 +877,7 @@ pub unsafe extern "C" fn count_engine_start(cfg: *const CountConfigC) -> *mut Co
                         target_path,
                         log_interval,
                         include_mask,
+                        size_only,
                         worker_queue,
                         worker_state,
                     );
@@ -734,7 +983,9 @@ mod tests {
         let queue = Arc::new(CountWorkQueue::new(root.clone()));
         // run_count(root.clone(), 1, queue, Arc::clone(&state));
         // Gene - Nov, 26, 2026: Pass COUNT_CAT_ALL to run_count in existing tests.
-        run_count(root.clone(), 1, COUNT_CAT_ALL, queue, Arc::clone(&state));
+        // run_count(root.clone(), 1, COUNT_CAT_ALL, queue, Arc::clone(&state));
+        // Gene - Nov, 26, 2026: Pass size_only=false to existing tests and add total_bytes / size_only unit tests.
+        run_count(root.clone(), 1, COUNT_CAT_ALL, false, queue, Arc::clone(&state));
 
         assert_eq!(state.files.load(Ordering::Relaxed), 3);
         assert_eq!(state.folders.load(Ordering::Relaxed), 2);
@@ -756,9 +1007,9 @@ mod tests {
 
         let state = Arc::new(CountSharedState::new());
         let queue = Arc::new(CountWorkQueue::new(root.clone()));
-        // run_count(root.clone(), 25, queue, Arc::clone(&state));
-        // Gene - Nov, 26, 2026: Pass COUNT_CAT_ALL to run_count in existing tests.
-        run_count(root.clone(), 25, COUNT_CAT_ALL, queue, Arc::clone(&state));
+        // run_count(root.clone(), 25, COUNT_CAT_ALL, queue, Arc::clone(&state));
+        // Gene - Nov, 26, 2026: Pass size_only=false to run_count.
+        run_count(root.clone(), 25, COUNT_CAT_ALL, false, queue, Arc::clone(&state));
 
         assert_eq!(state.files.load(Ordering::Relaxed), 100);
         assert_eq!(state.folders.load(Ordering::Relaxed), 10);
@@ -784,9 +1035,9 @@ mod tests {
 
         let state = Arc::new(CountSharedState::new());
         let queue = Arc::new(CountWorkQueue::new(target.clone()));
-        // run_count(target.clone(), 100, queue, Arc::clone(&state));
-        // Gene - Nov, 26, 2026: Pass COUNT_CAT_ALL to run_count in existing tests.
-        run_count(target.clone(), 100, COUNT_CAT_ALL, queue, Arc::clone(&state));
+        // run_count(target.clone(), 100, COUNT_CAT_ALL, queue, Arc::clone(&state));
+        // Gene - Nov, 26, 2026: Pass size_only=false to run_count.
+        run_count(target.clone(), 100, COUNT_CAT_ALL, false, queue, Arc::clone(&state));
 
         assert_eq!(state.files.load(Ordering::Relaxed), 1);
         assert_eq!(state.folders.load(Ordering::Relaxed), 0);
@@ -814,7 +1065,9 @@ mod tests {
         let run_with_mask = |mask: u32| -> (u64, u64, u64) {
             let state = Arc::new(CountSharedState::new());
             let queue = Arc::new(CountWorkQueue::new(root.clone()));
-            run_count(root.clone(), 100, mask, queue, Arc::clone(&state));
+            // run_count(root.clone(), 100, mask, queue, Arc::clone(&state));
+            // Gene - Nov, 26, 2026: Pass size_only=false to run_count.
+            run_count(root.clone(), 100, mask, false, queue, Arc::clone(&state));
             (
                 state.files.load(Ordering::Relaxed),
                 state.excluded_files.load(Ordering::Relaxed),
@@ -835,6 +1088,72 @@ mod tests {
         );
         assert_eq!(run_with_mask(COUNT_CAT_OTHERS), (2, 7, 1));
         assert_eq!(run_with_mask(0), (0, 9, 1));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // Gene - Nov, 26, 2026: Verify total_bytes sums only matched categories and size_only sums all files without logs.
+    #[test]
+    fn sums_total_bytes_for_all_and_filtered_categories() {
+        let root = make_temp_dir("rust_count_total_bytes");
+        let sub = root.join("nested");
+        fs::create_dir_all(&sub).unwrap();
+
+        fs::write(root.join("photo.jpg"), vec![b'a'; 10]).unwrap();
+        fs::write(sub.join("banner.png"), vec![b'b'; 25]).unwrap();
+        fs::write(root.join("report.pdf"), vec![b'c'; 100]).unwrap();
+        fs::write(sub.join("clip.mp4"), vec![b'd'; 250]).unwrap();
+
+        let state_all = Arc::new(CountSharedState::new());
+        let queue_all = Arc::new(CountWorkQueue::new(root.clone()));
+        run_count(
+            root.clone(),
+            100,
+            COUNT_CAT_ALL,
+            false,
+            queue_all,
+            Arc::clone(&state_all),
+        );
+        assert_eq!(state_all.files.load(Ordering::Relaxed), 4);
+        assert_eq!(state_all.total_bytes.load(Ordering::Relaxed), 385);
+
+        let state_img = Arc::new(CountSharedState::new());
+        let queue_img = Arc::new(CountWorkQueue::new(root.clone()));
+        run_count(
+            root.clone(),
+            100,
+            COUNT_CAT_IMAGES,
+            false,
+            queue_img,
+            Arc::clone(&state_img),
+        );
+        assert_eq!(state_img.files.load(Ordering::Relaxed), 2);
+        assert_eq!(state_img.excluded_files.load(Ordering::Relaxed), 2);
+        assert_eq!(state_img.total_bytes.load(Ordering::Relaxed), 35);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn size_only_mode_sums_entire_folder_without_per_file_logs() {
+        let root = make_temp_dir("rust_count_size_only");
+        let sub = root.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+
+        fs::write(root.join("a.jpg"), vec![b'1'; 12]).unwrap();
+        fs::write(sub.join("b.pdf"), vec![b'2'; 38]).unwrap();
+        fs::write(sub.join("c.bin"), vec![b'3'; 50]).unwrap();
+
+        let state = Arc::new(CountSharedState::new());
+        let queue = Arc::new(CountWorkQueue::new(root.clone()));
+        // Pass include_mask = 0 to prove size_only ignores category filtering and emits no logs.
+        run_count(root.clone(), 0, 0, true, queue, Arc::clone(&state));
+
+        assert_eq!(state.files.load(Ordering::Relaxed), 3);
+        assert_eq!(state.excluded_files.load(Ordering::Relaxed), 0);
+        assert_eq!(state.folders.load(Ordering::Relaxed), 1);
+        assert_eq!(state.total_bytes.load(Ordering::Relaxed), 100);
+        assert!(state.ui.lock().unwrap().logs.is_empty());
 
         let _ = fs::remove_dir_all(&root);
     }

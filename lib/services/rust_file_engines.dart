@@ -234,10 +234,49 @@ const int kCountCategoryAllMask = 0x3F;
 //   }
 // }
 // Gene - Nov, 26, 2026: Added excludedFiles count to RustCountSnapshot and includeMask to RustCountJob.start.
+// Gene - Nov, 26, 2026: Added totalBytes to RustCountSnapshot and sizeOnly option to RustCountJob.start.
+// class RustCountSnapshot {
+//   final int files;
+//   final int excludedFiles;
+//   final int folders;
+//   final int errors;
+//   final String currentDirName;
+//   final bool isDone;
+//   final String? criticalError;
+//   final List<String> logs;
+//   final List<String> errorLogs;
+//
+//   const RustCountSnapshot({
+//     required this.files,
+//     this.excludedFiles = 0,
+//     required this.folders,
+//     required this.errors,
+//     required this.currentDirName,
+//     required this.isDone,
+//     required this.criticalError,
+//     required this.logs,
+//     required this.errorLogs,
+//   });
+//
+//   factory RustCountSnapshot.fromJson(Map<String, dynamic> json) {
+//     return RustCountSnapshot(
+//       files: (json['files'] as num?)?.toInt() ?? 0,
+//       excludedFiles: (json['excludedFiles'] as num?)?.toInt() ?? 0,
+//       folders: (json['folders'] as num?)?.toInt() ?? 0,
+//       errors: (json['errors'] as num?)?.toInt() ?? 0,
+//       currentDirName: json['currentDirName'] as String? ?? '',
+//       isDone: json['isDone'] as bool? ?? false,
+//       criticalError: json['criticalError'] as String?,
+//       logs: _decodeStringList(json['logs']),
+//       errorLogs: _decodeStringList(json['errorLogs']),
+//     );
+//   }
+// }
 class RustCountSnapshot {
   final int files;
   final int excludedFiles;
   final int folders;
+  final int totalBytes;
   final int errors;
   final String currentDirName;
   final bool isDone;
@@ -249,6 +288,7 @@ class RustCountSnapshot {
     required this.files,
     this.excludedFiles = 0,
     required this.folders,
+    this.totalBytes = 0,
     required this.errors,
     required this.currentDirName,
     required this.isDone,
@@ -262,6 +302,7 @@ class RustCountSnapshot {
       files: (json['files'] as num?)?.toInt() ?? 0,
       excludedFiles: (json['excludedFiles'] as num?)?.toInt() ?? 0,
       folders: (json['folders'] as num?)?.toInt() ?? 0,
+      totalBytes: (json['totalBytes'] as num?)?.toInt() ?? 0,
       errors: (json['errors'] as num?)?.toInt() ?? 0,
       currentDirName: json['currentDirName'] as String? ?? '',
       isDone: json['isDone'] as bool? ?? false,
@@ -281,16 +322,19 @@ class RustCountJob {
   // static RustCountJob start({
   //   required String targetPath,
   //   int logInterval = 100,
+  //   int includeMask = kCountCategoryAllMask,
   // }) {
   //   final cfg = calloc<CountConfigC>();
   //   final targetPtr = targetPath.toNativeUtf8();
   //   try {
   //     cfg.ref.targetPath = targetPtr;
   //     cfg.ref.logInterval = logInterval <= 0 ? 100 : logInterval;
+  //     cfg.ref.includeMask = includeMask;
   static RustCountJob start({
     required String targetPath,
     int logInterval = 100,
     int includeMask = kCountCategoryAllMask,
+    bool sizeOnly = false,
   }) {
     final cfg = calloc<CountConfigC>();
     final targetPtr = targetPath.toNativeUtf8();
@@ -298,6 +342,7 @@ class RustCountJob {
       cfg.ref.targetPath = targetPtr;
       cfg.ref.logInterval = logInterval <= 0 ? 100 : logInterval;
       cfg.ref.includeMask = includeMask;
+      cfg.ref.sizeOnly = sizeOnly ? 1 : 0;
 
       final handle = countEngineStart(cfg);
       if (handle == nullptr) {
