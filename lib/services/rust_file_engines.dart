@@ -272,6 +272,47 @@ const int kCountCategoryAllMask = 0x3F;
 //     );
 //   }
 // }
+// Gene - Nov, 26, 2026: Added oldest/latest file modified timestamps and relative paths to RustCountSnapshot.
+// class RustCountSnapshot {
+//   final int files;
+//   final int excludedFiles;
+//   final int folders;
+//   final int totalBytes;
+//   final int errors;
+//   final String currentDirName;
+//   final bool isDone;
+//   final String? criticalError;
+//   final List<String> logs;
+//   final List<String> errorLogs;
+//
+//   const RustCountSnapshot({
+//     required this.files,
+//     this.excludedFiles = 0,
+//     required this.folders,
+//     this.totalBytes = 0,
+//     required this.errors,
+//     required this.currentDirName,
+//     required this.isDone,
+//     required this.criticalError,
+//     required this.logs,
+//     required this.errorLogs,
+//   });
+//
+//   factory RustCountSnapshot.fromJson(Map<String, dynamic> json) {
+//     return RustCountSnapshot(
+//       files: (json['files'] as num?)?.toInt() ?? 0,
+//       excludedFiles: (json['excludedFiles'] as num?)?.toInt() ?? 0,
+//       folders: (json['folders'] as num?)?.toInt() ?? 0,
+//       totalBytes: (json['totalBytes'] as num?)?.toInt() ?? 0,
+//       errors: (json['errors'] as num?)?.toInt() ?? 0,
+//       currentDirName: json['currentDirName'] as String? ?? '',
+//       isDone: json['isDone'] as bool? ?? false,
+//       criticalError: json['criticalError'] as String?,
+//       logs: _decodeStringList(json['logs']),
+//       errorLogs: _decodeStringList(json['errorLogs']),
+//     );
+//   }
+// }
 class RustCountSnapshot {
   final int files;
   final int excludedFiles;
@@ -279,6 +320,10 @@ class RustCountSnapshot {
   final int totalBytes;
   final int errors;
   final String currentDirName;
+  final int? oldestFileMs;
+  final String? oldestFilePath;
+  final int? latestFileMs;
+  final String? latestFilePath;
   final bool isDone;
   final String? criticalError;
   final List<String> logs;
@@ -291,6 +336,10 @@ class RustCountSnapshot {
     this.totalBytes = 0,
     required this.errors,
     required this.currentDirName,
+    this.oldestFileMs,
+    this.oldestFilePath,
+    this.latestFileMs,
+    this.latestFilePath,
     required this.isDone,
     required this.criticalError,
     required this.logs,
@@ -305,6 +354,10 @@ class RustCountSnapshot {
       totalBytes: (json['totalBytes'] as num?)?.toInt() ?? 0,
       errors: (json['errors'] as num?)?.toInt() ?? 0,
       currentDirName: json['currentDirName'] as String? ?? '',
+      oldestFileMs: (json['oldestFileMs'] as num?)?.toInt(),
+      oldestFilePath: json['oldestFilePath'] as String?,
+      latestFileMs: (json['latestFileMs'] as num?)?.toInt(),
+      latestFilePath: json['latestFilePath'] as String?,
       isDone: json['isDone'] as bool? ?? false,
       criticalError: json['criticalError'] as String?,
       logs: _decodeStringList(json['logs']),

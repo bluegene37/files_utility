@@ -262,6 +262,111 @@ void main() {
         expect(provider.logs.any((l) => l.contains('✓ Counted')), isFalse);
       },
     );
+
+    // Gene - Nov, 26, 2026: Verify Check Date Range returns oldest/latest modified dates (all, filtered, empty) and resets on clear.
+    test(
+      'checks oldest and latest modified file dates across full, filtered, and empty folders',
+      () async {
+        final tmp = Directory.systemTemp.createTempSync('qa_count_date_range_');
+        final emptyDir = Directory.systemTemp.createTempSync(
+          'qa_count_date_empty_',
+        );
+        addTearDown(() {
+          try {
+            tmp.deleteSync(recursive: true);
+          } catch (_) {}
+          try {
+            emptyDir.deleteSync(recursive: true);
+          } catch (_) {}
+        });
+
+        final sub = Directory(p.join(tmp.path, 'sub'))..createSync();
+        final fOldest = File(p.join(tmp.path, 'archive.pdf'))
+          ..writeAsStringSync('oldest');
+        final fMiddle = File(p.join(sub.path, 'photo.jpg'))
+          ..writeAsStringSync('middle');
+        final fLatest = File(p.join(sub.path, 'clip.mp4'))
+          ..writeAsStringSync('latest');
+
+        final dtOldest = DateTime(2024, 3, 10, 9, 15);
+        final dtMiddle = DateTime(2025, 7, 20, 14, 30);
+        final dtLatest = DateTime(2026, 11, 25, 18, 45);
+        await fOldest.setLastModified(dtOldest);
+        await fMiddle.setLastModified(dtMiddle);
+        await fLatest.setLastModified(dtLatest);
+
+        final provider = CountFilesProvider();
+        addTearDown(() => provider.dispose());
+        provider.setTargetPath(tmp.path);
+        provider.setAllCategories(false);
+        expect(provider.canStartCounting, isFalse);
+        expect(provider.canCheckDateRange, isTrue);
+
+        // 1. Check Date Range with zero categories checked -> inspects all files without per-file logs
+        await provider.startDateRangeCheck();
+        await _waitUntil(() => !provider.isCounting);
+
+        expect(provider.isDateRangeRun, isTrue);
+        expect(provider.hasDateRange, isTrue);
+        expect(provider.totalFiles, equals(3));
+        expect(provider.excludedFiles, equals(0));
+        expect(provider.oldestFilePath, equals('archive.pdf'));
+        expect(provider.latestFilePath, equals(p.join('sub', 'clip.mp4')));
+        expect(
+          (provider.oldestFileDate!.difference(dtOldest).inSeconds).abs(),
+          lessThanOrEqualTo(1),
+        );
+        expect(
+          (provider.latestFileDate!.difference(dtLatest).inSeconds).abs(),
+          lessThanOrEqualTo(1),
+        );
+        expect(provider.formattedDateRange, equals('10/03/2024 – 25/11/2026'));
+        expect(
+          provider.logs.any((l) => l.contains('Date Range (Modified):')),
+          isTrue,
+        );
+        expect(provider.logs.any((l) => l.contains('Oldest File:')), isTrue);
+        expect(provider.logs.any((l) => l.contains('Latest File:')), isTrue);
+        expect(provider.logs.any((l) => l.contains('✓ Counted')), isFalse);
+
+        // 2. Count Files filtered to Images only -> date range reflects only photo.jpg
+        provider.setAllCategories(false);
+        provider.toggleCategory(CountFileCategory.images, true);
+        await provider.startCounting();
+        await _waitUntil(() => !provider.isCounting);
+        expect(provider.hasDateRange, isTrue);
+        expect(provider.oldestFilePath, equals(p.join('sub', 'photo.jpg')));
+        expect(provider.latestFilePath, equals(p.join('sub', 'photo.jpg')));
+        expect(
+          (provider.oldestFileDate!.difference(dtMiddle).inSeconds).abs(),
+          lessThanOrEqualTo(1),
+        );
+        expect(
+          (provider.latestFileDate!.difference(dtMiddle).inSeconds).abs(),
+          lessThanOrEqualTo(1),
+        );
+
+        // 3. Empty directory -> no date bounds
+        provider.setTargetPath(emptyDir.path);
+        await provider.startDateRangeCheck();
+        await _waitUntil(() => !provider.isCounting);
+        expect(provider.hasDateRange, isFalse);
+        expect(provider.oldestFileDate, isNull);
+        expect(provider.latestFileDate, isNull);
+        expect(provider.formattedDateRange, equals('—'));
+        expect(provider.logs.any((l) => l.contains('No files found')), isTrue);
+
+        // 4. Clear resets date range state
+        provider.setTargetPath(tmp.path);
+        await provider.startDateRangeCheck();
+        await _waitUntil(() => !provider.isCounting);
+        expect(provider.hasDateRange, isTrue);
+        provider.clearLogs();
+        expect(provider.hasDateRange, isFalse);
+        expect(provider.oldestFileDate, isNull);
+        expect(provider.latestFileDate, isNull);
+      },
+    );
   });
 
   group('CountFilesScreen widget tests', () {
@@ -314,7 +419,7 @@ void main() {
         );
         expect(find.textContaining('Excluded:'), findsNothing);
 
-        // Uncheck All -> disables Count Files, keeps Get Folder Size enabled, and displays warning prompt.
+        // Uncheck All -> disables Count Files, keeps Get Folder Size & Check Date Range enabled.
         await tester.tap(find.byKey(const Key('count_filter_all')));
         await tester.pump();
         expect(countProvider.hasAnyCategorySelected, isFalse);
@@ -330,6 +435,10 @@ void main() {
           find.byKey(const Key('count_get_folder_size_btn')),
         );
         expect(sizeBtn.onPressed, isNotNull);
+        final dateBtn = tester.widget<OutlinedButton>(
+          find.byKey(const Key('count_check_date_range_btn')),
+        );
+        expect(dateBtn.onPressed, isNotNull);
         expect(find.byKey(const Key('count_size_badge')), findsOneWidget);
         expect(find.text('Size: 0 B'), findsOneWidget);
 
@@ -355,10 +464,32 @@ void main() {
           findsOneWidget,
         );
 
+        // Populate date range bounds -> Date Range banner renders without overflow at 980x680.
+        countProvider.oldestFileDate = DateTime(2024, 3, 10, 9, 15);
+        countProvider.oldestFilePath = 'archive.pdf';
+        countProvider.latestFileDate = DateTime(2026, 11, 25, 18, 45);
+        countProvider.latestFilePath = 'sub/clip.mp4';
+        // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+        countProvider.notifyListeners();
+        await tester.pump();
+
+        expect(find.byKey(const Key('count_date_range_banner')), findsOneWidget);
+        expect(find.byKey(const Key('count_oldest_file_info')), findsOneWidget);
+        expect(find.byKey(const Key('count_latest_file_info')), findsOneWidget);
+        expect(
+          find.text('Date Range: 10/03/2024 – 25/11/2026'),
+          findsOneWidget,
+        );
+
         // Verify responsive Wrap layout does not overflow at minimum 980x680 window size.
         tester.view.physicalSize = const Size(980, 680);
         await tester.pump();
         expect(tester.takeException(), isNull);
+
+        // Tapping Clear hides the Date Range banner.
+        await tester.tap(find.widgetWithText(OutlinedButton, 'Clear'));
+        await tester.pump();
+        expect(find.byKey(const Key('count_date_range_banner')), findsNothing);
 
         // Drain any sqflite lock timers created inside FakeAsync by tap handlers.
         await tester.pump(const Duration(seconds: 11));

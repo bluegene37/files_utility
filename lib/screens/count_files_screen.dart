@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+// Gene - Nov, 26, 2026: Import path package for displaying file basenames in Date Range banner.
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import '../providers/count_files_provider.dart';
 import '../theme/app_theme.dart';
@@ -275,6 +277,137 @@ class CountFilesScreen extends StatelessWidget {
                       //                           ),
                       //                         ],
                       //                       ),
+                      // Gene - Nov, 26, 2026: Added Check Date Range button, responsive action Wrap, and Date Range summary banner.
+                      //                       SizedBox(
+                      //                         width: double.infinity,
+                      //                         child: Wrap(
+                      //                           spacing: 12,
+                      //                           runSpacing: 8,
+                      //                           alignment: WrapAlignment.spaceBetween,
+                      //                           crossAxisAlignment: WrapCrossAlignment.center,
+                      //                           children: [
+                      //                             Row(
+                      //                               mainAxisSize: MainAxisSize.min,
+                      //                               children: [
+                      //                                 if (!provider.isCounting) ...[
+                      //                                   ElevatedButton.icon(
+                      //                                     onPressed: provider.canStartCounting
+                      //                                         ? provider.startCounting
+                      //                                         : null,
+                      //                                     icon: const Icon(Icons.analytics_rounded),
+                      //                                     label: const Text('Count Files'),
+                      //                                   ),
+                      //                                   const SizedBox(width: 8),
+                      //                                   Tooltip(
+                      //                                     message:
+                      //                                         'Calculate total size of the target folder (all files, skips per-file logging)',
+                      //                                     child: OutlinedButton.icon(
+                      //                                       key: const Key('count_get_folder_size_btn'),
+                      //                                       onPressed: provider.canGetFolderSize
+                      //                                           ? provider.startFolderSize
+                      //                                           : null,
+                      //                                       icon: const Icon(
+                      //                                         Icons.storage_rounded,
+                      //                                         size: 18,
+                      //                                       ),
+                      //                                       label: const Text('Get Folder Size'),
+                      //                                     ),
+                      //                                   ),
+                      //                                   const SizedBox(width: 8),
+                      //                                   OutlinedButton.icon(
+                      //                                     onPressed: provider.clearLogs,
+                      //                                     icon: const Icon(Icons.refresh),
+                      //                                     label: const Text('Clear'),
+                      //                                   ),
+                      //                                 ] else
+                      //                                   ElevatedButton.icon(
+                      //                                     onPressed: provider.stop,
+                      //                                     icon: const Icon(Icons.stop),
+                      //                                     label: const Text('Stop'),
+                      //                                     style: ElevatedButton.styleFrom(
+                      //                                       backgroundColor: AppColors.error,
+                      //                                       foregroundColor: Colors.white,
+                      //                                     ),
+                      //                                   ),
+                      //                                 const SizedBox(width: 12),
+                      //                                 if (provider.isCounting)
+                      //                                   Container(
+                      //                                     width: 14,
+                      //                                     height: 14,
+                      //                                     margin: const EdgeInsets.only(right: 8),
+                      //                                     child: CircularProgressIndicator(
+                      //                                       strokeWidth: 2,
+                      //                                       valueColor: AlwaysStoppedAnimation<Color>(
+                      //                                         context.successColor,
+                      //                                       ),
+                      //                                     ),
+                      //                                   ),
+                      //                                 ConstrainedBox(
+                      //                                   constraints: const BoxConstraints(
+                      //                                     maxWidth: 280,
+                      //                                   ),
+                      //                                   child: Tooltip(
+                      //                                     message: provider.currentStatus,
+                      //                                     child: Text(
+                      //                                       provider.currentStatus,
+                      //                                       style: TextStyle(
+                      //                                         fontWeight: FontWeight.w600,
+                      //                                         color: context.textPrimary,
+                      //                                         fontSize: 13,
+                      //                                       ),
+                      //                                       maxLines: 1,
+                      //                                       overflow: TextOverflow.ellipsis,
+                      //                                     ),
+                      //                                   ),
+                      //                                 ),
+                      //                               ],
+                      //                             ),
+                      //                             Wrap(
+                      //                               spacing: 6,
+                      //                               runSpacing: 6,
+                      //                               children: [
+                      //                                 StatBadge(
+                      //                                   title: 'Files',
+                      //                                   value: provider.totalFiles.toString(),
+                      //                                   color: context.successColor,
+                      //                                   icon: Icons.insert_drive_file,
+                      //                                 ),
+                      //                                 if (!provider.isSizeOnlyRun &&
+                      //                                     (!provider.allCategoriesSelected ||
+                      //                                         provider.excludedFiles > 0))
+                      //                                   StatBadge(
+                      //                                     title: 'Excluded',
+                      //                                     value: provider.excludedFiles.toString(),
+                      //                                     color: context.warningColor,
+                      //                                     icon: Icons.filter_alt_off_rounded,
+                      //                                   ),
+                      //                                 StatBadge(
+                      //                                   title: 'Folders',
+                      //                                   value: provider.totalFolders.toString(),
+                      //                                   color: context.infoColor,
+                      //                                   icon: Icons.folder,
+                      //                                 ),
+                      //                                 Tooltip(
+                      //                                   message: '${provider.totalBytes} bytes',
+                      //                                   child: StatBadge(
+                      //                                     key: const Key('count_size_badge'),
+                      //                                     title: 'Size',
+                      //                                     value: provider.formattedTotalSize,
+                      //                                     color: context.primaryAccent,
+                      //                                     icon: Icons.storage_rounded,
+                      //                                   ),
+                      //                                 ),
+                      //                                 StatBadge(
+                      //                                   title: 'Errors',
+                      //                                   value: provider.errors.toString(),
+                      //                                   color: context.errorColor,
+                      //                                   icon: Icons.error,
+                      //                                 ),
+                      //                               ],
+                      //                             ),
+                      //                           ],
+                      //                         ),
+                      //                       ),
                       SizedBox(
                         width: double.infinity,
                         child: Wrap(
@@ -283,8 +416,10 @@ class CountFilesScreen extends StatelessWidget {
                           alignment: WrapAlignment.spaceBetween,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 if (!provider.isCounting) ...[
                                   ElevatedButton.icon(
@@ -294,12 +429,13 @@ class CountFilesScreen extends StatelessWidget {
                                     icon: const Icon(Icons.analytics_rounded),
                                     label: const Text('Count Files'),
                                   ),
-                                  const SizedBox(width: 8),
                                   Tooltip(
                                     message:
                                         'Calculate total size of the target folder (all files, skips per-file logging)',
                                     child: OutlinedButton.icon(
-                                      key: const Key('count_get_folder_size_btn'),
+                                      key: const Key(
+                                        'count_get_folder_size_btn',
+                                      ),
                                       onPressed: provider.canGetFolderSize
                                           ? provider.startFolderSize
                                           : null,
@@ -310,7 +446,23 @@ class CountFilesScreen extends StatelessWidget {
                                       label: const Text('Get Folder Size'),
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
+                                  Tooltip(
+                                    message:
+                                        'Check oldest and latest file dates (From → To) in the target folder (all files, skips per-file logging)',
+                                    child: OutlinedButton.icon(
+                                      key: const Key(
+                                        'count_check_date_range_btn',
+                                      ),
+                                      onPressed: provider.canCheckDateRange
+                                          ? provider.startDateRangeCheck
+                                          : null,
+                                      icon: const Icon(
+                                        Icons.date_range_rounded,
+                                        size: 18,
+                                      ),
+                                      label: const Text('Check Date Range'),
+                                    ),
+                                  ),
                                   OutlinedButton.icon(
                                     onPressed: provider.clearLogs,
                                     icon: const Icon(Icons.refresh),
@@ -326,12 +478,11 @@ class CountFilesScreen extends StatelessWidget {
                                       foregroundColor: Colors.white,
                                     ),
                                   ),
-                                const SizedBox(width: 12),
                                 if (provider.isCounting)
                                   Container(
                                     width: 14,
                                     height: 14,
-                                    margin: const EdgeInsets.only(right: 8),
+                                    margin: const EdgeInsets.only(right: 4),
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
                                       valueColor: AlwaysStoppedAnimation<Color>(
@@ -369,7 +520,8 @@ class CountFilesScreen extends StatelessWidget {
                                   color: context.successColor,
                                   icon: Icons.insert_drive_file,
                                 ),
-                                if (!provider.isSizeOnlyRun &&
+                                if (provider.activeRunMode ==
+                                        CountRunMode.count &&
                                     (!provider.allCategoriesSelected ||
                                         provider.excludedFiles > 0))
                                   StatBadge(
@@ -405,6 +557,10 @@ class CountFilesScreen extends StatelessWidget {
                           ],
                         ),
                       ),
+                      if (provider.hasDateRange) ...[
+                        const SizedBox(height: 10),
+                        _buildDateRangeBanner(context, provider),
+                      ],
                       const SizedBox(height: 10),
 
                       // Logs
@@ -603,6 +759,141 @@ class CountFilesScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // Gene - Nov, 26, 2026: Compact summary banner showing From -> To modified date range, oldest file, and latest file.
+  Widget _buildDateRangeBanner(
+    BuildContext context,
+    CountFilesProvider provider,
+  ) {
+    final isDark = context.isDarkMode;
+    final oldestRel = provider.oldestFilePath ?? '';
+    final latestRel = provider.latestFilePath ?? '';
+    final oldestBase = oldestRel.isEmpty ? '' : p.basename(oldestRel);
+    final latestBase = latestRel.isEmpty ? '' : p.basename(latestRel);
+
+    return Container(
+      key: const Key('count_date_range_banner'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.cardBg,
+        border: Border.all(
+          color: context.infoColor.withValues(alpha: isDark ? 0.35 : 0.32),
+          width: 1.0,
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+        boxShadow: NeumorphicTheme.softShadows(
+          context,
+          distance: 2.0,
+          blur: 4.0,
+        ),
+      ),
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.date_range_rounded, size: 16, color: context.infoColor),
+              const SizedBox(width: 6),
+              Text(
+                'Date Range: ${provider.formattedDateRange}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: context.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          Tooltip(
+            message:
+                'Oldest (Modified): ${provider.formattedOldestDate}'
+                '${oldestRel.isEmpty ? '' : '\n$oldestRel'}',
+            child: Row(
+              key: const Key('count_oldest_file_info'),
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.history_rounded,
+                  size: 15,
+                  color: context.warningColor,
+                ),
+                const SizedBox(width: 5),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  child: Text.rich(
+                    TextSpan(
+                      style: const TextStyle(fontSize: 12),
+                      children: [
+                        TextSpan(
+                          text: 'Oldest: ${provider.formattedOldestDate}',
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (oldestBase.isNotEmpty)
+                          TextSpan(
+                            text: ' ($oldestBase)',
+                            style: TextStyle(color: context.textMuted),
+                          ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Tooltip(
+            message:
+                'Latest (Modified): ${provider.formattedLatestDate}'
+                '${latestRel.isEmpty ? '' : '\n$latestRel'}',
+            child: Row(
+              key: const Key('count_latest_file_info'),
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.update_rounded,
+                  size: 15,
+                  color: context.successColor,
+                ),
+                const SizedBox(width: 5),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  child: Text.rich(
+                    TextSpan(
+                      style: const TextStyle(fontSize: 12),
+                      children: [
+                        TextSpan(
+                          text: 'Latest: ${provider.formattedLatestDate}',
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (latestBase.isNotEmpty)
+                          TextSpan(
+                            text: ' ($latestBase)',
+                            style: TextStyle(color: context.textMuted),
+                          ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

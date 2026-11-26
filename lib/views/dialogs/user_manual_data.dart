@@ -284,6 +284,26 @@ class UserManualData {
       //   'documents',
       //   'exclude',
       // ],
+      // Gene - Nov, 26, 2026: Added date range keywords and File Date Range manual section.
+      // keywords: [
+      //   'count',
+      //   'audit',
+      //   'inventory',
+      //   'file count',
+      //   'folder count',
+      //   'size',
+      //   'folder size',
+      //   'MB',
+      //   'GB',
+      //   'TB',
+      //   'speed',
+      //   'interval',
+      //   'filter',
+      //   'categories',
+      //   'images',
+      //   'documents',
+      //   'exclude',
+      // ],
       keywords: [
         'count',
         'audit',
@@ -295,6 +315,12 @@ class UserManualData {
         'MB',
         'GB',
         'TB',
+        'date range',
+        'oldest',
+        'latest',
+        'from',
+        'to',
+        'modified',
         'speed',
         'interval',
         'filter',
@@ -322,6 +348,19 @@ class UserManualData {
           tip:
               'Counting and measuring size in one Count Files pass is faster than running two separate scans.',
           tags: ['size', 'storage', 'folder-size'],
+        ),
+        ManualSection(
+          title: 'File Date Range (Oldest & Latest)',
+          description:
+              'Use Check Date Range to scan all files in the target folder and display the earliest (From) and latest (To) file modified dates along with the oldest and latest file paths—making it easy to verify which dates have already been transferred.',
+          steps: [
+            'Click Check Date Range to inspect the full folder without category filtering or per-file log overhead.',
+            'Check the Date Range banner above the console to view the From → To modified dates, oldest file, and latest file.',
+            'Hover over the Oldest or Latest file readout to see the full relative file path, or run Count Files to see the date range for selected file types only.',
+          ],
+          tip:
+              'Compare the displayed From → To dates with your Transfer Files or Copy Files date filter to confirm no date range was missed.',
+          tags: ['date-range', 'oldest', 'latest', 'modified'],
         ),
         ManualSection(
           title: 'File Type Filtering & Exclusions',

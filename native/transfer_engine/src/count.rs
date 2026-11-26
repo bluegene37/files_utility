@@ -7,14 +7,20 @@ use std::fmt::Write as _;
 use std::fs;
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::PathBuf;
+// use std::path::PathBuf;
+// Gene - Nov, 26, 2026: Import Path and system_time_to_epoch_ms for oldest/latest file modified date tracking.
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 
+// use crate::common::{
+//     c_str_to_string, path_basename, push_json_escaped, resolve_within_root, DEFAULT_IO_WORKERS,
+//     MAX_QUEUED_LOGS,
+// };
 use crate::common::{
-    c_str_to_string, path_basename, push_json_escaped, resolve_within_root, DEFAULT_IO_WORKERS,
-    MAX_QUEUED_LOGS,
+    c_str_to_string, path_basename, push_json_escaped, resolve_within_root,
+    system_time_to_epoch_ms, DEFAULT_IO_WORKERS, MAX_QUEUED_LOGS,
 };
 
 // Gene - Nov, 26, 2026: Added file-type category bitmask constants and case-insensitive extension classifier.
@@ -233,6 +239,56 @@ impl CountWorkQueue {
 //             }),
 //         }
 //     }
+// Gene - Nov, 26, 2026: Added FileDateEntry, CountDateBounds, and date_bounds tracking in CountSharedState.
+// struct CountSharedState {
+//     files: AtomicU64,
+//     excluded_files: AtomicU64,
+//     folders: AtomicU64,
+//     total_bytes: AtomicU64,
+//     errors: AtomicU64,
+//     stop_requested: AtomicBool,
+//     done: AtomicBool,
+//     visited_symlinks: Mutex<HashSet<PathBuf>>,
+//     ui: Mutex<CountUiState>,
+// }
+//
+// pub struct CountJob {
+//     state: Arc<CountSharedState>,
+//     queue: Arc<CountWorkQueue>,
+//     handle: Option<JoinHandle<()>>,
+// }
+//
+// impl CountSharedState {
+//     fn new() -> Self {
+//         Self {
+//             files: AtomicU64::new(0),
+//             excluded_files: AtomicU64::new(0),
+//             folders: AtomicU64::new(0),
+//             total_bytes: AtomicU64::new(0),
+//             errors: AtomicU64::new(0),
+//             stop_requested: AtomicBool::new(false),
+//             done: AtomicBool::new(false),
+//             visited_symlinks: Mutex::new(HashSet::new()),
+//             ui: Mutex::new(CountUiState {
+//                 current_dir_name: String::new(),
+//                 critical_error: None,
+//                 logs: VecDeque::new(),
+//                 error_logs: VecDeque::new(),
+//             }),
+//         }
+//     }
+#[derive(Clone)]
+struct FileDateEntry {
+    modified_ms: i64,
+    relative_path: String,
+}
+
+#[derive(Default)]
+struct CountDateBounds {
+    oldest: Option<FileDateEntry>,
+    latest: Option<FileDateEntry>,
+}
+
 struct CountSharedState {
     files: AtomicU64,
     excluded_files: AtomicU64,
@@ -242,6 +298,7 @@ struct CountSharedState {
     stop_requested: AtomicBool,
     done: AtomicBool,
     visited_symlinks: Mutex<HashSet<PathBuf>>,
+    date_bounds: Mutex<CountDateBounds>,
     ui: Mutex<CountUiState>,
 }
 
@@ -262,12 +319,39 @@ impl CountSharedState {
             stop_requested: AtomicBool::new(false),
             done: AtomicBool::new(false),
             visited_symlinks: Mutex::new(HashSet::new()),
+            date_bounds: Mutex::new(CountDateBounds::default()),
             ui: Mutex::new(CountUiState {
                 current_dir_name: String::new(),
                 critical_error: None,
                 logs: VecDeque::new(),
                 error_logs: VecDeque::new(),
             }),
+        }
+    }
+
+    fn update_date_bounds(&self, modified_ms: i64, relative_path: &str) {
+        if let Ok(mut bounds) = self.date_bounds.lock() {
+            let replace_oldest = match bounds.oldest {
+                Some(ref cur) => modified_ms < cur.modified_ms,
+                None => true,
+            };
+            if replace_oldest {
+                bounds.oldest = Some(FileDateEntry {
+                    modified_ms,
+                    relative_path: relative_path.to_string(),
+                });
+            }
+
+            let replace_latest = match bounds.latest {
+                Some(ref cur) => modified_ms > cur.modified_ms,
+                None => true,
+            };
+            if replace_latest {
+                bounds.latest = Some(FileDateEntry {
+                    modified_ms,
+                    relative_path: relative_path.to_string(),
+                });
+            }
         }
     }
 
@@ -601,14 +685,244 @@ impl CountSharedState {
 //         json,
 //         "{{\"files\":{files},\"excludedFiles\":{excluded_files},\"folders\":{folders},\"errors\":{errors},\"currentDirName\":"
 //     );
+// Gene - Nov, 26, 2026: Track oldest/latest file modified timestamps and relative paths via zero-allocation thread-local bounds.
+// fn run_count_worker(
+//     canonical_root: &PathBuf,
+//     log_interval: u64,
+//     include_mask: u32,
+//     size_only: bool,
+//     queue: &CountWorkQueue,
+//     state: &CountSharedState,
+// ) {
+//     while let Some(dir) = queue.pop_dir(&state.stop_requested) {
+//         let dir_name = path_basename(&dir);
+//         state.set_current_dir(&dir_name);
+//
+//         let mut subdirs = Vec::new();
+//         match fs::read_dir(&dir) {
+//             Ok(entries) => {
+//                 for entry_res in entries {
+//                     if state.stop_requested.load(Ordering::Acquire) {
+//                         break;
+//                     }
+//                     let entry = match entry_res {
+//                         Ok(e) => e,
+//                         Err(e) => {
+//                             state.errors.fetch_add(1, Ordering::Relaxed);
+//                             state.push_error_log(format!(
+//                                 "Error accessing: {} — {e}",
+//                                 dir.display()
+//                             ));
+//                             continue;
+//                         }
+//                     };
+//
+//                     let ft = match entry.file_type() {
+//                         Ok(ft) => ft,
+//                         Err(_) => continue,
+//                     };
+//
+//                     if ft.is_file() {
+//                         if size_only {
+//                             state.files.fetch_add(1, Ordering::Relaxed);
+//                             if let Ok(meta) = entry.metadata() {
+//                                 state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+//                             }
+//                         } else {
+//                             let name = entry.file_name().to_string_lossy().into_owned();
+//                             if matches_count_filter(&name, include_mask) {
+//                                 let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+//                                 state.total_bytes.fetch_add(size, Ordering::Relaxed);
+//                                 state.record_counted_file(&name, log_interval);
+//                             } else {
+//                                 state.excluded_files.fetch_add(1, Ordering::Relaxed);
+//                             }
+//                         }
+//                     } else if ft.is_dir() {
+//                         state.folders.fetch_add(1, Ordering::Relaxed);
+//                         subdirs.push(entry.path());
+//                     } else if ft.is_symlink() {
+//                         let entry_path = entry.path();
+//                         if !resolve_within_root(canonical_root, &entry_path) {
+//                             continue;
+//                         }
+//                         if let Ok(canon_target) = fs::canonicalize(&entry_path) {
+//                             if let Ok(meta) = fs::metadata(&entry_path) {
+//                                 if meta.is_dir() {
+//                                     let is_new = state
+//                                         .visited_symlinks
+//                                         .lock()
+//                                         .map(|mut s| s.insert(canon_target))
+//                                         .unwrap_or(false);
+//                                     if is_new {
+//                                         state.folders.fetch_add(1, Ordering::Relaxed);
+//                                         subdirs.push(entry_path);
+//                                     }
+//                                 } else if meta.is_file() {
+//                                     if size_only {
+//                                         state.files.fetch_add(1, Ordering::Relaxed);
+//                                         state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+//                                     } else {
+//                                         let name = entry.file_name().to_string_lossy().into_owned();
+//                                         if matches_count_filter(&name, include_mask) {
+//                                             state
+//                                                 .total_bytes
+//                                                 .fetch_add(meta.len(), Ordering::Relaxed);
+//                                             state.record_counted_file(&name, log_interval);
+//                                         } else {
+//                                             state.excluded_files.fetch_add(1, Ordering::Relaxed);
+//                                         }
+//                                     }
+//                                 }
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//             Err(e) => {
+//                 state.errors.fetch_add(1, Ordering::Relaxed);
+//                 state.push_error_log(format!("Error accessing: {} — {e}", dir.display()));
+//             }
+//         }
+//
+//         queue.push_subdirs_and_finish_dir(subdirs);
+//     }
+// }
+//
+// fn run_count(
+//     target_path: PathBuf,
+//     log_interval: u64,
+//     include_mask: u32,
+//     size_only: bool,
+//     queue: Arc<CountWorkQueue>,
+//     state: Arc<CountSharedState>,
+// ) {
+//     let canonical_root = match fs::canonicalize(&target_path) {
+//         Ok(p) => Arc::new(p),
+//         Err(e) => {
+//             state.set_critical_error(format!(
+//                 "Failed to access target directory {}: {e}",
+//                 target_path.display()
+//             ));
+//             state.done.store(true, Ordering::Release);
+//             return;
+//         }
+//     };
+//
+//     let mut handles = Vec::with_capacity(DEFAULT_IO_WORKERS);
+//     for _ in 0..DEFAULT_IO_WORKERS {
+//         let q = Arc::clone(&queue);
+//         let s = Arc::clone(&state);
+//         let r = Arc::clone(&canonical_root);
+//         if let Ok(h) = thread::Builder::new()
+//             .name("count_engine_worker".to_string())
+//             .spawn(move || {
+//                 run_count_worker(&r, log_interval, include_mask, size_only, &q, &s);
+//             })
+//         {
+//             handles.push(h);
+//         }
+//     }
+//
+//     for h in handles {
+//         let _ = h.join();
+//     }
+//
+//     state.done.store(true, Ordering::Release);
+// }
+//
+// fn build_count_poll_json(state: &CountSharedState) -> String {
+//     let files = state.files.load(Ordering::Relaxed);
+//     let excluded_files = state.excluded_files.load(Ordering::Relaxed);
+//     let folders = state.folders.load(Ordering::Relaxed);
+//     let total_bytes = state.total_bytes.load(Ordering::Relaxed);
+//     let errors = state.errors.load(Ordering::Relaxed);
+//     let is_done = state.done.load(Ordering::Acquire);
+//
+//     let (current_dir_name, critical_error, logs, error_logs) = match state.ui.lock() {
+//         Ok(mut ui) => (
+//             ui.current_dir_name.clone(),
+//             ui.critical_error.take(),
+//             ui.logs.drain(..).collect::<Vec<_>>(),
+//             ui.error_logs.drain(..).collect::<Vec<_>>(),
+//         ),
+//         Err(_) => (String::new(), None, Vec::new(), Vec::new()),
+//     };
+//
+//     let mut json = String::with_capacity(256);
+//     let _ = write!(
+//         json,
+//         "{{\"files\":{files},\"excludedFiles\":{excluded_files},\"folders\":{folders},\"totalBytes\":{total_bytes},\"errors\":{errors},\"currentDirName\":"
+//     );
+//     push_json_escaped(&mut json, &current_dir_name);
+//     let _ = write!(json, ",\"isDone\":{is_done},\"criticalError\":");
+//     match critical_error {
+//         Some(ref c) => push_json_escaped(&mut json, c),
+//         None => json.push_str("null"),
+//     }
+//     json.push_str(",\"logs\":[");
+//     for (idx, line) in logs.iter().enumerate() {
+//         if idx > 0 {
+//             json.push(',');
+//         }
+//         push_json_escaped(&mut json, line);
+//     }
+//     json.push_str("],\"errorLogs\":[");
+//     for (idx, line) in error_logs.iter().enumerate() {
+//         if idx > 0 {
+//             json.push(',');
+//         }
+//         push_json_escaped(&mut json, line);
+//     }
+//     json.push_str("]}");
+//     json
+// }
+fn record_file_mtime<F: FnOnce() -> PathBuf>(
+    meta: &fs::Metadata,
+    make_path: F,
+    root_path: &Path,
+    local_oldest_ms: &mut Option<i64>,
+    local_latest_ms: &mut Option<i64>,
+    state: &CountSharedState,
+) {
+    let mtime = match meta.modified() {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+    let ms = system_time_to_epoch_ms(mtime);
+    let beats_oldest = local_oldest_ms.map_or(true, |v| ms < v);
+    let beats_latest = local_latest_ms.map_or(true, |v| ms > v);
+    if !beats_oldest && !beats_latest {
+        return;
+    }
+
+    if beats_oldest {
+        *local_oldest_ms = Some(ms);
+    }
+    if beats_latest {
+        *local_latest_ms = Some(ms);
+    }
+
+    let full_path = make_path();
+    let rel = match full_path.strip_prefix(root_path) {
+        Ok(p) if !p.as_os_str().is_empty() => p.to_string_lossy().into_owned(),
+        _ => path_basename(&full_path),
+    };
+    state.update_date_bounds(ms, &rel);
+}
+
 fn run_count_worker(
     canonical_root: &PathBuf,
+    root_path: &Path,
     log_interval: u64,
     include_mask: u32,
     size_only: bool,
     queue: &CountWorkQueue,
     state: &CountSharedState,
 ) {
+    let mut local_oldest_ms: Option<i64> = None;
+    let mut local_latest_ms: Option<i64> = None;
+
     while let Some(dir) = queue.pop_dir(&state.stop_requested) {
         let dir_name = path_basename(&dir);
         state.set_current_dir(&dir_name);
@@ -642,12 +956,29 @@ fn run_count_worker(
                             state.files.fetch_add(1, Ordering::Relaxed);
                             if let Ok(meta) = entry.metadata() {
                                 state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+                                record_file_mtime(
+                                    &meta,
+                                    || entry.path(),
+                                    root_path,
+                                    &mut local_oldest_ms,
+                                    &mut local_latest_ms,
+                                    state,
+                                );
                             }
                         } else {
                             let name = entry.file_name().to_string_lossy().into_owned();
                             if matches_count_filter(&name, include_mask) {
-                                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                                state.total_bytes.fetch_add(size, Ordering::Relaxed);
+                                if let Ok(meta) = entry.metadata() {
+                                    state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+                                    record_file_mtime(
+                                        &meta,
+                                        || entry.path(),
+                                        root_path,
+                                        &mut local_oldest_ms,
+                                        &mut local_latest_ms,
+                                        state,
+                                    );
+                                }
                                 state.record_counted_file(&name, log_interval);
                             } else {
                                 state.excluded_files.fetch_add(1, Ordering::Relaxed);
@@ -677,12 +1008,28 @@ fn run_count_worker(
                                     if size_only {
                                         state.files.fetch_add(1, Ordering::Relaxed);
                                         state.total_bytes.fetch_add(meta.len(), Ordering::Relaxed);
+                                        record_file_mtime(
+                                            &meta,
+                                            || entry_path.clone(),
+                                            root_path,
+                                            &mut local_oldest_ms,
+                                            &mut local_latest_ms,
+                                            state,
+                                        );
                                     } else {
                                         let name = entry.file_name().to_string_lossy().into_owned();
                                         if matches_count_filter(&name, include_mask) {
                                             state
                                                 .total_bytes
                                                 .fetch_add(meta.len(), Ordering::Relaxed);
+                                            record_file_mtime(
+                                                &meta,
+                                                || entry_path.clone(),
+                                                root_path,
+                                                &mut local_oldest_ms,
+                                                &mut local_latest_ms,
+                                                state,
+                                            );
                                             state.record_counted_file(&name, log_interval);
                                         } else {
                                             state.excluded_files.fetch_add(1, Ordering::Relaxed);
@@ -712,6 +1059,7 @@ fn run_count(
     queue: Arc<CountWorkQueue>,
     state: Arc<CountSharedState>,
 ) {
+    let root_path = Arc::new(target_path.clone());
     let canonical_root = match fs::canonicalize(&target_path) {
         Ok(p) => Arc::new(p),
         Err(e) => {
@@ -729,10 +1077,11 @@ fn run_count(
         let q = Arc::clone(&queue);
         let s = Arc::clone(&state);
         let r = Arc::clone(&canonical_root);
+        let rp = Arc::clone(&root_path);
         if let Ok(h) = thread::Builder::new()
             .name("count_engine_worker".to_string())
             .spawn(move || {
-                run_count_worker(&r, log_interval, include_mask, size_only, &q, &s);
+                run_count_worker(&r, &rp, log_interval, include_mask, size_only, &q, &s);
             })
         {
             handles.push(h);
@@ -754,6 +1103,16 @@ fn build_count_poll_json(state: &CountSharedState) -> String {
     let errors = state.errors.load(Ordering::Relaxed);
     let is_done = state.done.load(Ordering::Acquire);
 
+    let (oldest_ms, oldest_path, latest_ms, latest_path) = match state.date_bounds.lock() {
+        Ok(bounds) => (
+            bounds.oldest.as_ref().map(|e| e.modified_ms),
+            bounds.oldest.as_ref().map(|e| e.relative_path.clone()),
+            bounds.latest.as_ref().map(|e| e.modified_ms),
+            bounds.latest.as_ref().map(|e| e.relative_path.clone()),
+        ),
+        Err(_) => (None, None, None, None),
+    };
+
     let (current_dir_name, critical_error, logs, error_logs) = match state.ui.lock() {
         Ok(mut ui) => (
             ui.current_dir_name.clone(),
@@ -764,12 +1123,36 @@ fn build_count_poll_json(state: &CountSharedState) -> String {
         Err(_) => (String::new(), None, Vec::new(), Vec::new()),
     };
 
-    let mut json = String::with_capacity(256);
+    let mut json = String::with_capacity(320);
     let _ = write!(
         json,
         "{{\"files\":{files},\"excludedFiles\":{excluded_files},\"folders\":{folders},\"totalBytes\":{total_bytes},\"errors\":{errors},\"currentDirName\":"
     );
     push_json_escaped(&mut json, &current_dir_name);
+    json.push_str(",\"oldestFileMs\":");
+    match oldest_ms {
+        Some(ms) => {
+            let _ = write!(json, "{ms}");
+        }
+        None => json.push_str("null"),
+    }
+    json.push_str(",\"oldestFilePath\":");
+    match oldest_path {
+        Some(ref p) => push_json_escaped(&mut json, p),
+        None => json.push_str("null"),
+    }
+    json.push_str(",\"latestFileMs\":");
+    match latest_ms {
+        Some(ms) => {
+            let _ = write!(json, "{ms}");
+        }
+        None => json.push_str("null"),
+    }
+    json.push_str(",\"latestFilePath\":");
+    match latest_path {
+        Some(ref p) => push_json_escaped(&mut json, p),
+        None => json.push_str("null"),
+    }
     let _ = write!(json, ",\"isDone\":{is_done},\"criticalError\":");
     match critical_error {
         Some(ref c) => push_json_escaped(&mut json, c),
@@ -1154,6 +1537,109 @@ mod tests {
         assert_eq!(state.folders.load(Ordering::Relaxed), 1);
         assert_eq!(state.total_bytes.load(Ordering::Relaxed), 100);
         assert!(state.ui.lock().unwrap().logs.is_empty());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // Gene - Nov, 26, 2026: Verify oldest/latest modified file bounds and relative paths across full, filtered, and empty scans.
+    #[test]
+    fn tracks_oldest_and_latest_modified_files_with_relative_paths() {
+        let root = make_temp_dir("rust_count_date_bounds");
+        let sub = root.join("nested");
+        fs::create_dir_all(&sub).unwrap();
+
+        let oldest_path = root.join("oldest.pdf");
+        let middle_path = sub.join("middle.jpg");
+        let latest_path = sub.join("latest.mp4");
+
+        fs::write(&oldest_path, b"pdf").unwrap();
+        fs::write(&middle_path, b"jpg").unwrap();
+        fs::write(&latest_path, b"mp4").unwrap();
+
+        let t_oldest = UNIX_EPOCH + std::time::Duration::from_secs(1_710_000_000);
+        let t_middle = UNIX_EPOCH + std::time::Duration::from_secs(1_750_000_000);
+        let t_latest = UNIX_EPOCH + std::time::Duration::from_secs(1_790_000_000);
+
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&oldest_path)
+            .unwrap()
+            .set_modified(t_oldest)
+            .unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&middle_path)
+            .unwrap()
+            .set_modified(t_middle)
+            .unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&latest_path)
+            .unwrap()
+            .set_modified(t_latest)
+            .unwrap();
+
+        // 1. Fast full-folder scan (size_only = true)
+        let state_all = Arc::new(CountSharedState::new());
+        let queue_all = Arc::new(CountWorkQueue::new(root.clone()));
+        run_count(root.clone(), 0, COUNT_CAT_ALL, true, queue_all, Arc::clone(&state_all));
+
+        let bounds_all = state_all.date_bounds.lock().unwrap();
+        let oldest = bounds_all.oldest.as_ref().expect("oldest bound");
+        let latest = bounds_all.latest.as_ref().expect("latest bound");
+        assert_eq!(oldest.modified_ms, 1_710_000_000_000);
+        assert_eq!(oldest.relative_path, "oldest.pdf");
+        assert_eq!(latest.modified_ms, 1_790_000_000_000);
+        assert_eq!(
+            latest.relative_path,
+            format!("nested{}latest.mp4", std::path::MAIN_SEPARATOR)
+        );
+        drop(bounds_all);
+
+        let json = build_count_poll_json(&state_all);
+        assert!(json.contains("\"oldestFileMs\":1710000000000"));
+        assert!(json.contains("\"oldestFilePath\":\"oldest.pdf\""));
+        assert!(json.contains("\"latestFileMs\":1790000000000"));
+        assert!(json.contains("latest.mp4\""));
+
+        // 2. Filtered scan (images only) -> oldest and latest both point to nested/middle.jpg
+        let state_img = Arc::new(CountSharedState::new());
+        let queue_img = Arc::new(CountWorkQueue::new(root.clone()));
+        run_count(
+            root.clone(),
+            100,
+            COUNT_CAT_IMAGES,
+            false,
+            queue_img,
+            Arc::clone(&state_img),
+        );
+        let bounds_img = state_img.date_bounds.lock().unwrap();
+        let img_oldest = bounds_img.oldest.as_ref().expect("img oldest");
+        let img_latest = bounds_img.latest.as_ref().expect("img latest");
+        assert_eq!(img_oldest.modified_ms, 1_750_000_000_000);
+        assert_eq!(img_latest.modified_ms, 1_750_000_000_000);
+        assert!(img_oldest.relative_path.ends_with("middle.jpg"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn empty_folder_returns_null_date_bounds() {
+        let root = make_temp_dir("rust_count_date_empty");
+        let state = Arc::new(CountSharedState::new());
+        let queue = Arc::new(CountWorkQueue::new(root.clone()));
+        run_count(root.clone(), 0, COUNT_CAT_ALL, true, queue, Arc::clone(&state));
+
+        let bounds = state.date_bounds.lock().unwrap();
+        assert!(bounds.oldest.is_none());
+        assert!(bounds.latest.is_none());
+        drop(bounds);
+
+        let json = build_count_poll_json(&state);
+        assert!(json.contains("\"oldestFileMs\":null"));
+        assert!(json.contains("\"oldestFilePath\":null"));
+        assert!(json.contains("\"latestFileMs\":null"));
+        assert!(json.contains("\"latestFilePath\":null"));
 
         let _ = fs::remove_dir_all(&root);
     }
